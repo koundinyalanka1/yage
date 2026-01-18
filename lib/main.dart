@@ -1,19 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'providers/app_providers.dart';
+import 'screens/home_screen.dart';
+import 'utils/theme.dart';
 
 void main() {
-  runApp(const MainApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Set status bar style
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: YageColors.backgroundDark,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+  
+  runApp(const YageApp());
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class YageApp extends StatelessWidget {
+  const YageApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('Hello World!'),
-        ),
+    return AppProviders(
+      child: MaterialApp(
+        title: 'YAGE',
+        debugShowCheckedModeBanner: false,
+        theme: YageTheme.darkTheme,
+        home: const HomeScreen(),
       ),
     );
   }
