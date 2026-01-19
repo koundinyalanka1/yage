@@ -32,9 +32,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Hide system UI for immersive gaming
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     
-    // Allow both orientations for mobile gaming
+    // Allow all orientations for mobile gaming
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
@@ -52,7 +53,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     
     // Restore UI
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([]);
+    
+    // Restore all orientations
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     
     super.dispose();
   }

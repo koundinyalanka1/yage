@@ -8,6 +8,14 @@ import 'utils/theme.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Allow all orientations
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
