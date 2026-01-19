@@ -93,13 +93,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
-            _buildSearchBar(),
-            _buildPlatformFilter(),
+            // In landscape, combine header elements into a single row
+            if (isLandscape)
+              _buildCompactHeader()
+            else ...[
+              _buildHeader(),
+              _buildSearchBar(),
+              _buildPlatformFilter(),
+            ],
             _buildTabBar(),
             Expanded(
               child: TabBarView(
@@ -115,6 +122,122 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ),
       floatingActionButton: _buildFAB(),
+    );
+  }
+  
+  /// Compact header for landscape mode - combines logo, search, filter in one row
+  Widget _buildCompactHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          // Logo
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [YageColors.primary, YageColors.accent],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Text(
+                'Y',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: YageColors.backgroundDark,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          
+          // Search bar - expanded
+          Expanded(
+            child: SizedBox(
+              height: 40,
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Search...',
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  prefixIcon: const Icon(Icons.search, color: YageColors.textMuted, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: YageColors.textMuted, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          // Platform filter dropdown
+          Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: YageColors.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<GamePlatform?>(
+                value: _selectedPlatform,
+                hint: const Text('All', style: TextStyle(fontSize: 12)),
+                style: const TextStyle(fontSize: 12, color: YageColors.textPrimary),
+                dropdownColor: YageColors.surface,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('All')),
+                  const DropdownMenuItem(value: GamePlatform.gba, child: Text('GBA')),
+                  const DropdownMenuItem(value: GamePlatform.gbc, child: Text('GBC')),
+                  const DropdownMenuItem(value: GamePlatform.gb, child: Text('GB')),
+                ],
+                onChanged: (value) => setState(() => _selectedPlatform = value),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          // View toggle
+          IconButton(
+            icon: Icon(
+              _isGridView ? Icons.view_list : Icons.grid_view,
+              color: YageColors.textSecondary,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _isGridView = !_isGridView),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
+          
+          // Settings
+          IconButton(
+            icon: const Icon(
+              Icons.settings_outlined,
+              color: YageColors.textSecondary,
+              size: 20,
+            ),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
+        ],
+      ),
     );
   }
 
