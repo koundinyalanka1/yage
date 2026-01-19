@@ -9,7 +9,7 @@ import '../widgets/game_display.dart';
 import '../widgets/virtual_gamepad.dart';
 import '../utils/theme.dart';
 
-/// Game playing screen
+/// Game playing screen - optimized for mobile
 class GameScreen extends StatefulWidget {
   final GameRom game;
 
@@ -22,15 +22,19 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _showControls = true;
   bool _showMenu = false;
+  bool _isLandscape = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // Enter immersive mode
+    // Hide system UI for immersive gaming
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    
+    // Allow both orientations for mobile gaming
     SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
@@ -90,32 +94,175 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final emulator = context.watch<EmulatorService>();
     final settings = context.watch<SettingsService>().settings;
-
+    
     return Scaffold(
       backgroundColor: YageColors.backgroundDark,
-      body: Stack(
-        children: [
-          // Background gradient
-          Container(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.center,
-                radius: 1.5,
-                colors: [
-                  YageColors.backgroundLight,
-                  YageColors.backgroundDark,
-                ],
+      body: OrientationBuilder(
+        builder: (context, orientation) {
+          _isLandscape = orientation == Orientation.landscape;
+          
+          return Stack(
+            children: [
+              // Background
+              Container(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 1.5,
+                    colors: [
+                      YageColors.backgroundLight,
+                      YageColors.backgroundDark,
+                    ],
+                  ),
+                ),
               ),
+              
+              // Main content - different layout for portrait vs landscape
+              SafeArea(
+                child: _isLandscape
+                    ? _buildLandscapeLayout(emulator, settings)
+                    : _buildPortraitLayout(emulator, settings),
+              ),
+              
+              // FPS overlay
+              if (settings.showFps)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  right: 8,
+                  child: FpsOverlay(fps: emulator.currentFps),
+                ),
+              
+              // Demo mode indicator
+              if (emulator.isUsingStub)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 60,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: YageColors.warning.withAlpha(200),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'DEMO MODE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: YageColors.backgroundDark,
+                      ),
+                    ),
+                  ),
+                ),
+              
+              // Menu button
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 8,
+                child: _MenuButton(onTap: _toggleMenu),
+              ),
+              
+              // In-game menu overlay
+              if (_showMenu)
+                _InGameMenu(
+                  game: widget.game,
+                  onResume: _toggleMenu,
+                  onReset: () {
+                    emulator.reset();
+                    _toggleMenu();
+                  },
+                  onSaveState: (slot) async {
+                    final success = await emulator.saveState(slot);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success 
+                                ? 'State saved to slot $slot' 
+                                : 'Failed to save state',
+                          ),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                  },
+                  onLoadState: (slot) async {
+                    final success = await emulator.loadState(slot);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success 
+                                ? 'State loaded from slot $slot' 
+                                : 'Failed to load state',
+                          ),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                      if (success) _toggleMenu();
+                    }
+                  },
+                  onToggleControls: () {
+                    setState(() => _showControls = !_showControls);
+                  },
+                  showControls: _showControls,
+                  onExit: _exitGame,
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Portrait layout: Game on top, controls on bottom
+  Widget _buildPortraitLayout(EmulatorService emulator, settings) {
+    return Column(
+      children: [
+        const SizedBox(height: 50), // Space for menu button
+        
+        // Game display - centered at top
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GameDisplay(
+            emulator: emulator,
+            maintainAspectRatio: settings.maintainAspectRatio,
+            enableFiltering: settings.enableFiltering,
+          ),
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Virtual gamepad - fills remaining space
+        if (_showControls)
+          Expanded(
+            child: VirtualGamepad(
+              onKeysChanged: emulator.setKeys,
+              opacity: settings.gamepadOpacity,
+              scale: settings.gamepadScale,
+              enableVibration: settings.enableVibration,
             ),
           ),
-          
-          // Game display
-          Center(
+      ],
+    );
+  }
+
+  /// Landscape layout: Game centered, controls on sides
+  Widget _buildLandscapeLayout(EmulatorService emulator, settings) {
+    return Row(
+      children: [
+        // Left side controls (D-pad area)
+        if (_showControls)
+          Expanded(
+            flex: 2,
+            child: Container(),
+          ),
+        
+        // Game display - centered
+        Expanded(
+          flex: 3,
+          child: Center(
             child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: _showControls ? 160 : 40,
-                vertical: 20,
-              ),
+              padding: const EdgeInsets.all(8),
               child: GameDisplay(
                 emulator: emulator,
                 maintainAspectRatio: settings.maintainAspectRatio,
@@ -123,79 +270,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          
-          // FPS overlay
-          if (settings.showFps)
-            FpsOverlay(fps: emulator.currentFps),
-          
-          // Virtual gamepad
-          if (_showControls)
-            Positioned.fill(
-              child: VirtualGamepad(
-                onKeysChanged: emulator.setKeys,
-                opacity: settings.gamepadOpacity,
-                scale: settings.gamepadScale,
-                enableVibration: settings.enableVibration,
-              ),
-            ),
-          
-          // Menu button
-          Positioned(
-            top: 8,
-            left: 8,
-            child: _MenuButton(
-              onTap: _toggleMenu,
-            ),
+        ),
+        
+        // Right side controls (A/B buttons area)
+        if (_showControls)
+          Expanded(
+            flex: 2,
+            child: Container(),
           ),
-          
-          // In-game menu overlay
-          if (_showMenu)
-            _InGameMenu(
-              game: widget.game,
-              onResume: _toggleMenu,
-              onReset: () {
-                emulator.reset();
-                _toggleMenu();
-              },
-              onSaveState: (slot) async {
-                final success = await emulator.saveState(slot);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                success 
-                    ? 'State saved to slot $slot' 
-                    : 'Failed to save state',
-              ),
-              duration: const Duration(seconds: 1),
-            ),
-          );
-        }
-              },
-              onLoadState: (slot) async {
-                final success = await emulator.loadState(slot);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                success 
-                    ? 'State loaded from slot $slot' 
-                    : 'Failed to load state',
-              ),
-              duration: const Duration(seconds: 1),
-            ),
-          );
-          if (success) _toggleMenu();
-        }
-              },
-              onToggleControls: () {
-                setState(() => _showControls = !_showControls);
-              },
-              showControls: _showControls,
-              onExit: _exitGame,
-            ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -261,15 +344,16 @@ class _InGameMenu extends StatelessWidget {
           child: GestureDetector(
             onTap: () {}, // Prevent tap through
             child: Container(
-              width: 340,
-              padding: const EdgeInsets.all(24),
+              width: 320,
+              margin: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: YageColors.surface,
                 borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: YageColors.primary.withAlpha(77),
-                width: 2,
-              ),
+                border: Border.all(
+                  color: YageColors.primary.withAlpha(77),
+                  width: 2,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: YageColors.primary.withAlpha(51),
@@ -278,84 +362,86 @@ class _InGameMenu extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Title
-                  Text(
-                    'PAUSED',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: YageColors.accent,
-                      letterSpacing: 4,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    game.name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: YageColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 24),
-                  
-                  // Resume button
-                  _MenuActionButton(
-                    icon: Icons.play_arrow,
-                    label: 'Resume',
-                    onTap: onResume,
-                    isPrimary: true,
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Save/Load states
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _MenuActionButton(
-                          icon: Icons.save,
-                          label: 'Save State',
-                          onTap: () => _showStateSlots(context, true),
-                        ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Title
+                    const Text(
+                      'PAUSED',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: YageColors.accent,
+                        letterSpacing: 4,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _MenuActionButton(
-                          icon: Icons.upload_file,
-                          label: 'Load State',
-                          onTap: () => _showStateSlots(context, false),
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      game.name,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: YageColors.textSecondary,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Other options
-                  _MenuActionButton(
-                    icon: showControls ? Icons.gamepad : Icons.gamepad_outlined,
-                    label: showControls ? 'Hide Controls' : 'Show Controls',
-                    onTap: onToggleControls,
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  _MenuActionButton(
-                    icon: Icons.refresh,
-                    label: 'Reset',
-                    onTap: onReset,
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  _MenuActionButton(
-                    icon: Icons.exit_to_app,
-                    label: 'Exit Game',
-                    onTap: onExit,
-                    isDestructive: true,
-                  ),
-                ],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // Resume button
+                    _MenuActionButton(
+                      icon: Icons.play_arrow,
+                      label: 'Resume',
+                      onTap: onResume,
+                      isPrimary: true,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    // Save/Load states
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _MenuActionButton(
+                            icon: Icons.save,
+                            label: 'Save',
+                            onTap: () => _showStateSlots(context, true),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _MenuActionButton(
+                            icon: Icons.upload_file,
+                            label: 'Load',
+                            onTap: () => _showStateSlots(context, false),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    // Other options
+                    _MenuActionButton(
+                      icon: showControls ? Icons.gamepad : Icons.gamepad_outlined,
+                      label: showControls ? 'Hide Controls' : 'Show Controls',
+                      onTap: onToggleControls,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    _MenuActionButton(
+                      icon: Icons.refresh,
+                      label: 'Reset',
+                      onTap: onReset,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    _MenuActionButton(
+                      icon: Icons.exit_to_app,
+                      label: 'Exit Game',
+                      onTap: onExit,
+                      isDestructive: true,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -488,4 +574,3 @@ class _MenuActionButton extends StatelessWidget {
     );
   }
 }
-

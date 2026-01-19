@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/mgba_bindings.dart';
+import '../core/mgba_stub.dart';
 import '../models/game_rom.dart';
 import '../models/emulator_settings.dart';
 
@@ -20,9 +21,12 @@ enum EmulatorState {
 }
 
 /// Emulator service managing the mGBA core lifecycle
+/// Falls back to stub implementation if native library unavailable
 class EmulatorService extends ChangeNotifier {
   final MGBABindings _bindings = MGBABindings();
   MGBACore? _core;
+  MGBAStub? _stub; // Fallback stub for testing
+  bool _useStub = false;
   
   EmulatorState _state = EmulatorState.uninitialized;
   GameRom? _currentRom;
@@ -47,42 +51,60 @@ class EmulatorService extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   double get currentFps => _currentFps;
   bool get isRunning => _state == EmulatorState.running;
-  int get screenWidth => _core?.width ?? 240;
-  int get screenHeight => _core?.height ?? 160;
-  GamePlatform get platform => _core?.platform ?? GamePlatform.unknown;
+  bool get isUsingStub => _useStub;
+  
+  int get screenWidth {
+    if (_useStub) return _stub?.width ?? 240;
+    return _core?.width ?? 240;
+  }
+  
+  int get screenHeight {
+    if (_useStub) return _stub?.height ?? 160;
+    return _core?.height ?? 160;
+  }
+  
+  GamePlatform get platform {
+    if (_useStub) return _stub?.platform ?? GamePlatform.unknown;
+    return _core?.platform ?? GamePlatform.unknown;
+  }
 
   /// Initialize the emulator service
   Future<bool> initialize() async {
     if (_state != EmulatorState.uninitialized) return true;
 
     try {
-      if (!_bindings.load()) {
-        _errorMessage = 'Failed to load mGBA library';
-        _state = EmulatorState.error;
-        notifyListeners();
-        return false;
+      // Try to load native library first
+      if (_bindings.load()) {
+        _core = MGBACore(_bindings);
+        if (_core!.initialize()) {
+          final saveDir = await _getSaveDirectory();
+          _core!.setSaveDir(saveDir);
+          _useStub = false;
+          _state = EmulatorState.ready;
+          notifyListeners();
+          return true;
+        }
       }
-
-      _core = MGBACore(_bindings);
-      if (!_core!.initialize()) {
-        _errorMessage = 'Failed to initialize mGBA core';
-        _state = EmulatorState.error;
-        notifyListeners();
-        return false;
-      }
-
-      // Set up save directory
-      final saveDir = await _getSaveDirectory();
-      _core!.setSaveDir(saveDir);
-
+      
+      // Fall back to stub implementation
+      debugPrint('Native mGBA library not available, using stub for UI testing');
+      _stub = MGBAStub();
+      _stub!.initialize();
+      _useStub = true;
       _state = EmulatorState.ready;
+      _errorMessage = 'Running in demo mode (native library not found)';
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = 'Initialization error: $e';
-      _state = EmulatorState.error;
+      // Final fallback to stub
+      debugPrint('Error initializing: $e, falling back to stub');
+      _stub = MGBAStub();
+      _stub!.initialize();
+      _useStub = true;
+      _state = EmulatorState.ready;
+      _errorMessage = 'Running in demo mode';
       notifyListeners();
-      return false;
+      return true;
     }
   }
 
@@ -97,12 +119,20 @@ class EmulatorService extends ChangeNotifier {
 
   /// Load a ROM file
   Future<bool> loadRom(GameRom rom) async {
-    if (_core == null) {
+    if (_state == EmulatorState.uninitialized) {
       if (!await initialize()) return false;
     }
 
     try {
-      // Load BIOS if available
+      if (_useStub) {
+        _stub!.loadROM(rom.path);
+        _currentRom = rom.copyWith(lastPlayed: DateTime.now());
+        _state = EmulatorState.paused;
+        notifyListeners();
+        return true;
+      }
+      
+      // Native path
       final biosPath = _getBiosPath(rom.platform);
       if (biosPath != null && File(biosPath).existsSync()) {
         _core!.loadBIOS(biosPath);
@@ -136,7 +166,9 @@ class EmulatorService extends ChangeNotifier {
 
   /// Start emulation
   void start() {
-    if (_state != EmulatorState.paused || _core == null) return;
+    if (_state != EmulatorState.paused) return;
+    if (!_useStub && _core == null) return;
+    if (_useStub && _stub == null) return;
 
     _state = EmulatorState.running;
     _frameStopwatch = Stopwatch()..start();
@@ -166,7 +198,11 @@ class EmulatorService extends ChangeNotifier {
 
   /// Reset the emulator
   void reset() {
-    _core?.reset();
+    if (_useStub) {
+      _stub?.reset();
+    } else {
+      _core?.reset();
+    }
     if (_state == EmulatorState.paused) {
       _runSingleFrame();
     }
@@ -183,23 +219,30 @@ class EmulatorService extends ChangeNotifier {
   }
 
   void _runFrame() {
-    if (_core == null || !_core!.isRunning) return;
+    if (_useStub) {
+      if (_stub == null || !_stub!.isRunning) return;
+      _stub!.runFrame();
+      _frameCount++;
+      
+      final pixels = _stub!.getVideoBuffer();
+      if (pixels != null && onFrame != null) {
+        onFrame!(pixels, _stub!.width, _stub!.height);
+      }
+    } else {
+      if (_core == null || !_core!.isRunning) return;
+      _core!.runFrame();
+      _frameCount++;
 
-    // Run the frame
-    _core!.runFrame();
-    _frameCount++;
+      final pixels = _core!.getVideoBuffer();
+      if (pixels != null && onFrame != null) {
+        onFrame!(pixels, _core!.width, _core!.height);
+      }
 
-    // Get video output
-    final pixels = _core!.getVideoBuffer();
-    if (pixels != null && onFrame != null) {
-      onFrame!(pixels, _core!.width, _core!.height);
-    }
-
-    // Get audio output
-    if (_settings.enableSound) {
-      final (audioData, samples) = _core!.getAudioBuffer();
-      if (audioData != null && samples > 0 && onAudio != null) {
-        onAudio!(audioData, samples);
+      if (_settings.enableSound) {
+        final (audioData, samples) = _core!.getAudioBuffer();
+        if (audioData != null && samples > 0 && onAudio != null) {
+          onAudio!(audioData, samples);
+        }
       }
     }
 
@@ -217,38 +260,66 @@ class EmulatorService extends ChangeNotifier {
   }
 
   void _runSingleFrame() {
-    if (_core == null || !_core!.isRunning) return;
-
-    _core!.runFrame();
-    final pixels = _core!.getVideoBuffer();
-    if (pixels != null && onFrame != null) {
-      onFrame!(pixels, _core!.width, _core!.height);
+    if (_useStub) {
+      if (_stub == null || !_stub!.isRunning) return;
+      _stub!.runFrame();
+      final pixels = _stub!.getVideoBuffer();
+      if (pixels != null && onFrame != null) {
+        onFrame!(pixels, _stub!.width, _stub!.height);
+      }
+    } else {
+      if (_core == null || !_core!.isRunning) return;
+      _core!.runFrame();
+      final pixels = _core!.getVideoBuffer();
+      if (pixels != null && onFrame != null) {
+        onFrame!(pixels, _core!.width, _core!.height);
+      }
     }
   }
 
   /// Set key states
   void setKeys(int keys) {
-    _core?.setKeys(keys);
+    if (_useStub) {
+      _stub?.setKeys(keys);
+    } else {
+      _core?.setKeys(keys);
+    }
   }
 
   /// Press a key
   void pressKey(int key) {
-    _core?.pressKey(key);
+    if (_useStub) {
+      _stub?.pressKey(key);
+    } else {
+      _core?.pressKey(key);
+    }
   }
 
   /// Release a key
   void releaseKey(int key) {
-    _core?.releaseKey(key);
+    if (_useStub) {
+      _stub?.releaseKey(key);
+    } else {
+      _core?.releaseKey(key);
+    }
   }
 
   /// Save state to slot
   Future<bool> saveState(int slot) async {
+    if (_useStub) return _stub?.saveState(slot) ?? false;
     if (_core == null) return false;
     return _core!.saveState(slot);
   }
 
   /// Load state from slot
   Future<bool> loadState(int slot) async {
+    if (_useStub) {
+      final success = _stub?.loadState(slot) ?? false;
+      if (success && _state == EmulatorState.paused) {
+        _runSingleFrame();
+      }
+      return success;
+    }
     if (_core == null) return false;
     final success = _core!.loadState(slot);
     if (success && _state == EmulatorState.paused) {
@@ -267,8 +338,13 @@ class EmulatorService extends ChangeNotifier {
   void stop() {
     _frameTimer?.cancel();
     _frameTimer = null;
-    _core?.dispose();
-    _core = null;
+    if (_useStub) {
+      _stub?.dispose();
+      _stub = null;
+    } else {
+      _core?.dispose();
+      _core = null;
+    }
     _currentRom = null;
     _state = EmulatorState.uninitialized;
     _frameCount = 0;
@@ -279,8 +355,8 @@ class EmulatorService extends ChangeNotifier {
   @override
   void dispose() {
     _frameTimer?.cancel();
+    _stub?.dispose();
     _core?.dispose();
     super.dispose();
   }
 }
-
