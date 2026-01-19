@@ -225,12 +225,10 @@ int yage_core_init(YageCore* core) {
 #ifdef _WIN32
     core->lib = LOAD_LIBRARY("mgba_libretro.dll");
 #elif defined(__ANDROID__)
+    /* Try the standard Android libretro naming */
     core->lib = LOAD_LIBRARY("libmgba_libretro_android.so");
-    if (!core->lib) {
-        core->lib = LOAD_LIBRARY("libmgba_libretro.so");
-    }
 #else
-    core->lib = LOAD_LIBRARY("mgba_libretro.so");
+    core->lib = LOAD_LIBRARY("libmgba_libretro.so");
 #endif
     
     if (!core->lib) {
