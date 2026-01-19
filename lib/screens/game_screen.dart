@@ -23,6 +23,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _showControls = true;
   bool _showMenu = false;
   bool _isLandscape = false;
+  
+  // Use a key to preserve GameDisplay state across orientation changes
+  final _gameDisplayKey = GlobalKey();
 
   @override
   void initState() {
@@ -103,6 +106,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final emulator = context.watch<EmulatorService>();
     final settings = context.watch<SettingsService>().settings;
     
+    // Create the game display once with a key to preserve it across rebuilds
+    final gameDisplay = GameDisplay(
+      key: _gameDisplayKey,
+      emulator: emulator,
+      maintainAspectRatio: settings.maintainAspectRatio,
+      enableFiltering: settings.enableFiltering,
+    );
+    
     return Scaffold(
       backgroundColor: YageColors.backgroundDark,
       body: OrientationBuilder(
@@ -128,8 +139,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Main content - different layout for portrait vs landscape
               SafeArea(
                 child: _isLandscape
-                    ? _buildLandscapeLayout(emulator, settings)
-                    : _buildPortraitLayout(emulator, settings),
+                    ? _buildLandscapeLayout(emulator, settings, gameDisplay)
+                    : _buildPortraitLayout(emulator, settings, gameDisplay),
               ),
               
               // FPS overlay
@@ -223,7 +234,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   /// Portrait layout: Game on top, controls on bottom
-  Widget _buildPortraitLayout(EmulatorService emulator, settings) {
+  Widget _buildPortraitLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     return Column(
       children: [
         const SizedBox(height: 50), // Space for menu button
@@ -231,11 +242,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         // Game display - centered at top
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GameDisplay(
-            emulator: emulator,
-            maintainAspectRatio: settings.maintainAspectRatio,
-            enableFiltering: settings.enableFiltering,
-          ),
+          child: gameDisplay,
         ),
         
         const SizedBox(height: 16),
@@ -255,18 +262,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   /// Landscape layout: Game centered, controls on sides
-  Widget _buildLandscapeLayout(EmulatorService emulator, settings) {
+  Widget _buildLandscapeLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     return Stack(
       children: [
         // Game display - centered and larger
         Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 120, vertical: 8),
-            child: GameDisplay(
-              emulator: emulator,
-              maintainAspectRatio: settings.maintainAspectRatio,
-              enableFiltering: settings.enableFiltering,
-            ),
+            child: gameDisplay,
           ),
         ),
         

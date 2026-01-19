@@ -31,22 +31,35 @@ class _GameDisplayState extends State<GameDisplay> {
   @override
   void initState() {
     super.initState();
-    widget.emulator.onFrame = _onFrame;
+    _registerCallback();
   }
 
   @override
   void didUpdateWidget(GameDisplay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.emulator != widget.emulator) {
-      oldWidget.emulator.onFrame = null;
-      widget.emulator.onFrame = _onFrame;
-    }
+    // Always re-register callback to handle orientation changes
+    _registerCallback();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-register after orientation change
+    _registerCallback();
+  }
+  
+  void _registerCallback() {
+    // Ensure our callback is always registered
+    widget.emulator.onFrame = _onFrame;
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    widget.emulator.onFrame = null;
+    // Only clear if we're the current callback
+    if (widget.emulator.onFrame == _onFrame) {
+      widget.emulator.onFrame = null;
+    }
     _frameImage?.dispose();
     super.dispose();
   }
