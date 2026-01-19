@@ -159,34 +159,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               },
               onSaveState: (slot) async {
                 final success = await emulator.saveState(slot);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        success 
-                            ? 'State saved to slot $slot' 
-                            : 'Failed to save state',
-                      ),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                }
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                success 
+                    ? 'State saved to slot $slot' 
+                    : 'Failed to save state',
+              ),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        }
               },
               onLoadState: (slot) async {
                 final success = await emulator.loadState(slot);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        success 
-                            ? 'State loaded from slot $slot' 
-                            : 'Failed to load state',
-                      ),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                }
-                if (success) _toggleMenu();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                success 
+                    ? 'State loaded from slot $slot' 
+                    : 'Failed to load state',
+              ),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+          if (success) _toggleMenu();
+        }
               },
               onToggleControls: () {
                 setState(() => _showControls = !_showControls);
@@ -213,7 +213,7 @@ class _MenuButton extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: YageColors.surface.withOpacity(0.8),
+          color: YageColors.surface.withAlpha(204),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: YageColors.surfaceLight,
@@ -256,7 +256,7 @@ class _InGameMenu extends StatelessWidget {
     return GestureDetector(
       onTap: onResume,
       child: Container(
-        color: Colors.black54,
+        color: Colors.black.withAlpha(138),
         child: Center(
           child: GestureDetector(
             onTap: () {}, // Prevent tap through
@@ -266,13 +266,13 @@ class _InGameMenu extends StatelessWidget {
               decoration: BoxDecoration(
                 color: YageColors.surface,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: YageColors.primary.withOpacity(0.3),
-                  width: 2,
-                ),
+              border: Border.all(
+                color: YageColors.primary.withAlpha(77),
+                width: 2,
+              ),
                 boxShadow: [
                   BoxShadow(
-                    color: YageColors.primary.withOpacity(0.2),
+                    color: YageColors.primary.withAlpha(51),
                     blurRadius: 30,
                     spreadRadius: 5,
                   ),
@@ -445,7 +445,7 @@ class _MenuActionButton extends StatelessWidget {
     final bgColor = isPrimary 
         ? YageColors.primary 
         : isDestructive 
-            ? YageColors.error.withOpacity(0.2) 
+            ? YageColors.error.withAlpha(51) 
             : YageColors.backgroundLight;
     
     final fgColor = isPrimary 

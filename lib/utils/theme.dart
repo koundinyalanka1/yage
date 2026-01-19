@@ -244,7 +244,7 @@ class YageTheme {
         activeTrackColor: YageColors.primary,
         inactiveTrackColor: YageColors.surfaceLight,
         thumbColor: YageColors.accent,
-        overlayColor: YageColors.accent.withOpacity(0.2),
+        overlayColor: YageColors.accent.withAlpha(51),
         trackHeight: 4,
       ),
       

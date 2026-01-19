@@ -288,7 +288,7 @@ class _DPadButton extends StatelessWidget {
             ? []
             : [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withAlpha(77),
                   offset: const Offset(0, 2),
                   blurRadius: 4,
                 ),
@@ -385,8 +385,8 @@ class _CircleButtonState extends State<_CircleButton> {
         height: 70,
         decoration: BoxDecoration(
           color: _isPressed 
-              ? widget.color.withOpacity(0.8)
-              : widget.color.withOpacity(0.6),
+              ? widget.color.withAlpha(204)
+              : widget.color.withAlpha(153),
           shape: BoxShape.circle,
           border: Border.all(
             color: widget.color,
@@ -396,12 +396,12 @@ class _CircleButtonState extends State<_CircleButton> {
               ? []
               : [
                   BoxShadow(
-                    color: widget.color.withOpacity(0.4),
+                    color: widget.color.withAlpha(102),
                     blurRadius: 12,
                     spreadRadius: 2,
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withAlpha(77),
                     offset: const Offset(0, 3),
                     blurRadius: 6,
                   ),
@@ -415,7 +415,7 @@ class _CircleButtonState extends State<_CircleButton> {
               fontWeight: FontWeight.bold,
               color: _isPressed 
                   ? YageColors.backgroundDark 
-                  : YageColors.backgroundDark.withOpacity(0.9),
+                  : YageColors.backgroundDark.withAlpha(230),
             ),
           ),
         ),
@@ -472,7 +472,7 @@ class _ShoulderButtonState extends State<_ShoulderButton> {
               ? []
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withAlpha(77),
                     offset: const Offset(0, 2),
                     blurRadius: 4,
                   ),

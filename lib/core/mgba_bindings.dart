@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 
 /// Native type definitions for mGBA core
 typedef NativeCore = Pointer<Void>;
@@ -132,7 +133,7 @@ class MGBABindings {
       _isLoaded = true;
       return true;
     } catch (e) {
-      print('Failed to load mGBA library: $e');
+      debugPrint('Failed to load mGBA library: $e');
       return false;
     }
   }

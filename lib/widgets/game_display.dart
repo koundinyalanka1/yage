@@ -86,13 +86,13 @@ class _GameDisplayState extends State<GameDisplay> {
       decoration: BoxDecoration(
         color: YageColors.backgroundDark,
         border: Border.all(
-          color: YageColors.primary.withOpacity(0.3),
+          color: YageColors.primary.withAlpha(77),
           width: 2,
         ),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: YageColors.primary.withOpacity(0.2),
+            color: YageColors.primary.withAlpha(51),
             blurRadius: 20,
             spreadRadius: 2,
           ),
@@ -135,7 +135,7 @@ class _GameDisplayState extends State<GameDisplay> {
             Icon(
               Icons.videogame_asset,
               size: 64,
-              color: YageColors.primary.withOpacity(0.5),
+              color: YageColors.primary.withAlpha(128),
             ),
             const SizedBox(height: 16),
             Text(
@@ -143,7 +143,7 @@ class _GameDisplayState extends State<GameDisplay> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: YageColors.textMuted.withOpacity(0.5),
+                color: YageColors.textMuted.withAlpha(128),
                 letterSpacing: 4,
               ),
             ),
@@ -203,7 +203,7 @@ class FpsOverlay extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: YageColors.backgroundDark.withOpacity(0.8),
+          color: YageColors.backgroundDark.withAlpha(204),
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
             color: fps >= 55 

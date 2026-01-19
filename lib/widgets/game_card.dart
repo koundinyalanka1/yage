@@ -56,17 +56,17 @@ class GameCard extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: [
                   YageColors.surface,
-                  YageColors.surface.withOpacity(0.8),
+                  YageColors.surface.withAlpha(204),
                 ],
               ),
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: _platformColor.withOpacity(0.1),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+            boxShadow: [
+              BoxShadow(
+                color: _platformColor.withAlpha(26),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -80,8 +80,8 @@ class GameCard extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          _platformColor.withOpacity(0.3),
-                          _platformColor.withOpacity(0.1),
+                          _platformColor.withAlpha(77),
+                          _platformColor.withAlpha(26),
                         ],
                       ),
                       borderRadius: const BorderRadius.vertical(
@@ -94,7 +94,7 @@ class GameCard extends StatelessWidget {
                         Positioned.fill(
                           child: CustomPaint(
                             painter: _GridPatternPainter(
-                              color: _platformColor.withOpacity(0.1),
+                              color: _platformColor.withAlpha(26),
                             ),
                           ),
                         ),
@@ -104,7 +104,7 @@ class GameCard extends StatelessWidget {
                           child: Icon(
                             _platformIcon,
                             size: 48,
-                            color: _platformColor.withOpacity(0.8),
+                            color: _platformColor.withAlpha(204),
                           ),
                         ),
                         
@@ -259,10 +259,10 @@ class GameListTile extends StatelessWidget {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: _platformColor.withOpacity(0.2),
+          color: _platformColor.withAlpha(51),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: _platformColor.withOpacity(0.5),
+            color: _platformColor.withAlpha(128),
             width: 1,
           ),
         ),

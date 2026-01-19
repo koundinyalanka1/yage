@@ -88,7 +88,7 @@ class _FilterChip extends StatelessWidget {
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: color.withOpacity(0.4),
+                        color: color.withAlpha(102),
                         blurRadius: 8,
                         spreadRadius: 1,
                       ),

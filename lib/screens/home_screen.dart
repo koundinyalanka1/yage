@@ -140,7 +140,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: YageColors.primary.withOpacity(0.4),
+                        color: YageColors.primary.withAlpha(102),
                         blurRadius: 12,
                         spreadRadius: 1,
                       ),
@@ -361,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: games.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 4),
+      separatorBuilder: (context, index) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
         final game = games[index];
         return GameListTile(
@@ -382,19 +382,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: YageColors.surface,
-              shape: BoxShape.circle,
+            Container(
+              width: 100,
+              height: 100,
+              decoration: const BoxDecoration(
+                color: YageColors.surface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 48,
+                color: YageColors.primary.withAlpha(128),
+              ),
             ),
-            child: Icon(
-              icon,
-              size: 48,
-              color: YageColors.primary.withOpacity(0.5),
-            ),
-          ),
           const SizedBox(height: 24),
           Text(
             title,
