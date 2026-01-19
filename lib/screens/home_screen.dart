@@ -42,8 +42,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Future<void> _addRomFile() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['gba', 'gb', 'gbc', 'sgb'],
+      type: FileType.any,
       allowMultiple: true,
     );
 

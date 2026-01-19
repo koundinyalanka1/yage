@@ -228,8 +228,7 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _selectBios(BuildContext context, String platform) async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['bin', 'rom', 'bios'],
+      type: FileType.any,
     );
 
     if (result != null && result.files.single.path != null && context.mounted) {
