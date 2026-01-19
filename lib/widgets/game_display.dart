@@ -51,8 +51,32 @@ class _GameDisplayState extends State<GameDisplay> {
     super.dispose();
   }
 
-  void _onFrame(Uint8List pixels, int width, int height) async {
+  Uint8List? _pendingPixels;
+  int _pendingWidth = 0;
+  int _pendingHeight = 0;
+  bool _decoding = false;
+
+  void _onFrame(Uint8List pixels, int width, int height) {
     if (_isDisposed) return;
+
+    // Store latest frame data (skip if already decoding to prevent backup)
+    _pendingPixels = pixels;
+    _pendingWidth = width;
+    _pendingHeight = height;
+    
+    if (!_decoding) {
+      _decodeFrame();
+    }
+  }
+  
+  void _decodeFrame() async {
+    if (_isDisposed || _pendingPixels == null) return;
+    
+    _decoding = true;
+    final pixels = _pendingPixels!;
+    final width = _pendingWidth;
+    final height = _pendingHeight;
+    _pendingPixels = null;
 
     // Create image from pixel data
     final completer = Completer<ui.Image>();
@@ -68,6 +92,7 @@ class _GameDisplayState extends State<GameDisplay> {
     
     if (_isDisposed) {
       newImage.dispose();
+      _decoding = false;
       return;
     }
 
@@ -78,6 +103,13 @@ class _GameDisplayState extends State<GameDisplay> {
       });
     }
     oldImage?.dispose();
+    
+    _decoding = false;
+    
+    // If another frame came in while decoding, process it
+    if (_pendingPixels != null) {
+      _decodeFrame();
+    }
   }
 
   @override

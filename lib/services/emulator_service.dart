@@ -210,13 +210,35 @@ class EmulatorService extends ChangeNotifier {
 
   void _startFrameLoop() {
     _frameTimer?.cancel();
+    _lastFrameTime = DateTime.now();
+    _frameAccumulator = Duration.zero;
     
-    // Use a timer for frame pacing
-    _frameTimer = Timer.periodic(_targetFrameTime, (_) {
+    // Use a fast timer and accumulator for precise frame pacing
+    _frameTimer = Timer.periodic(const Duration(milliseconds: 1), (_) {
       if (_state != EmulatorState.running) return;
-      _runFrame();
+      
+      final now = DateTime.now();
+      final elapsed = now.difference(_lastFrameTime);
+      _lastFrameTime = now;
+      _frameAccumulator += elapsed;
+      
+      // Run frames to catch up, but limit to avoid spiral of death
+      int framesRun = 0;
+      while (_frameAccumulator >= _targetFrameTime && framesRun < 3) {
+        _runFrame();
+        _frameAccumulator -= _targetFrameTime;
+        framesRun++;
+      }
+      
+      // If we're way behind, reset accumulator
+      if (_frameAccumulator > _targetFrameTime * 5) {
+        _frameAccumulator = Duration.zero;
+      }
     });
   }
+  
+  DateTime _lastFrameTime = DateTime.now();
+  Duration _frameAccumulator = Duration.zero;
 
   void _runFrame() {
     if (_useStub) {
@@ -237,13 +259,9 @@ class EmulatorService extends ChangeNotifier {
       if (pixels != null && onFrame != null) {
         onFrame!(pixels, _core!.width, _core!.height);
       }
-
-      if (_settings.enableSound) {
-        final (audioData, samples) = _core!.getAudioBuffer();
-        if (audioData != null && samples > 0 && onAudio != null) {
-          onAudio!(audioData, samples);
-        }
-      }
+      
+      // Note: Audio is now handled natively by OpenSL ES on Android
+      // No need to process audio buffer in Dart
     }
 
     // Calculate FPS

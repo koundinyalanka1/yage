@@ -23,6 +23,20 @@ typedef HMODULE LibHandle;
 typedef void* LibHandle;
 #endif
 
+#ifdef __ANDROID__
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
+#include <android/log.h>
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "YAGE", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "YAGE", __VA_ARGS__)
+#else
+#define LOGI(...) do { printf("[YAGE] "); printf(__VA_ARGS__); printf("\n"); } while(0)
+#define LOGE(...) do { printf("[YAGE ERROR] "); printf(__VA_ARGS__); printf("\n"); } while(0)
+#endif
+
+/* Suppress excessive logging after initial frames */
+static int g_log_frame_count = 0;
+
 /* Libretro types */
 typedef void (*retro_init_t)(void);
 typedef void (*retro_deinit_t)(void);
@@ -91,6 +105,192 @@ static int g_audio_samples = 0;
 static int g_width = GBA_WIDTH;
 static int g_height = GBA_HEIGHT;
 static uint32_t g_keys = 0;
+static int g_pixel_format = RETRO_PIXEL_FORMAT_RGB565; /* Default format */
+
+#ifdef __ANDROID__
+/* OpenSL ES audio state */
+#define AUDIO_BUFFERS 2
+#define AUDIO_BUFFER_FRAMES 2048
+
+static SLObjectItf g_sl_engine = NULL;
+static SLEngineItf g_sl_engine_itf = NULL;
+static SLObjectItf g_sl_output_mix = NULL;
+static SLObjectItf g_sl_player = NULL;
+static SLPlayItf g_sl_play_itf = NULL;
+static SLAndroidSimpleBufferQueueItf g_sl_buffer_queue = NULL;
+
+static int16_t* g_sl_buffers[AUDIO_BUFFERS] = {NULL, NULL};
+static int g_sl_buffer_index = 0;
+static int g_sl_initialized = 0;
+
+/* Ring buffer for audio */
+#define RING_BUFFER_SIZE (32768)
+static int16_t g_ring_buffer[RING_BUFFER_SIZE];
+static volatile int g_ring_read = 0;
+static volatile int g_ring_write = 0;
+
+static void sl_buffer_callback(SLAndroidSimpleBufferQueueItf bq, void* context) {
+    (void)context;
+    
+    int16_t* buffer = g_sl_buffers[g_sl_buffer_index];
+    g_sl_buffer_index = (g_sl_buffer_index + 1) % AUDIO_BUFFERS;
+    
+    /* Fill buffer from ring buffer */
+    int samples_needed = AUDIO_BUFFER_FRAMES * 2; /* Stereo */
+    for (int i = 0; i < samples_needed; i++) {
+        if (g_ring_read != g_ring_write) {
+            buffer[i] = g_ring_buffer[g_ring_read];
+            g_ring_read = (g_ring_read + 1) % RING_BUFFER_SIZE;
+        } else {
+            buffer[i] = 0; /* Silence if underrun */
+        }
+    }
+    
+    (*bq)->Enqueue(bq, buffer, samples_needed * sizeof(int16_t));
+}
+
+static int init_opensl_audio(void) {
+    SLresult result;
+    
+    /* Create engine */
+    result = slCreateEngine(&g_sl_engine, 0, NULL, 0, NULL, NULL);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to create OpenSL engine");
+        return -1;
+    }
+    
+    result = (*g_sl_engine)->Realize(g_sl_engine, SL_BOOLEAN_FALSE);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to realize OpenSL engine");
+        return -1;
+    }
+    
+    result = (*g_sl_engine)->GetInterface(g_sl_engine, SL_IID_ENGINE, &g_sl_engine_itf);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to get engine interface");
+        return -1;
+    }
+    
+    /* Create output mix */
+    result = (*g_sl_engine_itf)->CreateOutputMix(g_sl_engine_itf, &g_sl_output_mix, 0, NULL, NULL);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to create output mix");
+        return -1;
+    }
+    
+    result = (*g_sl_output_mix)->Realize(g_sl_output_mix, SL_BOOLEAN_FALSE);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to realize output mix");
+        return -1;
+    }
+    
+    /* Configure audio source */
+    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {
+        SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
+        AUDIO_BUFFERS
+    };
+    
+    SLDataFormat_PCM format_pcm = {
+        SL_DATAFORMAT_PCM,
+        2,                           /* Stereo */
+        SL_SAMPLINGRATE_32,          /* 32kHz (GBA native rate) */
+        SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT,
+        SL_BYTEORDER_LITTLEENDIAN
+    };
+    
+    SLDataSource audio_src = {&loc_bufq, &format_pcm};
+    
+    /* Configure audio sink */
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, g_sl_output_mix};
+    SLDataSink audio_sink = {&loc_outmix, NULL};
+    
+    /* Create player */
+    const SLInterfaceID ids[] = {SL_IID_BUFFERQUEUE};
+    const SLboolean req[] = {SL_BOOLEAN_TRUE};
+    
+    result = (*g_sl_engine_itf)->CreateAudioPlayer(g_sl_engine_itf, &g_sl_player,
+        &audio_src, &audio_sink, 1, ids, req);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to create audio player");
+        return -1;
+    }
+    
+    result = (*g_sl_player)->Realize(g_sl_player, SL_BOOLEAN_FALSE);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to realize audio player");
+        return -1;
+    }
+    
+    result = (*g_sl_player)->GetInterface(g_sl_player, SL_IID_PLAY, &g_sl_play_itf);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to get play interface");
+        return -1;
+    }
+    
+    result = (*g_sl_player)->GetInterface(g_sl_player, SL_IID_BUFFERQUEUE, &g_sl_buffer_queue);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to get buffer queue interface");
+        return -1;
+    }
+    
+    /* Allocate buffers */
+    for (int i = 0; i < AUDIO_BUFFERS; i++) {
+        g_sl_buffers[i] = (int16_t*)calloc(AUDIO_BUFFER_FRAMES * 2, sizeof(int16_t));
+        if (!g_sl_buffers[i]) {
+            LOGE("Failed to allocate audio buffer");
+            return -1;
+        }
+    }
+    
+    /* Register callback */
+    result = (*g_sl_buffer_queue)->RegisterCallback(g_sl_buffer_queue, sl_buffer_callback, NULL);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to register callback");
+        return -1;
+    }
+    
+    /* Start playback */
+    result = (*g_sl_play_itf)->SetPlayState(g_sl_play_itf, SL_PLAYSTATE_PLAYING);
+    if (result != SL_RESULT_SUCCESS) {
+        LOGE("Failed to start playback");
+        return -1;
+    }
+    
+    /* Queue initial buffers */
+    for (int i = 0; i < AUDIO_BUFFERS; i++) {
+        (*g_sl_buffer_queue)->Enqueue(g_sl_buffer_queue, g_sl_buffers[i], 
+            AUDIO_BUFFER_FRAMES * 2 * sizeof(int16_t));
+    }
+    
+    LOGI("OpenSL ES audio initialized");
+    g_sl_initialized = 1;
+    return 0;
+}
+
+static void shutdown_opensl_audio(void) {
+    if (g_sl_player) {
+        (*g_sl_player)->Destroy(g_sl_player);
+        g_sl_player = NULL;
+    }
+    if (g_sl_output_mix) {
+        (*g_sl_output_mix)->Destroy(g_sl_output_mix);
+        g_sl_output_mix = NULL;
+    }
+    if (g_sl_engine) {
+        (*g_sl_engine)->Destroy(g_sl_engine);
+        g_sl_engine = NULL;
+    }
+    for (int i = 0; i < AUDIO_BUFFERS; i++) {
+        if (g_sl_buffers[i]) {
+            free(g_sl_buffers[i]);
+            g_sl_buffers[i] = NULL;
+        }
+    }
+    g_sl_initialized = 0;
+}
+#endif /* __ANDROID__ */
 
 struct YageCore {
     LibHandle lib;
@@ -132,12 +332,84 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
     g_width = width;
     g_height = height;
     
-    /* Copy video data - assuming XRGB8888 format */
-    const uint32_t* src = (const uint32_t*)data;
-    size_t src_pitch = pitch / sizeof(uint32_t);
+    /* Log only first few frames to avoid spam */
+    if (g_log_frame_count < 5) {
+        LOGI("Video: %ux%u, pitch=%zu, format=%d", width, height, pitch, g_pixel_format);
+        g_log_frame_count++;
+    }
     
-    for (unsigned y = 0; y < height; y++) {
-        memcpy(&g_video_buffer[y * width], &src[y * src_pitch], width * sizeof(uint32_t));
+    if (g_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
+        /* XRGB8888: 32-bit per pixel, pitch is in bytes */
+        const uint8_t* src = (const uint8_t*)data;
+        
+        for (unsigned y = 0; y < height; y++) {
+            const uint32_t* row = (const uint32_t*)(src + y * pitch);
+            memcpy(&g_video_buffer[y * width], row, width * sizeof(uint32_t));
+        }
+    } else if (g_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
+        /* RGB565: 16-bit per pixel, pitch is in bytes */
+        const uint8_t* src = (const uint8_t*)data;
+        
+        for (unsigned y = 0; y < height; y++) {
+            const uint16_t* row = (const uint16_t*)(src + y * pitch);
+            for (unsigned x = 0; x < width; x++) {
+                uint16_t pixel = row[x];
+                /* RGB565: RRRRRGGGGGGBBBBB */
+                uint8_t r = (pixel >> 11) & 0x1F;
+                uint8_t g = (pixel >> 5) & 0x3F;
+                uint8_t b = pixel & 0x1F;
+                /* Expand to 8-bit */
+                r = (r << 3) | (r >> 2);
+                g = (g << 2) | (g >> 4);
+                b = (b << 3) | (b >> 2);
+                g_video_buffer[y * width + x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    } else if (g_pixel_format == RETRO_PIXEL_FORMAT_0RGB1555) {
+        /* 0RGB1555: 16-bit per pixel, pitch is in bytes */
+        const uint8_t* src = (const uint8_t*)data;
+        
+        for (unsigned y = 0; y < height; y++) {
+            const uint16_t* row = (const uint16_t*)(src + y * pitch);
+            for (unsigned x = 0; x < width; x++) {
+                uint16_t pixel = row[x];
+                uint8_t r = (pixel >> 10) & 0x1F;
+                uint8_t g = (pixel >> 5) & 0x1F;
+                uint8_t b = pixel & 0x1F;
+                r = (r << 3) | (r >> 2);
+                g = (g << 3) | (g >> 2);
+                b = (b << 3) | (b >> 2);
+                g_video_buffer[y * width + x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    } else {
+        /* Unknown format - try to detect based on pitch */
+        LOGI("Unknown pixel format %d, trying auto-detect", g_pixel_format);
+        
+        /* If pitch suggests 32-bit pixels */
+        if (pitch >= width * 4) {
+            const uint8_t* src = (const uint8_t*)data;
+            for (unsigned y = 0; y < height; y++) {
+                const uint32_t* row = (const uint32_t*)(src + y * pitch);
+                memcpy(&g_video_buffer[y * width], row, width * sizeof(uint32_t));
+            }
+        } else {
+            /* Assume 16-bit RGB565 */
+            const uint8_t* src = (const uint8_t*)data;
+            for (unsigned y = 0; y < height; y++) {
+                const uint16_t* row = (const uint16_t*)(src + y * pitch);
+                for (unsigned x = 0; x < width; x++) {
+                    uint16_t pixel = row[x];
+                    uint8_t r = (pixel >> 11) & 0x1F;
+                    uint8_t g = (pixel >> 5) & 0x3F;
+                    uint8_t b = pixel & 0x1F;
+                    r = (r << 3) | (r >> 2);
+                    g = (g << 2) | (g >> 4);
+                    b = (b << 3) | (b >> 2);
+                    g_video_buffer[y * width + x] = (r << 16) | (g << 8) | b;
+                }
+            }
+        }
     }
 }
 
@@ -151,6 +423,20 @@ static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
     
     memcpy(g_audio_buffer, data, samples * sizeof(int16_t));
     g_audio_samples = frames;
+    
+#ifdef __ANDROID__
+    /* Push audio to ring buffer for OpenSL ES playback */
+    if (g_sl_initialized) {
+        for (size_t i = 0; i < samples; i++) {
+            int next_write = (g_ring_write + 1) % RING_BUFFER_SIZE;
+            if (next_write != g_ring_read) {
+                g_ring_buffer[g_ring_write] = data[i];
+                g_ring_write = next_write;
+            }
+            /* If buffer full, drop samples (avoid blocking) */
+        }
+    }
+#endif
     
     return frames;
 }
@@ -189,9 +475,41 @@ static int16_t input_state_callback(unsigned port, unsigned device, unsigned ind
 static bool environment_callback(unsigned cmd, void* data) {
     switch (cmd) {
         case 10: /* RETRO_ENVIRONMENT_SET_PIXEL_FORMAT */
-            /* Accept any pixel format */
+            if (data) {
+                int requested = *(int*)data;
+                LOGI("Core requested pixel format: %d", requested);
+                g_pixel_format = requested;
+            }
+            return true;
+        case 3: /* RETRO_ENVIRONMENT_GET_CAN_DUPE */
+            if (data) {
+                *(bool*)data = true;
+            }
+            return true;
+        case 6: /* RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL */
+            return true;
+        case 9: /* RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY */
+            if (data) {
+                *(const char**)data = ".";
+            }
+            return true;
+        case 15: /* RETRO_ENVIRONMENT_GET_VARIABLE */
+            return false;
+        case 16: /* RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE */
+            return false;
+        case 17: /* RETRO_ENVIRONMENT_SET_VARIABLES */
+            return true;
+        case 27: /* RETRO_ENVIRONMENT_GET_LOG_INTERFACE */
+            return false;
+        case 31: /* RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY */
+            if (data) {
+                *(const char**)data = ".";
+            }
+            return true;
+        case 40: /* RETRO_ENVIRONMENT_GET_INPUT_BITMASKS */
             return true;
         default:
+            LOGI("Unhandled env cmd: %u", cmd);
             return false;
     }
 }
@@ -283,11 +601,20 @@ int yage_core_init(YageCore* core) {
     core->retro_init();
     core->initialized = 1;
     
+#ifdef __ANDROID__
+    /* Initialize audio output */
+    init_opensl_audio();
+#endif
+    
     return 0;
 }
 
 void yage_core_destroy(YageCore* core) {
     if (!core) return;
+    
+#ifdef __ANDROID__
+    shutdown_opensl_audio();
+#endif
     
     if (core->game_loaded && core->retro_unload_game) {
         core->retro_unload_game();

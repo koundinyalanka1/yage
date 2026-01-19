@@ -20,7 +20,7 @@ endif()
 if(WIN32)
     # No additional libs needed - we load libretro dynamically
 elseif(ANDROID)
-    target_link_libraries(yage_core PRIVATE dl log)
+    target_link_libraries(yage_core PRIVATE dl log OpenSLES)
 else()
     target_link_libraries(yage_core PRIVATE dl)
 endif()
