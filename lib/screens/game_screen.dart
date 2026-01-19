@@ -248,35 +248,27 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Landscape layout: Game centered, controls on sides
   Widget _buildLandscapeLayout(EmulatorService emulator, settings) {
-    return Row(
+    return Stack(
       children: [
-        // Left side controls (D-pad area)
-        if (_showControls)
-          Expanded(
-            flex: 2,
-            child: Container(),
-          ),
-        
-        // Game display - centered
-        Expanded(
-          flex: 3,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: GameDisplay(
-                emulator: emulator,
-                maintainAspectRatio: settings.maintainAspectRatio,
-                enableFiltering: settings.enableFiltering,
-              ),
+        // Game display - centered and larger
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 120, vertical: 8),
+            child: GameDisplay(
+              emulator: emulator,
+              maintainAspectRatio: settings.maintainAspectRatio,
+              enableFiltering: settings.enableFiltering,
             ),
           ),
         ),
         
-        // Right side controls (A/B buttons area)
+        // Virtual gamepad overlay in landscape
         if (_showControls)
-          Expanded(
-            flex: 2,
-            child: Container(),
+          VirtualGamepad(
+            onKeysChanged: emulator.setKeys,
+            opacity: settings.gamepadOpacity,
+            scale: settings.gamepadScale,
+            enableVibration: settings.enableVibration,
           ),
       ],
     );
