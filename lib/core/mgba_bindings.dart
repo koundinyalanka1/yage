@@ -114,16 +114,27 @@ class MGBABindings {
     if (_isLoaded) return true;
 
     try {
+      // On Android, we need to load the mGBA libretro core first
+      // so it's available when yage_core tries to use it
+      if (Platform.isAndroid) {
+        try {
+          DynamicLibrary.open('libmgba_libretro_android.so');
+          debugPrint('Loaded mGBA libretro core');
+        } catch (e) {
+          debugPrint('Warning: Could not pre-load mGBA core: $e');
+        }
+      }
+      
       String libraryPath;
       
       if (Platform.isWindows) {
-        libraryPath = 'mgba.dll';
+        libraryPath = 'yage_core.dll';
       } else if (Platform.isLinux) {
-        libraryPath = 'libmgba.so';
+        libraryPath = 'libyage_core.so';
       } else if (Platform.isMacOS) {
-        libraryPath = 'libmgba.dylib';
+        libraryPath = 'libyage_core.dylib';
       } else if (Platform.isAndroid) {
-        libraryPath = 'libmgba.so';
+        libraryPath = 'libyage_core.so';
       } else {
         throw UnsupportedError('Unsupported platform');
       }
@@ -133,7 +144,7 @@ class MGBABindings {
       _isLoaded = true;
       return true;
     } catch (e) {
-      debugPrint('Failed to load mGBA library: $e');
+      debugPrint('Failed to load YAGE core library: $e');
       return false;
     }
   }
