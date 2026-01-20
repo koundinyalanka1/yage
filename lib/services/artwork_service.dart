@@ -35,30 +35,23 @@ class ArtworkService {
 
   /// Clean game name for matching (remove region codes, revision numbers, etc.)
   static String _cleanGameName(String name) {
-    // Remove common suffixes and clean up
     String cleaned = name
-        // Remove file extension if present
         .replaceAll(RegExp(r'\.(gba|gb|gbc|sgb)$', caseSensitive: false), '')
-        // Remove region codes like (USA), (Europe), (Japan), etc.
         .replaceAll(RegExp(r'\s*\([^)]*\)\s*'), ' ')
-        // Remove bracket codes like [!], [T+Eng], etc.
         .replaceAll(RegExp(r'\s*\[[^\]]*\]\s*'), ' ')
-        // Remove revision markers like (Rev 1), v1.1, etc.
         .replaceAll(RegExp(r'\s*v\d+\.?\d*\s*', caseSensitive: false), ' ')
-        // Clean up multiple spaces
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     
     return cleaned;
   }
 
-  /// URL encode for LibRetro (special handling for certain characters)
-  static String _urlEncode(String name) {
-    return Uri.encodeComponent(name)
-        .replaceAll('%20', '%20')  // Keep spaces encoded
-        .replaceAll('%26', '&')    // Ampersand
-        .replaceAll('%27', "'")    // Apostrophe
-        .replaceAll('%2C', ',');   // Comma
+  /// Sanitize filename for caching
+  static String _sanitizeFilename(String name) {
+    return name
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .toLowerCase();
   }
 
   /// Generate possible artwork URLs to try
@@ -69,20 +62,27 @@ class ArtworkService {
     final cleanName = _cleanGameName(gameName);
     final urls = <String>[];
     
-    // Try different name variations
-    final variations = [
+    final variations = <String>[
       cleanName,
-      cleanName.replaceAll(' - ', ' '),
-      cleanName.replaceAll("'", ''),
-      cleanName.replaceAll('&', 'and'),
-      // Title case
-      cleanName.split(' ').map((w) => 
-        w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}' : w
+      cleanName.replaceAll(' - ', ' - '),
+      cleanName.replaceAll("'", "'"),
+      cleanName.replaceAll(':', ' -'),
+      // Title case version
+      cleanName.split(' ').map((word) => 
+        word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1)}' : word
       ).join(' '),
+      // All lowercase
+      cleanName.toLowerCase(),
+      // Without "The " prefix
+      cleanName.startsWith('The ') ? cleanName.substring(4) : cleanName,
+      // Original ROM name
+      gameName,
     ];
 
     for (final name in variations.toSet()) {
-      final encoded = _urlEncode(name);
+      if (name.isEmpty) continue;
+      
+      final encoded = Uri.encodeComponent(name);
       
       // Try Named_Boxarts first (best quality)
       urls.add('$_libretroBaseUrl/$systemName/master/Named_Boxarts/$encoded.png');
@@ -152,41 +152,6 @@ class ArtworkService {
     }
   }
 
-  /// Fetch artwork for multiple games
-  static Future<Map<String, String?>> fetchArtworkBatch(
-    List<GameRom> games, {
-    void Function(int completed, int total)? onProgress,
-  }) async {
-    final results = <String, String?>{};
-    
-    for (int i = 0; i < games.length; i++) {
-      final game = games[i];
-      
-      // Skip if already has cover
-      if (game.coverPath != null && File(game.coverPath!).existsSync()) {
-        results[game.path] = game.coverPath;
-        onProgress?.call(i + 1, games.length);
-        continue;
-      }
-
-      results[game.path] = await fetchArtwork(game);
-      onProgress?.call(i + 1, games.length);
-      
-      // Small delay to avoid rate limiting
-      await Future.delayed(const Duration(milliseconds: 200));
-    }
-
-    return results;
-  }
-
-  /// Sanitize filename for caching
-  static String _sanitizeFilename(String name) {
-    return name
-        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .toLowerCase();
-  }
-
   /// Clear artwork cache
   static Future<void> clearCache() async {
     try {
@@ -199,4 +164,3 @@ class ArtworkService {
     }
   }
 }
-

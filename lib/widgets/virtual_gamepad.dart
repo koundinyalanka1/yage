@@ -439,17 +439,17 @@ class _DPadState extends State<_DPad> {
         height: size,
         child: Stack(
           children: [
-            // Background
+            // Background - more transparent
             Center(
               child: Container(
                 width: size - 20,
                 height: size - 20,
                 decoration: BoxDecoration(
-                  color: YageColors.backgroundMedium,
+                  color: YageColors.backgroundMedium.withAlpha(100),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: YageColors.surfaceLight,
-                    width: 2,
+                    color: YageColors.surfaceLight.withAlpha(80),
+                    width: 1.5,
                   ),
                 ),
               ),
@@ -505,11 +505,11 @@ class _DPadState extends State<_DPad> {
                 width: 36 * widget.scale,
                 height: 36 * widget.scale,
                 decoration: BoxDecoration(
-                  color: YageColors.surface,
+                  color: YageColors.surface.withAlpha(100),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: YageColors.surfaceLight,
-                    width: 2,
+                    color: YageColors.surfaceLight.withAlpha(80),
+                    width: 1.5,
                   ),
                 ),
               ),
@@ -539,14 +539,14 @@ class _DPadButton extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color: isPressed 
-            ? YageColors.primary 
-            : YageColors.surface,
+            ? YageColors.primary.withAlpha(180)
+            : YageColors.surface.withAlpha(120),
         borderRadius: BorderRadius.circular(10),
         boxShadow: isPressed
             ? []
             : [
                 BoxShadow(
-                  color: Colors.black.withAlpha(77),
+                  color: Colors.black.withAlpha(40),
                   offset: const Offset(0, 2),
                   blurRadius: 4,
                 ),
@@ -554,7 +554,9 @@ class _DPadButton extends StatelessWidget {
       ),
       child: Icon(
         icon,
-        color: isPressed ? YageColors.textPrimary : YageColors.textSecondary,
+        color: isPressed 
+            ? YageColors.textPrimary 
+            : YageColors.textSecondary.withAlpha(180),
         size: size * 0.55,
       ),
     );
@@ -605,25 +607,20 @@ class _CircleButtonState extends State<_CircleButton> {
         height: widget.size,
         decoration: BoxDecoration(
           color: _isPressed 
-              ? widget.color.withAlpha(204)
-              : widget.color.withAlpha(153),
+              ? widget.color.withAlpha(160)
+              : widget.color.withAlpha(90),
           shape: BoxShape.circle,
           border: Border.all(
-            color: widget.color,
-            width: 3,
+            color: widget.color.withAlpha(150),
+            width: 2,
           ),
           boxShadow: _isPressed
               ? []
               : [
                   BoxShadow(
-                    color: widget.color.withAlpha(102),
-                    blurRadius: 12,
-                    spreadRadius: 2,
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withAlpha(77),
-                    offset: const Offset(0, 3),
-                    blurRadius: 6,
+                    color: widget.color.withAlpha(50),
+                    blurRadius: 8,
+                    spreadRadius: 1,
                   ),
                 ],
         ),
@@ -634,8 +631,8 @@ class _CircleButtonState extends State<_CircleButton> {
               fontSize: widget.size * 0.35,
               fontWeight: FontWeight.bold,
               color: _isPressed 
-                  ? YageColors.backgroundDark 
-                  : YageColors.backgroundDark.withAlpha(230),
+                  ? YageColors.backgroundDark.withAlpha(230)
+                  : YageColors.backgroundDark.withAlpha(180),
             ),
           ),
         ),
@@ -687,18 +684,20 @@ class _ShoulderButtonState extends State<_ShoulderButton> {
         height: 40 * widget.scale,
         decoration: BoxDecoration(
           color: _isPressed 
-              ? YageColors.primary
-              : YageColors.surface,
+              ? YageColors.primary.withAlpha(160)
+              : YageColors.surface.withAlpha(100),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: _isPressed ? YageColors.primaryLight : YageColors.surfaceLight,
-            width: 2,
+            color: _isPressed 
+                ? YageColors.primaryLight.withAlpha(150) 
+                : YageColors.surfaceLight.withAlpha(80),
+            width: 1.5,
           ),
           boxShadow: _isPressed
               ? []
               : [
                   BoxShadow(
-                    color: Colors.black.withAlpha(77),
+                    color: Colors.black.withAlpha(30),
                     offset: const Offset(0, 2),
                     blurRadius: 4,
                   ),
@@ -711,8 +710,8 @@ class _ShoulderButtonState extends State<_ShoulderButton> {
               fontSize: 18 * widget.scale,
               fontWeight: FontWeight.bold,
               color: _isPressed 
-                  ? YageColors.textPrimary 
-                  : YageColors.textSecondary,
+                  ? YageColors.textPrimary.withAlpha(220) 
+                  : YageColors.textSecondary.withAlpha(150),
             ),
           ),
         ),
@@ -766,11 +765,11 @@ class _SmallButtonState extends State<_SmallButton> {
         ),
         decoration: BoxDecoration(
           color: _isPressed 
-              ? YageColors.surfaceLight
-              : YageColors.backgroundMedium,
+              ? YageColors.surfaceLight.withAlpha(140)
+              : YageColors.backgroundMedium.withAlpha(90),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: YageColors.surfaceLight,
+            color: YageColors.surfaceLight.withAlpha(80),
             width: 1,
           ),
         ),
@@ -780,8 +779,8 @@ class _SmallButtonState extends State<_SmallButton> {
             fontSize: 10 * widget.scale,
             fontWeight: FontWeight.bold,
             color: _isPressed 
-                ? YageColors.textPrimary 
-                : YageColors.textMuted,
+                ? YageColors.textPrimary.withAlpha(220) 
+                : YageColors.textMuted.withAlpha(150),
             letterSpacing: 1,
           ),
         ),

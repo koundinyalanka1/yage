@@ -222,12 +222,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                 ),
               
-              // Layout editor toolbar
+              // Layout editor toolbar - positioned at bottom in landscape to avoid L/R buttons
               if (_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  left: 8,
-                  right: 8,
+                  bottom: _isLandscape ? 8 : null,
+                  top: _isLandscape ? null : MediaQuery.of(context).padding.top + 8,
+                  left: _isLandscape ? MediaQuery.of(context).size.width * 0.25 : 8,
+                  right: _isLandscape ? MediaQuery.of(context).size.width * 0.25 : 8,
                   child: _LayoutEditorToolbar(
                     onSave: _saveLayout,
                     onCancel: _cancelEditLayout,

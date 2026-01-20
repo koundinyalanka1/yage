@@ -63,26 +63,26 @@ class GamepadLayout {
     required this.selectButton,
   });
 
-  /// Default portrait layout
+  /// Default portrait layout - well spaced for comfortable play
   static const GamepadLayout defaultPortrait = GamepadLayout(
-    dpad: ButtonLayout(x: 0.05, y: 0.55, size: 1.0),
-    aButton: ButtonLayout(x: 0.75, y: 0.55, size: 1.0),
-    bButton: ButtonLayout(x: 0.60, y: 0.70, size: 1.0),
-    lButton: ButtonLayout(x: 0.05, y: 0.02, size: 1.0),
-    rButton: ButtonLayout(x: 0.80, y: 0.02, size: 1.0),
-    startButton: ButtonLayout(x: 0.55, y: 0.92, size: 1.0),
-    selectButton: ButtonLayout(x: 0.30, y: 0.92, size: 1.0),
+    dpad: ButtonLayout(x: 0.02, y: 0.45, size: 1.0),
+    aButton: ButtonLayout(x: 0.72, y: 0.45, size: 1.0),
+    bButton: ButtonLayout(x: 0.55, y: 0.62, size: 1.0),
+    lButton: ButtonLayout(x: 0.02, y: 0.05, size: 1.0),
+    rButton: ButtonLayout(x: 0.78, y: 0.05, size: 1.0),
+    startButton: ButtonLayout(x: 0.55, y: 0.88, size: 1.0),
+    selectButton: ButtonLayout(x: 0.28, y: 0.88, size: 1.0),
   );
 
-  /// Default landscape layout
+  /// Default landscape layout - buttons spread to sides
   static const GamepadLayout defaultLandscape = GamepadLayout(
-    dpad: ButtonLayout(x: 0.02, y: 0.35, size: 1.0),
-    aButton: ButtonLayout(x: 0.85, y: 0.35, size: 1.0),
-    bButton: ButtonLayout(x: 0.72, y: 0.55, size: 1.0),
-    lButton: ButtonLayout(x: 0.02, y: 0.02, size: 1.0),
-    rButton: ButtonLayout(x: 0.88, y: 0.02, size: 1.0),
-    startButton: ButtonLayout(x: 0.55, y: 0.85, size: 1.0),
-    selectButton: ButtonLayout(x: 0.35, y: 0.85, size: 1.0),
+    dpad: ButtonLayout(x: 0.01, y: 0.30, size: 0.9),
+    aButton: ButtonLayout(x: 0.82, y: 0.25, size: 0.9),
+    bButton: ButtonLayout(x: 0.68, y: 0.50, size: 0.9),
+    lButton: ButtonLayout(x: 0.01, y: 0.0, size: 0.85),
+    rButton: ButtonLayout(x: 0.87, y: 0.0, size: 0.85),
+    startButton: ButtonLayout(x: 0.55, y: 0.82, size: 0.85),
+    selectButton: ButtonLayout(x: 0.35, y: 0.82, size: 0.85),
   );
 
   GamepadLayout copyWith({
