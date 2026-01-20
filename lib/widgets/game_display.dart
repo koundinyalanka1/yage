@@ -242,30 +242,26 @@ class FpsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      top: 8,
-      right: 8,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: YageColors.backgroundDark.withAlpha(204),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: fps >= 55 
-                ? YageColors.success 
-                : fps >= 30 
-                    ? YageColors.warning 
-                    : YageColors.error,
-            width: 1,
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: YageColors.backgroundDark.withAlpha(204),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: fps >= 55 
+              ? YageColors.success 
+              : fps >= 30 
+                  ? YageColors.warning 
+                  : YageColors.error,
+          width: 1,
         ),
-        child: Text(
-          '${fps.toStringAsFixed(1)} FPS',
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: YageColors.textPrimary,
-          ),
+      ),
+      child: Text(
+        '${fps.toStringAsFixed(1)} FPS',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: YageColors.textPrimary,
         ),
       ),
     );

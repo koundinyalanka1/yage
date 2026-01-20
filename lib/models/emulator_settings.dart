@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'gamepad_layout.dart';
+
 /// Emulator settings configuration
 class EmulatorSettings {
   final double volume;
@@ -19,6 +21,8 @@ class EmulatorSettings {
   final bool enableFiltering;
   final bool maintainAspectRatio;
   final int autoSaveInterval; // in seconds, 0 = disabled
+  final GamepadLayout gamepadLayoutPortrait;
+  final GamepadLayout gamepadLayoutLandscape;
 
   const EmulatorSettings({
     this.volume = 0.8,
@@ -38,6 +42,8 @@ class EmulatorSettings {
     this.enableFiltering = true,
     this.maintainAspectRatio = true,
     this.autoSaveInterval = 60,
+    this.gamepadLayoutPortrait = GamepadLayout.defaultPortrait,
+    this.gamepadLayoutLandscape = GamepadLayout.defaultLandscape,
   });
 
   EmulatorSettings copyWith({
@@ -58,6 +64,8 @@ class EmulatorSettings {
     bool? enableFiltering,
     bool? maintainAspectRatio,
     int? autoSaveInterval,
+    GamepadLayout? gamepadLayoutPortrait,
+    GamepadLayout? gamepadLayoutLandscape,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -77,6 +85,8 @@ class EmulatorSettings {
       enableFiltering: enableFiltering ?? this.enableFiltering,
       maintainAspectRatio: maintainAspectRatio ?? this.maintainAspectRatio,
       autoSaveInterval: autoSaveInterval ?? this.autoSaveInterval,
+      gamepadLayoutPortrait: gamepadLayoutPortrait ?? this.gamepadLayoutPortrait,
+      gamepadLayoutLandscape: gamepadLayoutLandscape ?? this.gamepadLayoutLandscape,
     );
   }
 
@@ -99,6 +109,8 @@ class EmulatorSettings {
       'enableFiltering': enableFiltering,
       'maintainAspectRatio': maintainAspectRatio,
       'autoSaveInterval': autoSaveInterval,
+      'gamepadLayoutPortrait': gamepadLayoutPortrait.toJson(),
+      'gamepadLayoutLandscape': gamepadLayoutLandscape.toJson(),
     };
   }
 
@@ -121,6 +133,12 @@ class EmulatorSettings {
       enableFiltering: json['enableFiltering'] as bool? ?? true,
       maintainAspectRatio: json['maintainAspectRatio'] as bool? ?? true,
       autoSaveInterval: json['autoSaveInterval'] as int? ?? 60,
+      gamepadLayoutPortrait: json['gamepadLayoutPortrait'] != null
+          ? GamepadLayout.fromJson(json['gamepadLayoutPortrait'] as Map<String, dynamic>)
+          : GamepadLayout.defaultPortrait,
+      gamepadLayoutLandscape: json['gamepadLayoutLandscape'] != null
+          ? GamepadLayout.fromJson(json['gamepadLayoutLandscape'] as Map<String, dynamic>)
+          : GamepadLayout.defaultLandscape,
     );
   }
 

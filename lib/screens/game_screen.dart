@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/game_rom.dart';
+import '../models/gamepad_layout.dart';
 import '../services/emulator_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/game_display.dart';
@@ -23,6 +24,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _showControls = true;
   bool _showMenu = false;
   bool _isLandscape = false;
+  bool _editingLayout = false;
+  GamepadLayout? _tempLayout; // Temporary layout while editing
   
   // Use a key to preserve GameDisplay state across orientation changes
   final _gameDisplayKey = GlobalKey();
@@ -101,6 +104,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     Navigator.of(context).pop();
   }
 
+  void _toggleOrientation() {
+    if (_isLandscape) {
+      // Switch to portrait
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      // Switch to landscape
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
+    
+    // After a short delay, re-enable all orientations for auto-rotate
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final emulator = context.watch<EmulatorService>();
@@ -173,12 +204,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                 ),
               
-              // Menu button
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 8,
-                child: _MenuButton(onTap: _toggleMenu),
-              ),
+              // Menu button (hide in edit mode)
+              if (!_editingLayout)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 8,
+                  child: _MenuButton(onTap: _toggleMenu),
+                ),
+              
+              // Rotation toggle button (hide in edit mode)
+              if (!_editingLayout)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  right: settings.showFps ? 70 : 8,
+                  child: _RotationButton(
+                    isLandscape: _isLandscape,
+                    onTap: () => _toggleOrientation(),
+                  ),
+                ),
+              
+              // Layout editor toolbar
+              if (_editingLayout)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 8,
+                  right: 8,
+                  child: _LayoutEditorToolbar(
+                    onSave: _saveLayout,
+                    onCancel: _cancelEditLayout,
+                    onReset: _resetLayout,
+                  ),
+                ),
               
               // In-game menu overlay
               if (_showMenu)
@@ -224,6 +280,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     setState(() => _showControls = !_showControls);
                   },
                   showControls: _showControls,
+                  onEditLayout: _enterEditMode,
                   onExit: _exitGame,
                 ),
             ],
@@ -235,6 +292,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Portrait layout: Game on top, controls on bottom
   Widget _buildPortraitLayout(EmulatorService emulator, settings, Widget gameDisplay) {
+    final layout = _tempLayout ?? settings.gamepadLayoutPortrait;
+    
     return Column(
       children: [
         const SizedBox(height: 50), // Space for menu button
@@ -255,6 +314,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               opacity: settings.gamepadOpacity,
               scale: settings.gamepadScale,
               enableVibration: settings.enableVibration,
+              layout: layout,
+              editMode: _editingLayout,
+              onLayoutChanged: (newLayout) {
+                setState(() => _tempLayout = newLayout);
+              },
             ),
           ),
       ],
@@ -263,6 +327,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Landscape layout: Game centered, controls on sides
   Widget _buildLandscapeLayout(EmulatorService emulator, settings, Widget gameDisplay) {
+    final layout = _tempLayout ?? settings.gamepadLayoutLandscape;
+    
     return Stack(
       children: [
         // Game display - centered and larger
@@ -280,9 +346,77 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             opacity: settings.gamepadOpacity,
             scale: settings.gamepadScale,
             enableVibration: settings.enableVibration,
+            layout: layout,
+            editMode: _editingLayout,
+            onLayoutChanged: (newLayout) {
+              setState(() => _tempLayout = newLayout);
+            },
           ),
       ],
     );
+  }
+  
+  void _enterEditMode() {
+    final settings = context.read<SettingsService>().settings;
+    setState(() {
+      _editingLayout = true;
+      _showMenu = false;
+      _tempLayout = _isLandscape 
+          ? settings.gamepadLayoutLandscape 
+          : settings.gamepadLayoutPortrait;
+    });
+    
+    // Pause emulation while editing
+    context.read<EmulatorService>().pause();
+  }
+  
+  void _saveLayout() async {
+    if (_tempLayout == null) return;
+    
+    final settingsService = context.read<SettingsService>();
+    final emulatorService = context.read<EmulatorService>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    if (_isLandscape) {
+      await settingsService.setGamepadLayoutLandscape(_tempLayout!);
+    } else {
+      await settingsService.setGamepadLayoutPortrait(_tempLayout!);
+    }
+    
+    setState(() {
+      _editingLayout = false;
+      _tempLayout = null;
+    });
+    
+    // Resume emulation
+    emulatorService.start();
+    
+    if (mounted) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Layout saved!'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+  
+  void _cancelEditLayout() {
+    setState(() {
+      _editingLayout = false;
+      _tempLayout = null;
+    });
+    
+    // Resume emulation
+    context.read<EmulatorService>().start();
+  }
+  
+  void _resetLayout() {
+    if (_isLandscape) {
+      setState(() => _tempLayout = GamepadLayout.defaultLandscape);
+    } else {
+      setState(() => _tempLayout = GamepadLayout.defaultPortrait);
+    }
   }
 }
 
@@ -316,6 +450,176 @@ class _MenuButton extends StatelessWidget {
   }
 }
 
+class _RotationButton extends StatelessWidget {
+  final bool isLandscape;
+  final VoidCallback onTap;
+
+  const _RotationButton({required this.isLandscape, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: YageColors.surface.withAlpha(204),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: YageColors.surfaceLight,
+            width: 1,
+          ),
+        ),
+        child: Icon(
+          isLandscape ? Icons.stay_current_portrait : Icons.stay_current_landscape,
+          color: YageColors.textSecondary,
+          size: 22,
+        ),
+      ),
+    );
+  }
+}
+
+class _LayoutEditorToolbar extends StatelessWidget {
+  final VoidCallback onSave;
+  final VoidCallback onCancel;
+  final VoidCallback onReset;
+
+  const _LayoutEditorToolbar({
+    required this.onSave,
+    required this.onCancel,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: YageColors.surface.withAlpha(240),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: YageColors.accent,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: YageColors.accent.withAlpha(50),
+            blurRadius: 20,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          Row(
+            children: [
+              const Icon(Icons.tune, color: YageColors.accent, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'EDIT LAYOUT',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: YageColors.accent,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+              // Close button
+              GestureDetector(
+                onTap: onCancel,
+                child: const Icon(Icons.close, color: YageColors.textMuted, size: 20),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          // Instructions
+          const Text(
+            'Drag buttons to move • Tap to select • Use +/- to resize',
+            style: TextStyle(
+              fontSize: 11,
+              color: YageColors.textMuted,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          
+          // Action buttons
+          Row(
+            children: [
+              // Reset button
+              Expanded(
+                child: GestureDetector(
+                  onTap: onReset,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: YageColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: YageColors.surfaceLight),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.restart_alt, color: YageColors.textSecondary, size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          'Reset',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: YageColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              
+              // Save button
+              Expanded(
+                child: GestureDetector(
+                  onTap: onSave,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: YageColors.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check, color: YageColors.textPrimary, size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          'Save',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: YageColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InGameMenu extends StatelessWidget {
   final GameRom game;
   final VoidCallback onResume;
@@ -324,6 +628,7 @@ class _InGameMenu extends StatelessWidget {
   final void Function(int slot) onLoadState;
   final VoidCallback onToggleControls;
   final bool showControls;
+  final VoidCallback onEditLayout;
   final VoidCallback onExit;
 
   const _InGameMenu({
@@ -334,6 +639,7 @@ class _InGameMenu extends StatelessWidget {
     required this.onLoadState,
     required this.onToggleControls,
     required this.showControls,
+    required this.onEditLayout,
     required this.onExit,
   });
 
@@ -427,6 +733,13 @@ class _InGameMenu extends StatelessWidget {
                       icon: showControls ? Icons.gamepad : Icons.gamepad_outlined,
                       label: showControls ? 'Hide Controls' : 'Show Controls',
                       onTap: onToggleControls,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    _MenuActionButton(
+                      icon: Icons.tune,
+                      label: 'Edit Layout',
+                      onTap: onEditLayout,
                     ),
                     const SizedBox(height: 10),
                     

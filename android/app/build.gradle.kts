@@ -26,8 +26,8 @@ android {
         versionName = flutter.versionName
         
         ndk {
-            // Support common Android architectures
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            // arm64-v8a covers all modern Android devices (2016+)
+            abiFilters += listOf("arm64-v8a")
         }
     }
 

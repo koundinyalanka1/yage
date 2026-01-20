@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/emulator_settings.dart';
+import '../models/gamepad_layout.dart';
 
 /// Service for managing app and emulator settings
 class SettingsService extends ChangeNotifier {
@@ -140,6 +141,24 @@ class SettingsService extends ChangeNotifier {
     _settings = const EmulatorSettings();
     notifyListeners();
     await save();
+  }
+
+  /// Set portrait gamepad layout
+  Future<void> setGamepadLayoutPortrait(GamepadLayout layout) async {
+    await update((s) => s.copyWith(gamepadLayoutPortrait: layout));
+  }
+
+  /// Set landscape gamepad layout
+  Future<void> setGamepadLayoutLandscape(GamepadLayout layout) async {
+    await update((s) => s.copyWith(gamepadLayoutLandscape: layout));
+  }
+
+  /// Reset gamepad layouts to defaults
+  Future<void> resetGamepadLayouts() async {
+    await update((s) => s.copyWith(
+      gamepadLayoutPortrait: GamepadLayout.defaultPortrait,
+      gamepadLayoutLandscape: GamepadLayout.defaultLandscape,
+    ));
   }
 }
 
