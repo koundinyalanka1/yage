@@ -221,20 +221,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
           
-          // Settings
-          IconButton(
+          // More options menu
+          PopupMenuButton<String>(
             icon: const Icon(
-              Icons.settings_outlined,
+              Icons.more_vert,
               color: YageColors.textSecondary,
               size: 20,
             ),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            color: YageColors.surface,
+            onSelected: (value) {
+              switch (value) {
+                case 'download_artwork':
+                  _downloadAllArtwork();
+                  break;
+                case 'settings':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'download_artwork',
+                child: ListTile(
+                  leading: Icon(Icons.download, size: 20),
+                  title: Text('Download All Artwork'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined, size: 20),
+                  title: Text('Settings'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -315,17 +343,45 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onPressed: () => setState(() => _isGridView = !_isGridView),
           ),
           
-          // Settings
-          IconButton(
+          // More options menu
+          PopupMenuButton<String>(
             icon: const Icon(
-              Icons.settings_outlined,
+              Icons.more_vert,
               color: YageColors.textSecondary,
             ),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
+            color: YageColors.surface,
+            onSelected: (value) {
+              switch (value) {
+                case 'download_artwork':
+                  _downloadAllArtwork();
+                  break;
+                case 'settings':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                  break;
+              }
             },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'download_artwork',
+                child: ListTile(
+                  leading: Icon(Icons.download, size: 20),
+                  title: Text('Download All Artwork'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined, size: 20),
+                  title: Text('Settings'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -564,6 +620,92 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  Future<void> _selectCoverArt(GameRom game) async {
+    final library = context.read<GameLibraryService>();
+    
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    
+    if (result != null && result.files.isNotEmpty) {
+      final path = result.files.first.path;
+      if (path != null) {
+        await library.setCoverArt(game, path);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cover art set!'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _downloadCoverArt(GameRom game) async {
+    final library = context.read<GameLibraryService>();
+    
+    // Show loading indicator
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Text('Searching for artwork...'),
+          ],
+        ),
+        duration: Duration(seconds: 10),
+      ),
+    );
+    
+    final success = await library.fetchArtwork(game);
+    
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success ? 'Cover art downloaded!' : 'No artwork found'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _downloadAllArtwork() async {
+    final library = context.read<GameLibraryService>();
+    
+    // Count games needing artwork
+    final needsArt = library.games.where((g) => g.coverPath == null).length;
+    if (needsArt == 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All games already have cover art!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
+    // Show progress dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _ArtworkDownloadDialog(
+        library: library,
+        totalGames: needsArt,
+      ),
+    );
+  }
+
   void _showGameOptions(GameRom game) {
     final library = context.read<GameLibraryService>();
 
@@ -629,6 +771,33 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('Download Cover Art'),
+                  subtitle: const Text('Auto-fetch from database'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _downloadCoverArt(game);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.image),
+                  title: const Text('Set Cover Art'),
+                  subtitle: const Text('Choose from gallery'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _selectCoverArt(game);
+                  },
+                ),
+                if (game.coverPath != null)
+                  ListTile(
+                    leading: const Icon(Icons.hide_image_outlined),
+                    title: const Text('Remove Cover Art'),
+                    onTap: () {
+                      library.removeCoverArt(game);
+                      Navigator.pop(context);
+                    },
+                  ),
+                ListTile(
                   leading: const Icon(Icons.delete_outline, color: YageColors.error),
                   title: const Text(
                     'Remove from Library',
@@ -644,6 +813,106 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         );
       },
+    );
+  }
+}
+
+/// Dialog showing artwork download progress
+class _ArtworkDownloadDialog extends StatefulWidget {
+  final GameLibraryService library;
+  final int totalGames;
+
+  const _ArtworkDownloadDialog({
+    required this.library,
+    required this.totalGames,
+  });
+
+  @override
+  State<_ArtworkDownloadDialog> createState() => _ArtworkDownloadDialogState();
+}
+
+class _ArtworkDownloadDialogState extends State<_ArtworkDownloadDialog> {
+  int _completed = 0;
+  int _found = 0;
+  bool _isDownloading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDownload();
+  }
+
+  Future<void> _startDownload() async {
+    final found = await widget.library.fetchAllArtwork(
+      onProgress: (completed, total) {
+        if (mounted) {
+          setState(() {
+            _completed = completed;
+          });
+        }
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        _found = found;
+        _isDownloading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      title: Text(
+        _isDownloading ? 'Downloading Artwork' : 'Download Complete',
+        style: const TextStyle(color: YageColors.textPrimary),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isDownloading) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: widget.totalGames > 0 
+                  ? _completed / widget.totalGames 
+                  : 0,
+              backgroundColor: YageColors.backgroundLight,
+              valueColor: const AlwaysStoppedAnimation(YageColors.primary),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Processing $_completed of ${widget.totalGames} games...',
+              style: const TextStyle(color: YageColors.textSecondary),
+            ),
+          ] else ...[
+            Icon(
+              _found > 0 ? Icons.check_circle : Icons.info_outline,
+              size: 48,
+              color: _found > 0 ? YageColors.success : YageColors.textMuted,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _found > 0
+                  ? 'Found artwork for $_found games!'
+                  : 'No new artwork found',
+              style: const TextStyle(
+                color: YageColors.textPrimary,
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        if (!_isDownloading)
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+      ],
     );
   }
 }

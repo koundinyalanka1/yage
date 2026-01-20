@@ -37,9 +37,13 @@ class EmulatorService extends ChangeNotifier {
   Stopwatch? _frameStopwatch;
   int _frameCount = 0;
   double _currentFps = 0;
+  double _speedMultiplier = 1.0;
   
   // Frame timing (GBA runs at ~59.7275 fps)
-  static const Duration _targetFrameTime = Duration(microseconds: 16742);
+  static const Duration _baseFrameTime = Duration(microseconds: 16742);
+  Duration get _targetFrameTime => Duration(
+    microseconds: (_baseFrameTime.inMicroseconds / _speedMultiplier).round(),
+  );
   
   // Callbacks
   void Function(Uint8List pixels, int width, int height)? onFrame;
@@ -52,6 +56,23 @@ class EmulatorService extends ChangeNotifier {
   double get currentFps => _currentFps;
   bool get isRunning => _state == EmulatorState.running;
   bool get isUsingStub => _useStub;
+  double get speedMultiplier => _speedMultiplier;
+  
+  /// Set emulation speed (0.5x, 1x, 2x, 4x, etc.)
+  void setSpeed(double speed) {
+    _speedMultiplier = speed.clamp(0.25, 8.0);
+    notifyListeners();
+  }
+  
+  /// Toggle fast forward (between 1x and 2x)
+  void toggleFastForward() {
+    if (_speedMultiplier > 1.0) {
+      _speedMultiplier = 1.0;
+    } else {
+      _speedMultiplier = 2.0;
+    }
+    notifyListeners();
+  }
   
   int get screenWidth {
     if (_useStub) return _stub?.width ?? 240;

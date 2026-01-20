@@ -106,30 +106,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _toggleOrientation() {
     if (_isLandscape) {
-      // Switch to portrait
+      // Switch to portrait and lock it
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
       ]);
     } else {
-      // Switch to landscape
+      // Switch to landscape and lock it
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
     }
-    
-    // After a short delay, re-enable all orientations for auto-rotate
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-      }
-    });
   }
 
   @override
@@ -212,6 +199,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   child: _MenuButton(onTap: _toggleMenu),
                 ),
               
+              // Fast forward button (hide in edit mode)
+              if (!_editingLayout)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 60,
+                  child: _FastForwardButton(
+                    isActive: emulator.speedMultiplier > 1.0,
+                    speed: emulator.speedMultiplier,
+                    onTap: () => emulator.toggleFastForward(),
+                  ),
+                ),
+              
               // Rotation toggle button (hide in edit mode)
               if (!_editingLayout)
                 Positioned(
@@ -281,6 +280,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   },
                   showControls: _showControls,
                   onEditLayout: _enterEditMode,
+                  currentSpeed: emulator.speedMultiplier,
+                  onSpeedChanged: (speed) {
+                    emulator.setSpeed(speed);
+                  },
                   onExit: _exitGame,
                 ),
             ],
@@ -472,7 +475,7 @@ class _RotationButton extends StatelessWidget {
           ),
         ),
         child: Icon(
-          isLandscape ? Icons.stay_current_portrait : Icons.stay_current_landscape,
+          Icons.screen_rotation,
           color: YageColors.textSecondary,
           size: 22,
         ),
@@ -629,6 +632,8 @@ class _InGameMenu extends StatelessWidget {
   final VoidCallback onToggleControls;
   final bool showControls;
   final VoidCallback onEditLayout;
+  final double currentSpeed;
+  final void Function(double speed) onSpeedChanged;
   final VoidCallback onExit;
 
   const _InGameMenu({
@@ -640,6 +645,8 @@ class _InGameMenu extends StatelessWidget {
     required this.onToggleControls,
     required this.showControls,
     required this.onEditLayout,
+    required this.currentSpeed,
+    required this.onSpeedChanged,
     required this.onExit,
   });
 
@@ -740,6 +747,13 @@ class _InGameMenu extends StatelessWidget {
                       icon: Icons.tune,
                       label: 'Edit Layout',
                       onTap: onEditLayout,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    // Speed control
+                    _SpeedSelector(
+                      currentSpeed: currentSpeed,
+                      onSpeedChanged: onSpeedChanged,
                     ),
                     const SizedBox(height: 10),
                     
@@ -886,6 +900,150 @@ class _MenuActionButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _FastForwardButton extends StatelessWidget {
+  final bool isActive;
+  final double speed;
+  final VoidCallback onTap;
+
+  const _FastForwardButton({
+    required this.isActive,
+    required this.speed,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: isActive 
+              ? YageColors.accent.withAlpha(230)
+              : YageColors.surface.withAlpha(204),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive ? YageColors.accent : YageColors.surfaceLight,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.fast_forward,
+              color: isActive ? YageColors.backgroundDark : YageColors.textSecondary,
+              size: 20,
+            ),
+            if (isActive) ...[
+              const SizedBox(width: 4),
+              Text(
+                '${speed.toStringAsFixed(0)}x',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: YageColors.backgroundDark,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeedSelector extends StatelessWidget {
+  final double currentSpeed;
+  final void Function(double speed) onSpeedChanged;
+
+  const _SpeedSelector({
+    required this.currentSpeed,
+    required this.onSpeedChanged,
+  });
+
+  static const List<double> speeds = [0.5, 1.0, 2.0, 4.0];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: YageColors.backgroundLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: YageColors.surfaceLight, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.speed, color: YageColors.textSecondary, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Speed',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: YageColors.textSecondary,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${currentSpeed.toStringAsFixed(1)}x',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: YageColors.accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: speeds.map((speed) {
+              final isSelected = (currentSpeed - speed).abs() < 0.1;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => onSpeedChanged(speed),
+                  child: Container(
+                    margin: EdgeInsets.only(
+                      right: speed != speeds.last ? 6 : 0,
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected 
+                          ? YageColors.primary 
+                          : YageColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: isSelected 
+                          ? null 
+                          : Border.all(color: YageColors.surfaceLight),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${speed.toStringAsFixed(speed == 0.5 ? 1 : 0)}x',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected 
+                              ? YageColors.textPrimary 
+                              : YageColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/game_rom.dart';
 import '../core/mgba_bindings.dart';
+import 'artwork_service.dart';
 
 /// Service for managing the game library
 class GameLibraryService extends ChangeNotifier {
@@ -183,6 +184,35 @@ class GameLibraryService extends ChangeNotifier {
     }
   }
 
+  /// Set cover art for a game
+  Future<void> setCoverArt(GameRom game, String coverPath) async {
+    final index = _games.indexWhere((g) => g.path == game.path);
+    if (index != -1) {
+      _games[index] = _games[index].copyWith(coverPath: coverPath);
+      await _saveLibrary();
+      notifyListeners();
+    }
+  }
+
+  /// Remove cover art from a game
+  Future<void> removeCoverArt(GameRom game) async {
+    final index = _games.indexWhere((g) => g.path == game.path);
+    if (index != -1) {
+      _games[index] = GameRom(
+        path: _games[index].path,
+        name: _games[index].name,
+        extension: _games[index].extension,
+        platform: _games[index].platform,
+        sizeBytes: _games[index].sizeBytes,
+        lastPlayed: _games[index].lastPlayed,
+        coverPath: null,
+        isFavorite: _games[index].isFavorite,
+      );
+      await _saveLibrary();
+      notifyListeners();
+    }
+  }
+
   /// Refresh library by rescanning all directories
   Future<void> refresh() async {
     _isLoading = true;
@@ -220,6 +250,40 @@ class GameLibraryService extends ChangeNotifier {
     if (query.isEmpty) return _games;
     final lowerQuery = query.toLowerCase();
     return _games.where((g) => g.name.toLowerCase().contains(lowerQuery)).toList();
+  }
+
+  /// Fetch artwork for a single game
+  Future<bool> fetchArtwork(GameRom game) async {
+    final coverPath = await ArtworkService.fetchArtwork(game);
+    if (coverPath != null) {
+      await setCoverArt(game, coverPath);
+      return true;
+    }
+    return false;
+  }
+
+  /// Fetch artwork for all games without covers
+  Future<int> fetchAllArtwork({
+    void Function(int completed, int total)? onProgress,
+  }) async {
+    final gamesNeedingArt = _games.where((g) => 
+      g.coverPath == null || !File(g.coverPath!).existsSync()
+    ).toList();
+
+    if (gamesNeedingArt.isEmpty) return 0;
+
+    int found = 0;
+    for (int i = 0; i < gamesNeedingArt.length; i++) {
+      final game = gamesNeedingArt[i];
+      final success = await fetchArtwork(game);
+      if (success) found++;
+      onProgress?.call(i + 1, gamesNeedingArt.length);
+      
+      // Small delay to avoid rate limiting
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    return found;
   }
 }
 

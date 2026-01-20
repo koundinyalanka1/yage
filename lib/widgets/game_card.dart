@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/game_rom.dart';
@@ -32,6 +34,29 @@ class GameCard extends StatelessWidget {
     GamePlatform.gba => Icons.videogame_asset,
     GamePlatform.unknown => Icons.help_outline,
   };
+
+  Widget _buildPlaceholder() {
+    return Stack(
+      children: [
+        // Decorative pattern
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _GridPatternPainter(
+              color: _platformColor.withAlpha(26),
+            ),
+          ),
+        ),
+        // Platform icon
+        Center(
+          child: Icon(
+            _platformIcon,
+            size: 48,
+            color: _platformColor.withAlpha(204),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,23 +115,22 @@ class GameCard extends StatelessWidget {
                     ),
                     child: Stack(
                       children: [
-                        // Decorative pattern
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _GridPatternPainter(
-                              color: _platformColor.withAlpha(26),
+                        // Cover image or decorative pattern
+                        if (game.coverPath != null && File(game.coverPath!).existsSync())
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(16),
+                              ),
+                              child: Image.file(
+                                File(game.coverPath!),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+                              ),
                             ),
-                          ),
-                        ),
-                        
-                        // Platform icon
-                        Center(
-                          child: Icon(
-                            _platformIcon,
-                            size: 48,
-                            color: _platformColor.withAlpha(204),
-                          ),
-                        ),
+                          )
+                        else
+                          _buildPlaceholder(),
                         
                         // Platform badge
                         Positioned(
@@ -250,33 +274,53 @@ class GameListTile extends StatelessWidget {
     GamePlatform.unknown => YageColors.textMuted,
   };
 
+  Widget _buildLeading() {
+    if (game.coverPath != null && File(game.coverPath!).existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          File(game.coverPath!),
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => _buildPlatformBadge(),
+        ),
+      );
+    }
+    return _buildPlatformBadge();
+  }
+
+  Widget _buildPlatformBadge() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: _platformColor.withAlpha(51),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _platformColor.withAlpha(128),
+          width: 1,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          game.platformShortName,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: _platformColor,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
       onTap: onTap,
       onLongPress: onLongPress,
-      leading: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: _platformColor.withAlpha(51),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _platformColor.withAlpha(128),
-            width: 1,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            game.platformShortName,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: _platformColor,
-            ),
-          ),
-        ),
-      ),
+      leading: _buildLeading(),
       title: Text(
         game.name,
         style: const TextStyle(
