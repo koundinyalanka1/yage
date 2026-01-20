@@ -72,8 +72,14 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     setState(() {
       _selectedButton = button;
       final currentLayout = _getButtonLayout(button);
-      final newX = (currentLayout.x + delta.dx / screenSize.width).clamp(0.0, 0.85);
-      final newY = (currentLayout.y + delta.dy / screenSize.height).clamp(0.0, 0.85);
+      // Use the same unit for both axes (fully proportional)
+      final unit = screenSize.width < screenSize.height 
+          ? screenSize.width 
+          : screenSize.height;
+      
+      // Both X and Y scale from the same unit
+      final newX = (currentLayout.x + delta.dx / unit).clamp(0.0, 2.0);
+      final newY = (currentLayout.y + delta.dy / unit).clamp(0.0, 2.0);
       
       _editingLayout = _updateButtonLayout(
         button,
@@ -148,6 +154,13 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
           final screenSize = Size(constraints.maxWidth, constraints.maxHeight);
           final layout = _editingLayout;
           
+          // Responsive sizing based on screen
+          final shortSide = screenSize.width < screenSize.height 
+              ? screenSize.width 
+              : screenSize.height;
+          final baseSize = shortSide * 0.28; // D-pad size
+          final buttonBase = shortSide * 0.15; // A/B button size
+          
           return Stack(
             children: [
               // D-Pad
@@ -163,6 +176,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                     _updateKey(GBAKey.right, right);
                   },
                   scale: layout.dpad.size * widget.scale,
+                  baseSize: baseSize,
                   editMode: widget.editMode,
                 ),
               ),
@@ -176,7 +190,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   label: 'A',
                   color: YageColors.accentAlt,
                   onChanged: (pressed) => _updateKey(GBAKey.a, pressed),
-                  size: 80 * layout.aButton.size * widget.scale,
+                  size: buttonBase * layout.aButton.size * widget.scale,
                   editMode: widget.editMode,
                 ),
               ),
@@ -190,7 +204,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   label: 'B',
                   color: YageColors.accentYellow,
                   onChanged: (pressed) => _updateKey(GBAKey.b, pressed),
-                  size: 80 * layout.bButton.size * widget.scale,
+                  size: buttonBase * layout.bButton.size * widget.scale,
                   editMode: widget.editMode,
                 ),
               ),
@@ -204,6 +218,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   label: 'L',
                   onChanged: (pressed) => _updateKey(GBAKey.l, pressed),
                   scale: layout.lButton.size * widget.scale,
+                  baseSize: baseSize,
                   editMode: widget.editMode,
                 ),
               ),
@@ -217,6 +232,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   label: 'R',
                   onChanged: (pressed) => _updateKey(GBAKey.r, pressed),
                   scale: layout.rButton.size * widget.scale,
+                  baseSize: baseSize,
                   editMode: widget.editMode,
                 ),
               ),
@@ -230,6 +246,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   label: 'START',
                   onChanged: (pressed) => _updateKey(GBAKey.start, pressed),
                   scale: layout.startButton.size * widget.scale,
+                  baseSize: baseSize,
                   editMode: widget.editMode,
                 ),
               ),
@@ -243,6 +260,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   label: 'SELECT',
                   onChanged: (pressed) => _updateKey(GBAKey.select, pressed),
                   scale: layout.selectButton.size * widget.scale,
+                  baseSize: baseSize,
                   editMode: widget.editMode,
                 ),
               ),
@@ -260,10 +278,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     required Widget child,
   }) {
     final isSelected = widget.editMode && _selectedButton == button;
+    final offset = layout.toProportionalOffset(screenSize);
     
     return Positioned(
-      left: layout.x * screenSize.width,
-      top: layout.y * screenSize.height,
+      left: offset.dx,
+      top: offset.dy,
       child: widget.editMode
           ? _EditableButtonWrapper(
               isSelected: isSelected,
@@ -370,11 +389,13 @@ class _EditableButtonWrapper extends StatelessWidget {
 class _DPad extends StatefulWidget {
   final void Function(bool up, bool down, bool left, bool right) onDirectionChanged;
   final double scale;
+  final double baseSize;
   final bool editMode;
 
   const _DPad({
     required this.onDirectionChanged,
     this.scale = 1.0,
+    this.baseSize = 190.0,
     this.editMode = false,
   });
 
@@ -426,8 +447,8 @@ class _DPadState extends State<_DPad> {
 
   @override
   Widget build(BuildContext context) {
-    final size = 190.0 * widget.scale;
-    final buttonSize = 60.0 * widget.scale;
+    final size = widget.baseSize * widget.scale;
+    final buttonSize = size * 0.34;
     
     return GestureDetector(
       onPanStart: widget.editMode ? null : (details) => _handlePan(details.localPosition, Size(size, size)),
@@ -439,17 +460,17 @@ class _DPadState extends State<_DPad> {
         height: size,
         child: Stack(
           children: [
-            // Background - semi-transparent for visibility
+            // Background
             Center(
               child: Container(
-                width: size - 20,
-                height: size - 20,
+                width: size - 16,
+                height: size - 16,
                 decoration: BoxDecoration(
-                  color: YageColors.backgroundMedium.withAlpha(180),
-                  borderRadius: BorderRadius.circular(24),
+                  color: YageColors.surface.withAlpha(210),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: YageColors.surfaceLight.withAlpha(140),
-                    width: 2,
+                    color: YageColors.surfaceLight,
+                    width: 1.5,
                   ),
                 ),
               ),
@@ -499,17 +520,17 @@ class _DPadState extends State<_DPad> {
               ),
             ),
             
-            // Center circle
+            // Center circle - matching app theme
             Center(
               child: Container(
                 width: 36 * widget.scale,
                 height: 36 * widget.scale,
                 decoration: BoxDecoration(
-                  color: YageColors.surface.withAlpha(180),
+                  color: YageColors.backgroundMedium,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: YageColors.surfaceLight.withAlpha(150),
-                    width: 2,
+                    color: YageColors.surfaceLight,
+                    width: 1.5,
                   ),
                 ),
               ),
@@ -539,18 +560,13 @@ class _DPadButton extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color: isPressed 
-            ? YageColors.primary.withAlpha(220)
-            : YageColors.surface.withAlpha(180),
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: isPressed
-            ? []
-            : [
-                BoxShadow(
-                  color: Colors.black.withAlpha(60),
-                  offset: const Offset(0, 2),
-                  blurRadius: 4,
-                ),
-              ],
+            ? YageColors.primary.withAlpha(230)
+            : YageColors.surface.withAlpha(220),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isPressed ? YageColors.primary : YageColors.surfaceLight,
+          width: 1,
+        ),
       ),
       child: Icon(
         icon,
@@ -607,22 +623,13 @@ class _CircleButtonState extends State<_CircleButton> {
         height: widget.size,
         decoration: BoxDecoration(
           color: _isPressed 
-              ? widget.color.withAlpha(230)
-              : widget.color.withAlpha(160),
+              ? YageColors.primary.withAlpha(230)
+              : YageColors.surface.withAlpha(220),
           shape: BoxShape.circle,
           border: Border.all(
-            color: widget.color.withAlpha(200),
-            width: 2.5,
+            color: _isPressed ? YageColors.primary : YageColors.surfaceLight,
+            width: 1.5,
           ),
-          boxShadow: _isPressed
-              ? []
-              : [
-                  BoxShadow(
-                    color: widget.color.withAlpha(80),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  ),
-                ],
         ),
         child: Center(
           child: Text(
@@ -631,8 +638,8 @@ class _CircleButtonState extends State<_CircleButton> {
               fontSize: widget.size * 0.35,
               fontWeight: FontWeight.bold,
               color: _isPressed 
-                  ? YageColors.backgroundDark
-                  : YageColors.backgroundDark.withAlpha(220),
+                  ? YageColors.textPrimary
+                  : YageColors.textSecondary,
             ),
           ),
         ),
@@ -646,12 +653,14 @@ class _ShoulderButton extends StatefulWidget {
   final String label;
   final void Function(bool pressed) onChanged;
   final double scale;
+  final double baseSize;
   final bool editMode;
 
   const _ShoulderButton({
     required this.label,
     required this.onChanged,
     this.scale = 1.0,
+    this.baseSize = 80.0,
     this.editMode = false,
   });
 
@@ -680,37 +689,26 @@ class _ShoulderButtonState extends State<_ShoulderButton> {
       onTapCancel: widget.editMode ? null : () => _setPressed(false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 50),
-        width: 80 * widget.scale,
-        height: 40 * widget.scale,
+        width: widget.baseSize * 0.55 * widget.scale,
+        height: widget.baseSize * 0.30 * widget.scale,
         decoration: BoxDecoration(
           color: _isPressed 
-              ? YageColors.primary.withAlpha(220)
-              : YageColors.surface.withAlpha(170),
-          borderRadius: BorderRadius.circular(8),
+              ? YageColors.primary.withAlpha(230)
+              : YageColors.surface.withAlpha(210),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _isPressed 
-                ? YageColors.primaryLight 
-                : YageColors.surfaceLight.withAlpha(150),
-            width: 2,
+            color: _isPressed ? YageColors.primary : YageColors.surfaceLight,
+            width: 1.5,
           ),
-          boxShadow: _isPressed
-              ? []
-              : [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(50),
-                    offset: const Offset(0, 2),
-                    blurRadius: 4,
-                  ),
-                ],
         ),
         child: Center(
           child: Text(
             widget.label,
             style: TextStyle(
-              fontSize: 18 * widget.scale,
+              fontSize: widget.baseSize * 0.12 * widget.scale,
               fontWeight: FontWeight.bold,
               color: _isPressed 
-                  ? YageColors.textPrimary 
+                  ? YageColors.textPrimary
                   : YageColors.textSecondary,
             ),
           ),
@@ -725,12 +723,14 @@ class _SmallButton extends StatefulWidget {
   final String label;
   final void Function(bool pressed) onChanged;
   final double scale;
+  final double baseSize;
   final bool editMode;
 
   const _SmallButton({
     required this.label,
     required this.onChanged,
     this.scale = 1.0,
+    this.baseSize = 80.0,
     this.editMode = false,
   });
 
@@ -760,28 +760,28 @@ class _SmallButtonState extends State<_SmallButton> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 50),
         padding: EdgeInsets.symmetric(
-          horizontal: 16 * widget.scale,
-          vertical: 8 * widget.scale,
+          horizontal: widget.baseSize * 0.10 * widget.scale,
+          vertical: widget.baseSize * 0.06 * widget.scale,
         ),
         decoration: BoxDecoration(
           color: _isPressed 
-              ? YageColors.surfaceLight.withAlpha(200)
-              : YageColors.backgroundMedium.withAlpha(170),
-          borderRadius: BorderRadius.circular(16),
+              ? YageColors.primary.withAlpha(230)
+              : YageColors.surface.withAlpha(210),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: YageColors.surfaceLight.withAlpha(150),
+            color: _isPressed ? YageColors.primary : YageColors.surfaceLight,
             width: 1.5,
           ),
         ),
         child: Text(
           widget.label,
           style: TextStyle(
-            fontSize: 10 * widget.scale,
+            fontSize: widget.baseSize * 0.09 * widget.scale,
             fontWeight: FontWeight.bold,
             color: _isPressed 
-                ? YageColors.textPrimary 
+                ? YageColors.textPrimary
                 : YageColors.textSecondary,
-            letterSpacing: 1,
+            letterSpacing: 0.5,
           ),
         ),
       ),

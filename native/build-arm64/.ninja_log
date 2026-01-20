@@ -1,3 +1,3 @@
-# ninja log v7
-1	45	1768847125625101714	CMakeFiles/yage_core.dir/yage_libretro.c.o	8a8b179e07d7169b
-45	79	1768847125669577046	libyage_core.so	9e1d8e181f474b8d
+# ninja log v6
+7	402	7906014986644282	CMakeFiles/yage_core.dir/yage_libretro.c.o	bf015c4af0fbfbbc
+406	1042	7906014990614372	libyage_core.so	2b952df221c53772

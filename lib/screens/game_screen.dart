@@ -155,17 +155,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ),
               
               // Main content - different layout for portrait vs landscape
-              SafeArea(
-                child: _isLandscape
-                    ? _buildLandscapeLayout(emulator, settings, gameDisplay)
-                    : _buildPortraitLayout(emulator, settings, gameDisplay),
-              ),
+              // Landscape: no SafeArea to maximize screen usage
+              // Portrait: use SafeArea for proper spacing
+              _isLandscape
+                  ? _buildLandscapeLayout(emulator, settings, gameDisplay)
+                  : SafeArea(
+                      child: _buildPortraitLayout(emulator, settings, gameDisplay),
+                    ),
               
-              // FPS overlay
+              // FPS overlay - positioned to avoid R button in landscape
               if (settings.showFps)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  right: 8,
+                  top: MediaQuery.of(context).padding.top + 4,
+                  right: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.12  // 12% from right
+                      : 8,
                   child: FpsOverlay(fps: emulator.currentFps),
                 ),
               
@@ -194,16 +198,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Menu button (hide in edit mode)
               if (!_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  left: 8,
+                  top: MediaQuery.of(context).padding.top + 4,
+                  left: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.12  // 12% from left
+                      : 8,
                   child: _MenuButton(onTap: _toggleMenu),
                 ),
               
-              // Fast forward button (hide in edit mode)
+              // Fast forward button (hide in edit mode) - next to menu
               if (!_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  left: 60,
+                  top: MediaQuery.of(context).padding.top + 4,
+                  left: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.18  // 18% from left
+                      : 60,
                   child: _FastForwardButton(
                     isActive: emulator.speedMultiplier > 1.0,
                     speed: emulator.speedMultiplier,
@@ -214,8 +222,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Rotation toggle button (hide in edit mode)
               if (!_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  right: settings.showFps ? 70 : 8,
+                  top: MediaQuery.of(context).padding.top + 4,
+                  right: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.18  // 18% from right
+                      : (settings.showFps ? 70 : 8),
                   child: _RotationButton(
                     isLandscape: _isLandscape,
                     onTap: () => _toggleOrientation(),
@@ -299,44 +309,59 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Portrait layout: Game on top, controls on bottom
+  /// Portrait layout: Game on top, controls on bottom - MAXIMIZED
   Widget _buildPortraitLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     final layout = _tempLayout ?? settings.gamepadLayoutPortrait;
     final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
     
-    // Calculate optimal game display height (leave room for controls)
-    // GBA aspect ratio is 3:2 (240:160)
+    // Calculate optimal game display - MAXIMIZE the game
     final aspectRatio = emulator.screenWidth / emulator.screenHeight;
-    final maxGameWidth = screenSize.width - 16; // 8px padding each side
-    final maxGameHeight = screenSize.height * 0.45; // Use up to 45% of screen for game
     
-    // Calculate actual dimensions maintaining aspect ratio
+    // Use full width (5px padding each side)
+    final maxGameWidth = screenSize.width - 10;
+    
+    // Calculate height from width
     double gameWidth = maxGameWidth;
     double gameHeight = gameWidth / aspectRatio;
     
+    // Top bar space (menu buttons)
+    final topBarHeight = 45.0;
+    
+    // Allow game to take more space - controls will overlay if needed
+    // Reserve minimum 220px for controls on smaller screens, less on larger
+    final minControlsHeight = screenSize.height > 700 ? 200.0 : 220.0;
+    final maxGameHeight = screenSize.height - safeArea.top - safeArea.bottom - minControlsHeight - topBarHeight;
+    
+    // Constrain if too tall
     if (gameHeight > maxGameHeight) {
       gameHeight = maxGameHeight;
       gameWidth = gameHeight * aspectRatio;
     }
     
-    return Column(
+    return Stack(
       children: [
-        const SizedBox(height: 50), // Space for menu button
-        
-        // Game display - maximized at top
-        Center(
-          child: SizedBox(
-            width: gameWidth,
-            height: gameHeight,
-            child: gameDisplay,
+        // Game display at top
+        Positioned(
+          top: topBarHeight,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: SizedBox(
+              width: gameWidth,
+              height: gameHeight,
+              child: gameDisplay,
+            ),
           ),
         ),
         
-        const SizedBox(height: 8),
-        
-        // Virtual gamepad - fills remaining space
+        // Virtual gamepad - positioned from bottom, can overlay game slightly
         if (_showControls)
-          Expanded(
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: safeArea.bottom,
+            height: screenSize.height - topBarHeight - safeArea.top - gameHeight + 30, // Allow 30px overlap
             child: VirtualGamepad(
               onKeysChanged: emulator.setKeys,
               opacity: settings.gamepadOpacity,
@@ -353,27 +378,25 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Landscape layout: Game centered, controls on sides - MAXIMIZED
+  /// Landscape layout: Game centered, controls overlay on sides
   Widget _buildLandscapeLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     final layout = _tempLayout ?? settings.gamepadLayoutLandscape;
     final screenSize = MediaQuery.of(context).size;
-    final safeArea = MediaQuery.of(context).padding;
     
-    // Calculate maximum game size for landscape
-    // GBA aspect ratio is 3:2 (240:160)
+    // Calculate game size - maximize with only 5px padding
     final aspectRatio = emulator.screenWidth / emulator.screenHeight;
     
-    // Available space (account for safe area on notched phones)
-    final availableWidth = screenSize.width - safeArea.left - safeArea.right - 32;
-    final availableHeight = screenSize.height - safeArea.top - safeArea.bottom - 16;
+    // Use nearly full height (5px margin top/bottom)
+    final availableHeight = screenSize.height - 10;
     
-    // Calculate dimensions to fill maximum space while maintaining aspect ratio
-    double gameWidth = availableWidth;
-    double gameHeight = gameWidth / aspectRatio;
+    // Calculate width from height
+    double gameHeight = availableHeight;
+    double gameWidth = gameHeight * aspectRatio;
     
-    if (gameHeight > availableHeight) {
-      gameHeight = availableHeight;
-      gameWidth = gameHeight * aspectRatio;
+    // If too wide, constrain by width (5px margin each side)
+    if (gameWidth > screenSize.width - 10) {
+      gameWidth = screenSize.width - 10;
+      gameHeight = gameWidth / aspectRatio;
     }
     
     return Stack(
@@ -387,7 +410,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
         ),
         
-        // Virtual gamepad overlay in landscape
+        // Virtual gamepad overlay in landscape (buttons positioned on sides)
         if (_showControls)
           VirtualGamepad(
             onKeysChanged: emulator.setKeys,

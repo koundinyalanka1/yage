@@ -1,7 +1,7 @@
 {
 	"InstallScripts" : 
 	[
-		"/Users/koundinya/flutter_projects/yage/native/build-arm64/cmake_install.cmake"
+		"C:/Users/C9G3WQ/Personal_Projects/yage/native/build-arm64/cmake_install.cmake"
 	],
 	"Parallel" : false
 }

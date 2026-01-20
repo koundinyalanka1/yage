@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:ui';
+import 'dart:math' as math;
 
 /// Position and size for a single gamepad button
+/// Uses a proportional coordinate system based on the shorter screen dimension
+/// to maintain Game Boy-like consistent spacing across devices
 class ButtonLayout {
   final double x; // Relative position (0.0 - 1.0 from left)
   final double y; // Relative position (0.0 - 1.0 from top)
@@ -31,6 +34,21 @@ class ButtonLayout {
     );
   }
 
+  /// Convert to pixel offset using FULLY proportional scaling
+  /// BOTH x and y scale relative to the shorter screen dimension (unit size)
+  /// This ensures Game Boy-like consistent button spacing on ALL devices
+  Offset toProportionalOffset(Size screenSize) {
+    final unit = math.min(screenSize.width, screenSize.height);
+    
+    // Both axes use the same unit for truly proportional positioning
+    // This makes button layout feel identical across all screen sizes
+    return Offset(
+      x * unit,
+      y * unit,
+    );
+  }
+
+  /// Legacy offset conversion (for compatibility)
   Offset toOffset(Size screenSize) {
     return Offset(x * screenSize.width, y * screenSize.height);
   }
@@ -39,6 +57,17 @@ class ButtonLayout {
     return ButtonLayout(
       x: (offset.dx / screenSize.width).clamp(0.0, 1.0),
       y: (offset.dy / screenSize.height).clamp(0.0, 1.0),
+    );
+  }
+  
+  /// Create from proportional offset (inverse of toProportionalOffset)
+  static ButtonLayout fromProportionalOffset(Offset offset, Size screenSize) {
+    final unit = math.min(screenSize.width, screenSize.height);
+    
+    // Both axes use the same unit
+    return ButtonLayout(
+      x: (offset.dx / unit).clamp(0.0, 3.0), // Can exceed 1.0 for positioning across screen
+      y: (offset.dy / unit).clamp(0.0, 3.0),
     );
   }
 }
@@ -63,26 +92,26 @@ class GamepadLayout {
     required this.selectButton,
   });
 
-  /// Default portrait layout - well spaced for comfortable play
+  /// Portrait layout - practical, uses full control area
   static const GamepadLayout defaultPortrait = GamepadLayout(
-    dpad: ButtonLayout(x: 0.02, y: 0.45, size: 1.0),
-    aButton: ButtonLayout(x: 0.72, y: 0.45, size: 1.0),
-    bButton: ButtonLayout(x: 0.55, y: 0.62, size: 1.0),
-    lButton: ButtonLayout(x: 0.02, y: 0.05, size: 1.0),
-    rButton: ButtonLayout(x: 0.78, y: 0.05, size: 1.0),
-    startButton: ButtonLayout(x: 0.55, y: 0.88, size: 1.0),
-    selectButton: ButtonLayout(x: 0.28, y: 0.88, size: 1.0),
+    dpad: ButtonLayout(x: 0.02, y: 0.08, size: 1.0),
+    aButton: ButtonLayout(x: 0.72, y: 0.05, size: 1.0),
+    bButton: ButtonLayout(x: 0.50, y: 0.22, size: 1.0),
+    lButton: ButtonLayout(x: 0.02, y: 0.52, size: 0.85),
+    rButton: ButtonLayout(x: 0.72, y: 0.52, size: 0.85),
+    selectButton: ButtonLayout(x: 0.25, y: 0.40, size: 0.85),
+    startButton: ButtonLayout(x: 0.50, y: 0.40, size: 0.85),
   );
 
-  /// Default landscape layout - buttons spread to sides
+  /// Landscape layout - clean symmetric layout
   static const GamepadLayout defaultLandscape = GamepadLayout(
-    dpad: ButtonLayout(x: 0.01, y: 0.30, size: 0.9),
-    aButton: ButtonLayout(x: 0.82, y: 0.25, size: 0.9),
-    bButton: ButtonLayout(x: 0.68, y: 0.50, size: 0.9),
-    lButton: ButtonLayout(x: 0.01, y: 0.0, size: 0.85),
-    rButton: ButtonLayout(x: 0.87, y: 0.0, size: 0.85),
-    startButton: ButtonLayout(x: 0.55, y: 0.82, size: 0.85),
-    selectButton: ButtonLayout(x: 0.35, y: 0.82, size: 0.85),
+    dpad: ButtonLayout(x: 0.05, y: 0.30, size: 0.90),
+    aButton: ButtonLayout(x: 1.95, y: 0.15, size: 0.90),
+    bButton: ButtonLayout(x: 1.95, y: 0.48, size: 0.90),
+    lButton: ButtonLayout(x: 0.05, y: 0.02, size: 0.75),
+    rButton: ButtonLayout(x: 1.95, y: 0.02, size: 0.75),
+    selectButton: ButtonLayout(x: 0.05, y: 0.72, size: 0.70),
+    startButton: ButtonLayout(x: 1.95, y: 0.72, size: 0.70),
   );
 
   GamepadLayout copyWith({
