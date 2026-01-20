@@ -6,6 +6,7 @@ import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
 import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
+import '../services/artwork_service.dart';
 import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
 import '../utils/theme.dart';
@@ -48,9 +49,36 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     if (result != null && mounted) {
       final library = context.read<GameLibraryService>();
+      final addedGames = <GameRom>[];
+      
       for (final file in result.files) {
         if (file.path != null) {
-          await library.addRom(file.path!);
+          final game = await library.addRom(file.path!);
+          if (game != null) {
+            addedGames.add(game);
+          }
+        }
+      }
+      
+      // Auto-download artwork for newly added games
+      if (addedGames.isNotEmpty && mounted) {
+        _autoDownloadArtwork(addedGames, library);
+      }
+    }
+  }
+  
+  /// Auto-download artwork for games in background
+  Future<void> _autoDownloadArtwork(List<GameRom> games, GameLibraryService library) async {
+    for (final game in games) {
+      if (game.coverPath == null) {
+        try {
+          final artworkPath = await ArtworkService.fetchArtwork(game);
+          if (artworkPath != null && mounted) {
+            await library.setCoverArt(game, artworkPath);
+          }
+        } catch (e) {
+          // Silently fail - artwork is optional
+          debugPrint('Auto-download artwork failed for ${game.name}: $e');
         }
       }
     }

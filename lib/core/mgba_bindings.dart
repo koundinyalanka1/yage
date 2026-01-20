@@ -61,6 +61,19 @@ typedef MgbaCoreGetPlatform = int Function(NativeCore core);
 typedef MgbaCoreSetSaveDirNative = Void Function(NativeCore core, Pointer<Utf8> path);
 typedef MgbaCoreSetSaveDir = void Function(NativeCore core, Pointer<Utf8> path);
 
+// Battery/SRAM save functions
+typedef MgbaCoreGetSramSizeNative = Int32 Function(NativeCore core);
+typedef MgbaCoreGetSramSize = int Function(NativeCore core);
+
+typedef MgbaCoreGetSramDataNative = Pointer<Uint8> Function(NativeCore core);
+typedef MgbaCoreGetSramData = Pointer<Uint8> Function(NativeCore core);
+
+typedef MgbaCoreSaveSramNative = Int32 Function(NativeCore core, Pointer<Utf8> path);
+typedef MgbaCoreSaveSram = int Function(NativeCore core, Pointer<Utf8> path);
+
+typedef MgbaCoreLoadSramNative = Int32 Function(NativeCore core, Pointer<Utf8> path);
+typedef MgbaCoreLoadSram = int Function(NativeCore core, Pointer<Utf8> path);
+
 /// Game Boy key codes matching mGBA's input format
 class GBAKey {
   static const int a = 1 << 0;
@@ -106,6 +119,10 @@ class MGBABindings {
   late final MgbaCoreGetHeight coreGetHeight;
   late final MgbaCoreGetPlatform coreGetPlatform;
   late final MgbaCoreSetSaveDir coreSetSaveDir;
+  late final MgbaCoreGetSramSize coreGetSramSize;
+  late final MgbaCoreGetSramData coreGetSramData;
+  late final MgbaCoreSaveSram coreSaveSram;
+  late final MgbaCoreLoadSram coreLoadSram;
 
   bool get isLoaded => _isLoaded;
 
@@ -216,6 +233,22 @@ class MGBABindings {
 
     coreSetSaveDir = _lib
         .lookup<NativeFunction<MgbaCoreSetSaveDirNative>>('yage_core_set_save_dir')
+        .asFunction();
+
+    coreGetSramSize = _lib
+        .lookup<NativeFunction<MgbaCoreGetSramSizeNative>>('yage_core_get_sram_size')
+        .asFunction();
+
+    coreGetSramData = _lib
+        .lookup<NativeFunction<MgbaCoreGetSramDataNative>>('yage_core_get_sram_data')
+        .asFunction();
+
+    coreSaveSram = _lib
+        .lookup<NativeFunction<MgbaCoreSaveSramNative>>('yage_core_save_sram')
+        .asFunction();
+
+    coreLoadSram = _lib
+        .lookup<NativeFunction<MgbaCoreLoadSramNative>>('yage_core_load_sram')
         .asFunction();
   }
 }
@@ -395,6 +428,43 @@ class MGBACore {
   void reset() {
     if (_corePtr == null) return;
     _bindings.coreReset(_corePtr as Pointer<Void>);
+  }
+
+  /// Get SRAM (battery save) size
+  int getSramSize() {
+    if (_corePtr == null) return 0;
+    return _bindings.coreGetSramSize(_corePtr as Pointer<Void>);
+  }
+
+  /// Get SRAM data pointer
+  Pointer<Uint8>? getSramData() {
+    if (_corePtr == null) return null;
+    final ptr = _bindings.coreGetSramData(_corePtr as Pointer<Void>);
+    return ptr == nullptr ? null : ptr;
+  }
+
+  /// Save SRAM to file (.sav)
+  bool saveSram(String path) {
+    if (_corePtr == null) return false;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final result = _bindings.coreSaveSram(_corePtr as Pointer<Void>, pathPtr);
+      return result == 0;
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Load SRAM from file (.sav)
+  bool loadSram(String path) {
+    if (_corePtr == null) return false;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final result = _bindings.coreLoadSram(_corePtr as Pointer<Void>, pathPtr);
+      return result == 0;
+    } finally {
+      calloc.free(pathPtr);
+    }
   }
 
   /// Stop and clean up

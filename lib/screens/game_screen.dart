@@ -222,13 +222,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                 ),
               
-              // Layout editor toolbar - positioned at bottom in landscape to avoid L/R buttons
+              // Layout editor toolbar - centered to avoid all buttons
               if (_editingLayout)
                 Positioned(
-                  bottom: _isLandscape ? 8 : null,
-                  top: _isLandscape ? null : MediaQuery.of(context).padding.top + 8,
-                  left: _isLandscape ? MediaQuery.of(context).size.width * 0.25 : 8,
-                  right: _isLandscape ? MediaQuery.of(context).size.width * 0.25 : 8,
+                  top: _isLandscape 
+                      ? MediaQuery.of(context).size.height * 0.35
+                      : MediaQuery.of(context).padding.top + 60,
+                  left: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.30 
+                      : 16,
+                  right: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.30 
+                      : 16,
                   child: _LayoutEditorToolbar(
                     onSave: _saveLayout,
                     onCancel: _cancelEditLayout,
@@ -297,18 +302,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// Portrait layout: Game on top, controls on bottom
   Widget _buildPortraitLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     final layout = _tempLayout ?? settings.gamepadLayoutPortrait;
+    final screenSize = MediaQuery.of(context).size;
+    
+    // Calculate optimal game display height (leave room for controls)
+    // GBA aspect ratio is 3:2 (240:160)
+    final aspectRatio = emulator.screenWidth / emulator.screenHeight;
+    final maxGameWidth = screenSize.width - 16; // 8px padding each side
+    final maxGameHeight = screenSize.height * 0.45; // Use up to 45% of screen for game
+    
+    // Calculate actual dimensions maintaining aspect ratio
+    double gameWidth = maxGameWidth;
+    double gameHeight = gameWidth / aspectRatio;
+    
+    if (gameHeight > maxGameHeight) {
+      gameHeight = maxGameHeight;
+      gameWidth = gameHeight * aspectRatio;
+    }
     
     return Column(
       children: [
         const SizedBox(height: 50), // Space for menu button
         
-        // Game display - centered at top
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: gameDisplay,
+        // Game display - maximized at top
+        Center(
+          child: SizedBox(
+            width: gameWidth,
+            height: gameHeight,
+            child: gameDisplay,
+          ),
         ),
         
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
         
         // Virtual gamepad - fills remaining space
         if (_showControls)
@@ -329,16 +353,36 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Landscape layout: Game centered, controls on sides
+  /// Landscape layout: Game centered, controls on sides - MAXIMIZED
   Widget _buildLandscapeLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     final layout = _tempLayout ?? settings.gamepadLayoutLandscape;
+    final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
+    
+    // Calculate maximum game size for landscape
+    // GBA aspect ratio is 3:2 (240:160)
+    final aspectRatio = emulator.screenWidth / emulator.screenHeight;
+    
+    // Available space (account for safe area on notched phones)
+    final availableWidth = screenSize.width - safeArea.left - safeArea.right - 32;
+    final availableHeight = screenSize.height - safeArea.top - safeArea.bottom - 16;
+    
+    // Calculate dimensions to fill maximum space while maintaining aspect ratio
+    double gameWidth = availableWidth;
+    double gameHeight = gameWidth / aspectRatio;
+    
+    if (gameHeight > availableHeight) {
+      gameHeight = availableHeight;
+      gameWidth = gameHeight * aspectRatio;
+    }
     
     return Stack(
       children: [
-        // Game display - centered and larger
+        // Game display - centered and MAXIMIZED
         Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 120, vertical: 8),
+          child: SizedBox(
+            width: gameWidth,
+            height: gameHeight,
             child: gameDisplay,
           ),
         ),

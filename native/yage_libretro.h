@@ -99,6 +99,14 @@ YAGE_API int yage_core_save_state(YageCore* core, int slot);
 YAGE_API int yage_core_load_state(YageCore* core, int slot);
 
 /*
+ * Battery/SRAM saves (.sav files)
+ */
+YAGE_API int yage_core_get_sram_size(YageCore* core);
+YAGE_API uint8_t* yage_core_get_sram_data(YageCore* core);
+YAGE_API int yage_core_save_sram(YageCore* core, const char* path);
+YAGE_API int yage_core_load_sram(YageCore* core, const char* path);
+
+/*
  * Info
  */
 YAGE_API int yage_core_get_platform(YageCore* core);

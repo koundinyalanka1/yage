@@ -124,6 +124,11 @@ class MGBAStub {
 
   bool saveState(int slot) => true;
   bool loadState(int slot) => true;
+  
+  // SRAM stubs (no-op in demo mode)
+  int getSramSize() => 0;
+  bool saveSram(String path) => true;
+  bool loadSram(String path) => true;
 
   void reset() {
     _frameCount = 0;

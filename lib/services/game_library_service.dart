@@ -87,18 +87,18 @@ class GameLibraryService extends ChangeNotifier {
     }
   }
 
-  /// Add a single ROM file
-  Future<bool> addRom(String path) async {
+  /// Add a single ROM file - returns the added game or null
+  Future<GameRom?> addRom(String path) async {
     final game = GameRom.fromPath(path);
-    if (game == null) return false;
+    if (game == null) return null;
 
     // Check if already exists
-    if (_games.any((g) => g.path == path)) return true;
+    if (_games.any((g) => g.path == path)) return null;
 
     _games.add(game);
     await _saveLibrary();
     notifyListeners();
-    return true;
+    return game;
   }
 
   /// Add a ROM directory to scan

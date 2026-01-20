@@ -37,6 +37,12 @@ typedef void* LibHandle;
 /* Suppress excessive logging after initial frames */
 static int g_log_frame_count = 0;
 
+/* Libretro memory types */
+#define RETRO_MEMORY_SAVE_RAM 0
+#define RETRO_MEMORY_RTC      1
+#define RETRO_MEMORY_SYSTEM_RAM 2
+#define RETRO_MEMORY_VIDEO_RAM 3
+
 /* Libretro types */
 typedef void (*retro_init_t)(void);
 typedef void (*retro_deinit_t)(void);
@@ -55,6 +61,8 @@ typedef void (*retro_set_audio_sample_t)(void*);
 typedef void (*retro_set_audio_sample_batch_t)(void*);
 typedef void (*retro_set_input_poll_t)(void*);
 typedef void (*retro_set_input_state_t)(void*);
+typedef void* (*retro_get_memory_data_t)(unsigned id);
+typedef size_t (*retro_get_memory_size_t)(unsigned id);
 
 struct retro_game_info {
     const char* path;
@@ -313,6 +321,8 @@ struct YageCore {
     retro_set_audio_sample_batch_t retro_set_audio_sample_batch;
     retro_set_input_poll_t retro_set_input_poll;
     retro_set_input_state_t retro_set_input_state;
+    retro_get_memory_data_t retro_get_memory_data;
+    retro_get_memory_size_t retro_get_memory_size;
     
     char* save_dir;
     char* rom_path;
@@ -573,6 +583,8 @@ int yage_core_init(YageCore* core) {
     LOAD_SYM(retro_set_audio_sample_batch);
     LOAD_SYM(retro_set_input_poll);
     LOAD_SYM(retro_set_input_state);
+    LOAD_SYM(retro_get_memory_data);
+    LOAD_SYM(retro_get_memory_size);
     
     #undef LOAD_SYM
     
@@ -815,6 +827,88 @@ int yage_core_load_state(YageCore* core, int slot) {
 int yage_core_get_platform(YageCore* core) {
     if (!core) return YAGE_PLATFORM_UNKNOWN;
     return core->platform;
+}
+
+/*
+ * SRAM (Battery Save) Functions
+ */
+
+int yage_core_get_sram_size(YageCore* core) {
+    if (!core || !core->initialized || !core->retro_get_memory_size) return 0;
+    return (int)core->retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+}
+
+uint8_t* yage_core_get_sram_data(YageCore* core) {
+    if (!core || !core->initialized || !core->retro_get_memory_data) return NULL;
+    return (uint8_t*)core->retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+}
+
+int yage_core_save_sram(YageCore* core, const char* path) {
+    if (!core || !core->initialized || !path) return -1;
+    if (!core->retro_get_memory_size || !core->retro_get_memory_data) return -1;
+    
+    size_t size = core->retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    if (size == 0) {
+        LOGI("No SRAM to save (size=0)");
+        return 0; /* No SRAM to save - not an error */
+    }
+    
+    void* data = core->retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    if (!data) {
+        LOGE("Failed to get SRAM data pointer");
+        return -1;
+    }
+    
+    FILE* file = fopen(path, "wb");
+    if (!file) {
+        LOGE("Failed to open save file: %s", path);
+        return -1;
+    }
+    
+    size_t written = fwrite(data, 1, size, file);
+    fclose(file);
+    
+    if (written == size) {
+        LOGI("Saved SRAM to %s (%zu bytes)", path, size);
+        return 0;
+    } else {
+        LOGE("Failed to write SRAM (wrote %zu of %zu bytes)", written, size);
+        return -1;
+    }
+}
+
+int yage_core_load_sram(YageCore* core, const char* path) {
+    if (!core || !core->initialized || !path) return -1;
+    if (!core->retro_get_memory_size || !core->retro_get_memory_data) return -1;
+    
+    size_t size = core->retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    if (size == 0) {
+        LOGI("No SRAM expected for this game (size=0)");
+        return 0; /* No SRAM expected - not an error */
+    }
+    
+    void* data = core->retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    if (!data) {
+        LOGE("Failed to get SRAM data pointer");
+        return -1;
+    }
+    
+    FILE* file = fopen(path, "rb");
+    if (!file) {
+        LOGI("No save file found: %s (starting fresh)", path);
+        return 0; /* File doesn't exist - not an error, just no save yet */
+    }
+    
+    size_t read_size = fread(data, 1, size, file);
+    fclose(file);
+    
+    if (read_size > 0) {
+        LOGI("Loaded SRAM from %s (%zu bytes)", path, read_size);
+        return 0;
+    } else {
+        LOGE("Failed to read SRAM data");
+        return -1;
+    }
 }
 
 /* Case-insensitive string compare for cross-platform */

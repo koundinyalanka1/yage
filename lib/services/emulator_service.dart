@@ -138,6 +138,42 @@ class EmulatorService extends ChangeNotifier {
     return saveDir.path;
   }
 
+  /// Get the .sav file path for a ROM (battery/SRAM save)
+  Future<String> _getSramPath(GameRom rom) async {
+    final saveDir = await _getSaveDirectory();
+    // Use ROM name without extension + .sav
+    final saveName = p.basenameWithoutExtension(rom.path);
+    return p.join(saveDir, '$saveName.sav');
+  }
+
+  /// Load SRAM from .sav file if it exists
+  Future<void> _loadSram(GameRom rom) async {
+    if (_useStub || _core == null) return;
+    
+    try {
+      final sramPath = await _getSramPath(rom);
+      if (File(sramPath).existsSync()) {
+        final success = _core!.loadSram(sramPath);
+        debugPrint('Loaded SRAM from $sramPath: $success');
+      }
+    } catch (e) {
+      debugPrint('Error loading SRAM: $e');
+    }
+  }
+
+  /// Save SRAM to .sav file
+  Future<void> saveSram() async {
+    if (_useStub || _core == null || _currentRom == null) return;
+    
+    try {
+      final sramPath = await _getSramPath(_currentRom!);
+      final success = _core!.saveSram(sramPath);
+      debugPrint('Saved SRAM to $sramPath: $success');
+    } catch (e) {
+      debugPrint('Error saving SRAM: $e');
+    }
+  }
+
   /// Load a ROM file
   Future<bool> loadRom(GameRom rom) async {
     if (_state == EmulatorState.uninitialized) {
@@ -164,6 +200,9 @@ class EmulatorService extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+
+      // Load SRAM (battery save) if exists
+      await _loadSram(rom);
 
       _currentRom = rom.copyWith(lastPlayed: DateTime.now());
       _state = EmulatorState.paused;
@@ -198,13 +237,17 @@ class EmulatorService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Pause emulation
-  void pause() {
+  /// Pause emulation (also saves SRAM)
+  Future<void> pause() async {
     if (_state != EmulatorState.running) return;
 
     _state = EmulatorState.paused;
     _frameTimer?.cancel();
     _frameTimer = null;
+    
+    // Auto-save SRAM when pausing
+    await saveSram();
+    
     notifyListeners();
   }
 
@@ -374,9 +417,13 @@ class EmulatorService extends ChangeNotifier {
   }
 
   /// Stop and unload current ROM
-  void stop() {
+  Future<void> stop() async {
     _frameTimer?.cancel();
     _frameTimer = null;
+    
+    // Save SRAM before stopping
+    await saveSram();
+    
     if (_useStub) {
       _stub?.dispose();
       _stub = null;
