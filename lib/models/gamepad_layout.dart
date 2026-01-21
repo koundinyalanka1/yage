@@ -92,113 +92,115 @@ class GamepadLayout {
     required this.selectButton,
   });
 
-  /// Portrait layout - practical, uses full control area
-  /// Portrait layout - ergonomic, modern phone friendly
-  /// Portrait layout - production tuned for phones
+  /// Portrait layout - screen independent
+  /// x: 0-1 = left to right of screen
+  /// y: 0-1 = top to bottom of control area (below game)
   static const GamepadLayout defaultPortrait = GamepadLayout(
-    // D-pad: bottom-left, thumb-friendly
+    // D-pad: bottom-left corner of control area
     dpad: ButtonLayout(
-      x: 0.05,
-      y: 0.65,
-      size: 1.15,
+      x: 0.02,
+      y: 0.45,
+      size: 1.30,
     ),
 
-    // A button: bottom-right, primary thumb
+    // A button: bottom-right, primary action
     aButton: ButtonLayout(
-      x: 0.75,
-      y: 0.62,
+      x: 0.78,
+      y: 0.40,
       size: 1.20,
     ),
 
-    // B button: slightly left & below A
+    // B button: left of A, slightly lower
     bButton: ButtonLayout(
-      x: 0.62,
-      y: 0.72,
-      size: 1.15,
+      x: 0.58,
+      y: 0.55,
+      size: 1.20,
     ),
 
-    // L shoulder: just under game, left
+    // L shoulder: left side, with more clearance from game
     lButton: ButtonLayout(
       x: 0.02,
-      y: 0.08,
-      size: 0.95,
+      y: 0.15,
+      size: 1.10,
     ),
 
-    // R shoulder: just under game, right
+    // R shoulder: right side, with more clearance from game
     rButton: ButtonLayout(
-      x: 0.78,
-      y: 0.08,
-      size: 0.95,
+      x: 0.82,
+      y: 0.15,
+      size: 1.10,
     ),
 
-    // Select: centered left of middle
+    // Select: center-left
     selectButton: ButtonLayout(
-      x: 0.30,
-      y: 0.40,
-      size: 0.90,
+      x: 0.22,
+      y: 0.25,
+      size: 1.05,
     ),
 
-    // Start: centered right of middle
+    // Start: center-right
     startButton: ButtonLayout(
-      x: 0.52,
-      y: 0.40,
-      size: 0.90,
+      x: 0.62,
+      y: 0.25,
+      size: 1.05,
     ),
   );
 
 
 
 
-  /// Landscape layout - console-like, balanced left/right
-  /// Landscape layout - production tuned
+  /// Landscape layout - screen independent
+  /// Left side (D-pad, L, Select): x 0=left edge, 1=near game
+  /// Right side (A, B, R, Start): x 0=near game, 1=right edge  
+  /// y: 0-1 = top to bottom of screen
   static const GamepadLayout defaultLandscape = GamepadLayout(
-    // D-pad: left side, vertically centered
+    // D-pad: left zone, vertically centered
     dpad: ButtonLayout(
-      x: 0.03,
-      y: 0.30,
-      size: 1.10,
+      x: 0.05,
+      y: 0.40,
+      size: 1.25,
     ),
 
-    // A button: right side, upper thumb
+    // A button: right zone, upper-right (diagonal layout, near game)
     aButton: ButtonLayout(
-      x: 0.92,
+      x: 0.35,
       y: 0.28,
       size: 1.15,
     ),
 
-    // B button: right side, lower thumb
+    // B button: right zone, lower-left of A (diagonal layout, near game)
     bButton: ButtonLayout(
-      x: 0.92,
-      y: 0.48,
-      size: 1.10,
+      x: 0.05,
+      y: 0.52,
+      size: 1.15,
     ),
 
-    // L shoulder: top-left edge
+    // L shoulder: left zone, top
     lButton: ButtonLayout(
-      x: 0.03,
-      y: 0.03,
-      size: 0.90,
+      x: 0.20,
+      y: 0.08,
+      size: 1.05,
     ),
 
-    // R shoulder: top-right edge
+    // R shoulder: right zone, top
     rButton: ButtonLayout(
-      x: 0.92,
-      y: 0.03,
-      size: 0.90,
+      x: 0.40,
+      y: 0.08,
+      size: 1.05,
     ),
 
-    // Select: bottom-left area
+    // Select: left zone, bottom
     selectButton: ButtonLayout(
-      x: 0.25,
-      y: 0.75,
-      size: 0.85,
+      x: 0.50,
+      y: 0.85,
+      size: 1.00,
     ),
 
-    // Start: bottom-right area
+    // Start: right zone, bottom (closer to game)
     startButton: ButtonLayout(
-      x: 0.60,
-      y: 0.75,
-      size: 0.85,
+      x: 0.20,
+      y: 0.85,
+      size: 1.00,
     ),
   );
 

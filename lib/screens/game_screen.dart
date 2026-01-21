@@ -104,6 +104,77 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     Navigator.of(context).pop();
   }
 
+  Future<bool> _showExitDialog() async {
+    final emulator = context.read<EmulatorService>();
+    final wasRunning = emulator.state == EmulatorState.running;
+    
+    // Pause while showing dialog
+    if (wasRunning) {
+      emulator.pause();
+    }
+    
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: YageColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: YageColors.primary.withAlpha(77),
+            width: 2,
+          ),
+        ),
+        title: const Text(
+          'Exit Game?',
+          style: TextStyle(
+            color: YageColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: const Text(
+          'Your progress will be saved automatically.',
+          style: TextStyle(
+            color: YageColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: YageColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              backgroundColor: YageColors.error.withAlpha(51),
+            ),
+            child: const Text(
+              'Exit',
+              style: TextStyle(
+                color: YageColors.error,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    
+    if (shouldExit == true) {
+      _exitGame();
+      return true;
+    } else {
+      // Resume if was running
+      if (wasRunning && !_showMenu) {
+        emulator.start();
+      }
+      return false;
+    }
+  }
+
   void _toggleOrientation() {
     if (_isLandscape) {
       // Switch to portrait and lock it
@@ -132,9 +203,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       enableFiltering: settings.enableFiltering,
     );
     
-    return Scaffold(
-      backgroundColor: YageColors.backgroundDark,
-      body: OrientationBuilder(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _showExitDialog();
+      },
+      child: Scaffold(
+        backgroundColor: YageColors.backgroundDark,
+        body: OrientationBuilder(
         builder: (context, orientation) {
           _isLandscape = orientation == Orientation.landscape;
           
@@ -306,6 +383,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           );
         },
       ),
+      ),
     );
   }
 
@@ -325,8 +403,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     double gameWidth = maxGameWidth;
     double gameHeight = gameWidth / aspectRatio;
     
-    // Top bar space (menu buttons)
-    final topBarHeight = 45.0;
+    // Top bar space (menu buttons) - extra clearance to avoid overlap
+    final topBarHeight = 55.0;
     
     // Allow game to take more space - controls will overlay if needed
     // Reserve minimum 220px for controls on smaller screens, less on larger

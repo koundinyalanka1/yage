@@ -74,17 +74,43 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
   void _onButtonDrag(GamepadButton button, Offset delta, Size screenSize) {
     if (!widget.editMode) return;
     
+    final bool isPortrait = screenSize.height > screenSize.width;
+    final Rect gameRect = widget.gameRect;
+    
     setState(() {
       _selectedButton = button;
       final currentLayout = _getButtonLayout(button);
-      // Use the same unit for both axes (fully proportional)
-      final unit = screenSize.width < screenSize.height 
-          ? screenSize.width 
-          : screenSize.height;
       
-      // Both X and Y scale from the same unit
-      final newX = (currentLayout.x + delta.dx / screenSize.width).clamp(0.0, 1.0);
-      final newY = (currentLayout.y + delta.dy / screenSize.height).clamp(0.0, 1.0);
+      double newX, newY;
+      
+      if (isPortrait) {
+        // Portrait: widget IS the control area
+        final double marginX = 8.0;
+        final double marginY = 8.0;
+        final double usableWidth = screenSize.width - marginX * 2;
+        final double usableHeight = screenSize.height - marginY * 2;
+        
+        newX = (currentLayout.x + delta.dx / usableWidth).clamp(0.0, 1.0);
+        newY = (currentLayout.y + delta.dy / usableHeight).clamp(0.0, 1.0);
+      } else {
+        // Landscape: x spans zone width, y spans full height
+        final double edgePadding = 8.0;
+        final double gameGap = 4.0;
+        
+        final bool isLeftSide =
+            button == GamepadButton.dpad ||
+            button == GamepadButton.lButton ||
+            button == GamepadButton.selectButton;
+        
+        final double zoneWidth = isLeftSide
+            ? math.max(1, gameRect.left - gameGap - edgePadding)
+            : math.max(1, screenSize.width - edgePadding - gameRect.right - gameGap);
+        
+        final double usableHeight = screenSize.height - edgePadding * 2;
+        
+        newX = (currentLayout.x + delta.dx / zoneWidth).clamp(0.0, 1.0);
+        newY = (currentLayout.y + delta.dy / usableHeight).clamp(0.0, 1.0);
+      }
 
       _editingLayout = _updateButtonLayout(
         button,
@@ -293,7 +319,6 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
   }) {
     final isSelected = widget.editMode && _selectedButton == button;
     final Rect gameRect = widget.gameRect;
-
     final bool isPortrait = screenSize.height > screenSize.width;
 
     double x = 0.0;
@@ -301,123 +326,88 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
 
     if (isPortrait) {
       // ================= PORTRAIT MODE =================
-
-      final double screenH = screenSize.height;
-      final double screenW = screenSize.width;
-
-      // Control band starts just under the game, with a small gap
-      final double rawControlTop = gameRect.bottom + 8.0;
-
-      // Never allow controls to drop too low
-      final double maxControlTop = screenH * 0.42;
-
-      final double controlTop =
-      rawControlTop > maxControlTop ? maxControlTop : rawControlTop;
-
-      // Compact control height (tight, not floating too low)
-      final double controlHeight = screenH * 0.24;
-
-      // X spans exactly the game width
-      x = gameRect.left + layout.x * gameRect.width;
-
-      // Y spans only the compact control band
-      y = controlTop + layout.y * controlHeight;
-
-      // ---------- DEBUG PRINT ----------
-      debugPrint('[GAMEPAD DEBUG]');
-      debugPrint('Button: $button');
-      debugPrint('isPortrait: true');
-      debugPrint('screenSize: $screenSize');
-      debugPrint('gameRect: $gameRect');
-      debugPrint('layout.x: ${layout.x}, layout.y: ${layout.y}');
-      debugPrint('controlTop: $controlTop');
-      debugPrint('controlHeight: $controlHeight');
-      debugPrint('rawX: $x');
-      debugPrint('rawY: $y');
+      // In portrait, VirtualGamepad widget IS the control area (positioned below game)
+      // So screenSize here = control area size, not full screen
+      // Layout coordinates: x (0-1) = left to right of widget
+      //                     y (0-1) = top to bottom of widget (control area)
+      
+      final double widgetW = screenSize.width;
+      final double widgetH = screenSize.height;
+      
+      // Small margins from edges
+      final double marginX = 8.0;
+      final double marginY = 8.0;
+      
+      final double usableWidth = widgetW - marginX * 2;
+      final double usableHeight = widgetH - marginY * 2;
+      
+      // Direct mapping: layout 0-1 -> widget coordinates
+      x = marginX + layout.x * usableWidth;
+      y = marginY + layout.y * usableHeight;
 
     } else {
       // ================= LANDSCAPE MODE =================
-
+      // In landscape, VirtualGamepad fills the screen
+      // gameRect tells us where the game display is
+      // Left zone: left edge to game left
+      // Right zone: game right to right edge
+      
       final double screenW = screenSize.width;
       final double screenH = screenSize.height;
-
-      // Left and Right control zones (outside the game area)
-      final double leftZoneLeft = 0.0;
-      final double leftZoneRight = gameRect.left;
-
-      final double rightZoneLeft = gameRect.right;
-      final double rightZoneRight = screenW;
-
-      const double horizontalInset = 20.0;
-
-      final double leftZoneWidth =
-          (leftZoneRight - leftZoneLeft) - horizontalInset * 2;
-      final double rightZoneWidth =
-          (rightZoneRight - rightZoneLeft) - horizontalInset * 2;
-
-      final double leftZoneStart = leftZoneLeft + horizontalInset;
-      final double rightZoneStart = rightZoneLeft + horizontalInset;
-
-      // Vertical band aligned tightly to game height
-      final double zoneTop = gameRect.top + gameRect.height * 0.08;
-      final double zoneHeight = gameRect.height * 0.84;
-
+      
+      // Define zones with padding from edges
+      final double edgePadding = 8.0;
+      final double gameGap = 4.0; // Gap between controls and game
+      
+      // Left zone dimensions
+      final double leftZoneLeft = edgePadding;
+      final double leftZoneRight = gameRect.left - gameGap;
+      final double leftZoneWidth = math.max(0, leftZoneRight - leftZoneLeft);
+      
+      // Right zone dimensions  
+      final double rightZoneLeft = gameRect.right + gameGap;
+      final double rightZoneRight = screenW - edgePadding;
+      final double rightZoneWidth = math.max(0, rightZoneRight - rightZoneLeft);
+      
+      // Vertical: full screen height with small margins
+      final double marginY = edgePadding;
+      final double usableHeight = screenH - marginY * 2;
+      
       final bool isLeftSide =
           button == GamepadButton.dpad ||
-              button == GamepadButton.lButton ||
-              button == GamepadButton.selectButton;
+          button == GamepadButton.lButton ||
+          button == GamepadButton.selectButton;
 
       if (isLeftSide) {
-        // Left controls: grow rightwards from left zone
-        x = leftZoneStart + leftZoneWidth * layout.x;
+        // Left zone: x=0 at left edge, x=1 at right edge (near game)
+        x = leftZoneLeft + layout.x * leftZoneWidth;
       } else {
-        // Right controls: grow rightwards from right zone
-        x = rightZoneStart + rightZoneWidth * layout.x;
+        // Right zone: x=0 at left edge (near game), x=1 at right edge
+        x = rightZoneLeft + layout.x * rightZoneWidth;
       }
-
-      y = zoneTop + zoneHeight * layout.y;
-
-      // ---------- DEBUG PRINT ----------
-      debugPrint('[GAMEPAD DEBUG]');
-      debugPrint('Button: $button');
-      debugPrint('isPortrait: false');
-      debugPrint('screenSize: $screenSize');
-      debugPrint('gameRect: $gameRect');
-      debugPrint('layout.x: ${layout.x}, layout.y: ${layout.y}');
-      debugPrint('leftZone: [$leftZoneLeft, $leftZoneRight]');
-      debugPrint('rightZone: [$rightZoneLeft, $rightZoneRight]');
-      debugPrint('zoneTop: $zoneTop');
-      debugPrint('zoneHeight: $zoneHeight');
-      debugPrint('isLeftSide: $isLeftSide');
-      debugPrint('rawX: $x');
-      debugPrint('rawY: $y');
+      
+      // Y position within usable height
+      y = marginY + layout.y * usableHeight;
     }
 
-    // ================= FINAL CLAMP =================
-
-    final double clampedX = x.clamp(8.0, screenSize.width - 8.0);
-    final double clampedY = y.clamp(8.0, screenSize.height - 8.0);
-
-    debugPrint('clampedX: $clampedX');
-    debugPrint('clampedY: $clampedY');
-    debugPrint('----------------------------------');
-
-    final Offset offset = Offset(clampedX, clampedY);
-
-    // ================== POSITIONED ==================
+    // ================= SAFE CLAMP =================
+    // Ensure buttons stay on screen
+    final double minMargin = 4.0;
+    final double clampedX = x.clamp(minMargin, screenSize.width - minMargin);
+    final double clampedY = y.clamp(minMargin, screenSize.height - minMargin);
 
     return Positioned(
-      left: offset.dx,
-      top: offset.dy,
+      left: clampedX,
+      top: clampedY,
       child: widget.editMode
           ? _EditableButtonWrapper(
-        isSelected: isSelected,
-        onDrag: (delta) => _onButtonDrag(button, delta, screenSize),
-        onScaleUp: () => _onButtonResize(button, 0.1),
-        onScaleDown: () => _onButtonResize(button, -0.1),
-        onTap: () => setState(() => _selectedButton = button),
-        child: child,
-      )
+              isSelected: isSelected,
+              onDrag: (delta) => _onButtonDrag(button, delta, screenSize),
+              onScaleUp: () => _onButtonResize(button, 0.1),
+              onScaleDown: () => _onButtonResize(button, -0.1),
+              onTap: () => setState(() => _selectedButton = button),
+              child: child,
+            )
           : child,
     );
   }
