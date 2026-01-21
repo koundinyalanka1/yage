@@ -363,6 +363,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             bottom: safeArea.bottom,
             height: screenSize.height - topBarHeight - safeArea.top - gameHeight + 30, // Allow 30px overlap
             child: VirtualGamepad(
+              gameRect: Rect.fromLTWH(
+                (screenSize.width - gameWidth) / 2,
+                topBarHeight + safeArea.top,
+                gameWidth,
+                gameHeight,
+              ),
               onKeysChanged: emulator.setKeys,
               opacity: settings.gamepadOpacity,
               scale: settings.gamepadScale,
@@ -373,6 +379,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 setState(() => _tempLayout = newLayout);
               },
             ),
+
           ),
       ],
     );
@@ -413,6 +420,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         // Virtual gamepad overlay in landscape (buttons positioned on sides)
         if (_showControls)
           VirtualGamepad(
+            gameRect: Rect.fromLTWH(
+              (screenSize.width - gameWidth) / 2,
+              (screenSize.height - gameHeight) / 2,
+              gameWidth,
+              gameHeight,
+            ),
             onKeysChanged: emulator.setKeys,
             opacity: settings.gamepadOpacity,
             scale: settings.gamepadScale,
@@ -423,6 +436,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               setState(() => _tempLayout = newLayout);
             },
           ),
+
       ],
     );
   }

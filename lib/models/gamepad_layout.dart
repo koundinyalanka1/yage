@@ -93,26 +93,118 @@ class GamepadLayout {
   });
 
   /// Portrait layout - practical, uses full control area
+  /// Portrait layout - ergonomic, modern phone friendly
+  /// Portrait layout - production tuned for phones
   static const GamepadLayout defaultPortrait = GamepadLayout(
-    dpad: ButtonLayout(x: 0.02, y: 0.08, size: 1.0),
-    aButton: ButtonLayout(x: 0.72, y: 0.05, size: 1.0),
-    bButton: ButtonLayout(x: 0.50, y: 0.22, size: 1.0),
-    lButton: ButtonLayout(x: 0.02, y: 0.52, size: 0.85),
-    rButton: ButtonLayout(x: 0.72, y: 0.52, size: 0.85),
-    selectButton: ButtonLayout(x: 0.25, y: 0.40, size: 0.85),
-    startButton: ButtonLayout(x: 0.50, y: 0.40, size: 0.85),
+    // D-pad: bottom-left, thumb-friendly
+    dpad: ButtonLayout(
+      x: 0.05,
+      y: 0.65,
+      size: 1.15,
+    ),
+
+    // A button: bottom-right, primary thumb
+    aButton: ButtonLayout(
+      x: 0.75,
+      y: 0.62,
+      size: 1.20,
+    ),
+
+    // B button: slightly left & below A
+    bButton: ButtonLayout(
+      x: 0.62,
+      y: 0.72,
+      size: 1.15,
+    ),
+
+    // L shoulder: just under game, left
+    lButton: ButtonLayout(
+      x: 0.02,
+      y: 0.08,
+      size: 0.95,
+    ),
+
+    // R shoulder: just under game, right
+    rButton: ButtonLayout(
+      x: 0.78,
+      y: 0.08,
+      size: 0.95,
+    ),
+
+    // Select: centered left of middle
+    selectButton: ButtonLayout(
+      x: 0.30,
+      y: 0.40,
+      size: 0.90,
+    ),
+
+    // Start: centered right of middle
+    startButton: ButtonLayout(
+      x: 0.52,
+      y: 0.40,
+      size: 0.90,
+    ),
   );
 
-  /// Landscape layout - clean symmetric layout
+
+
+
+  /// Landscape layout - console-like, balanced left/right
+  /// Landscape layout - production tuned
   static const GamepadLayout defaultLandscape = GamepadLayout(
-    dpad: ButtonLayout(x: 0.05, y: 0.30, size: 0.90),
-    aButton: ButtonLayout(x: 1.95, y: 0.15, size: 0.90),
-    bButton: ButtonLayout(x: 1.95, y: 0.48, size: 0.90),
-    lButton: ButtonLayout(x: 0.05, y: 0.02, size: 0.75),
-    rButton: ButtonLayout(x: 1.95, y: 0.02, size: 0.75),
-    selectButton: ButtonLayout(x: 0.05, y: 0.72, size: 0.70),
-    startButton: ButtonLayout(x: 1.95, y: 0.72, size: 0.70),
+    // D-pad: left side, vertically centered
+    dpad: ButtonLayout(
+      x: 0.03,
+      y: 0.30,
+      size: 1.10,
+    ),
+
+    // A button: right side, upper thumb
+    aButton: ButtonLayout(
+      x: 0.92,
+      y: 0.28,
+      size: 1.15,
+    ),
+
+    // B button: right side, lower thumb
+    bButton: ButtonLayout(
+      x: 0.92,
+      y: 0.48,
+      size: 1.10,
+    ),
+
+    // L shoulder: top-left edge
+    lButton: ButtonLayout(
+      x: 0.03,
+      y: 0.03,
+      size: 0.90,
+    ),
+
+    // R shoulder: top-right edge
+    rButton: ButtonLayout(
+      x: 0.92,
+      y: 0.03,
+      size: 0.90,
+    ),
+
+    // Select: bottom-left area
+    selectButton: ButtonLayout(
+      x: 0.25,
+      y: 0.75,
+      size: 0.85,
+    ),
+
+    // Start: bottom-right area
+    startButton: ButtonLayout(
+      x: 0.60,
+      y: 0.75,
+      size: 0.85,
+    ),
   );
+
+
+
+
 
   GamepadLayout copyWith({
     ButtonLayout? dpad,
