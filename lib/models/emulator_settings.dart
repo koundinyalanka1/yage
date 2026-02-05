@@ -23,6 +23,7 @@ class EmulatorSettings {
   final int autoSaveInterval; // in seconds, 0 = disabled
   final GamepadLayout gamepadLayoutPortrait;
   final GamepadLayout gamepadLayoutLandscape;
+  final bool useJoystick; // true = joystick, false = d-pad
 
   const EmulatorSettings({
     this.volume = 0.8,
@@ -44,6 +45,7 @@ class EmulatorSettings {
     this.autoSaveInterval = 60,
     this.gamepadLayoutPortrait = GamepadLayout.defaultPortrait,
     this.gamepadLayoutLandscape = GamepadLayout.defaultLandscape,
+    this.useJoystick = false,
   });
 
   EmulatorSettings copyWith({
@@ -66,6 +68,7 @@ class EmulatorSettings {
     int? autoSaveInterval,
     GamepadLayout? gamepadLayoutPortrait,
     GamepadLayout? gamepadLayoutLandscape,
+    bool? useJoystick,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -87,6 +90,7 @@ class EmulatorSettings {
       autoSaveInterval: autoSaveInterval ?? this.autoSaveInterval,
       gamepadLayoutPortrait: gamepadLayoutPortrait ?? this.gamepadLayoutPortrait,
       gamepadLayoutLandscape: gamepadLayoutLandscape ?? this.gamepadLayoutLandscape,
+      useJoystick: useJoystick ?? this.useJoystick,
     );
   }
 
@@ -111,6 +115,7 @@ class EmulatorSettings {
       'autoSaveInterval': autoSaveInterval,
       'gamepadLayoutPortrait': gamepadLayoutPortrait.toJson(),
       'gamepadLayoutLandscape': gamepadLayoutLandscape.toJson(),
+      'useJoystick': useJoystick,
     };
   }
 
@@ -139,6 +144,7 @@ class EmulatorSettings {
       gamepadLayoutLandscape: json['gamepadLayoutLandscape'] != null
           ? GamepadLayout.fromJson(json['gamepadLayoutLandscape'] as Map<String, dynamic>)
           : GamepadLayout.defaultLandscape,
+      useJoystick: json['useJoystick'] as bool? ?? false,
     );
   }
 

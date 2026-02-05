@@ -127,32 +127,16 @@ class _GameDisplayState extends State<GameDisplay> {
 
   @override
   Widget build(BuildContext context) {
+    // No borders or padding - maximize game display area
     return Container(
-      decoration: BoxDecoration(
-        color: YageColors.backgroundDark,
-        border: Border.all(
-          color: YageColors.primary.withAlpha(77),
-          width: 2,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: YageColors.primary.withAlpha(51),
-            blurRadius: 20,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: widget.maintainAspectRatio
-            ? AspectRatio(
-                aspectRatio: widget.emulator.screenWidth / 
-                             widget.emulator.screenHeight,
-                child: _buildDisplay(),
-              )
-            : _buildDisplay(),
-      ),
+      color: YageColors.backgroundDark,
+      child: widget.maintainAspectRatio
+          ? AspectRatio(
+              aspectRatio: widget.emulator.screenWidth / 
+                           widget.emulator.screenHeight,
+              child: _buildDisplay(),
+            )
+          : _buildDisplay(),
     );
   }
 
@@ -212,8 +196,9 @@ class _GamePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..filterQuality = enableFiltering 
-          ? FilterQuality.medium 
-          : FilterQuality.none;
+          ? FilterQuality.high  // Use highest quality for sharp upscaling
+          : FilterQuality.none  // Pixel-perfect for retro look
+      ..isAntiAlias = enableFiltering;
 
     // Calculate destination rect to fit and center
     final srcRect = Rect.fromLTWH(

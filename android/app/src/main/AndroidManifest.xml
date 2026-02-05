@@ -24,7 +24,14 @@
         android:label="YAGE"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:appCategory="game">
+        
+        <!-- Game Mode support for Android 12+ -->
+        <meta-data
+            android:name="android.game_mode_config"
+            android:resource="@xml/game_mode_config"/>
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"

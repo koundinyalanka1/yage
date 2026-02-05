@@ -160,5 +160,15 @@ class SettingsService extends ChangeNotifier {
       gamepadLayoutLandscape: GamepadLayout.defaultLandscape,
     ));
   }
+
+  /// Toggle between D-pad and Joystick
+  Future<void> toggleJoystick() async {
+    await update((s) => s.copyWith(useJoystick: !s.useJoystick));
+  }
+
+  /// Set joystick mode explicitly
+  Future<void> setUseJoystick(bool useJoystick) async {
+    await update((s) => s.copyWith(useJoystick: useJoystick));
+  }
 }
 

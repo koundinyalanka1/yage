@@ -116,9 +116,11 @@ static uint32_t g_keys = 0;
 static int g_pixel_format = RETRO_PIXEL_FORMAT_RGB565; /* Default format */
 
 #ifdef __ANDROID__
+#include <stdatomic.h>
+
 /* OpenSL ES audio state */
-#define AUDIO_BUFFERS 2
-#define AUDIO_BUFFER_FRAMES 2048
+#define AUDIO_BUFFERS 4
+#define AUDIO_BUFFER_FRAMES 512
 
 static SLObjectItf g_sl_engine = NULL;
 static SLEngineItf g_sl_engine_itf = NULL;
@@ -127,15 +129,48 @@ static SLObjectItf g_sl_player = NULL;
 static SLPlayItf g_sl_play_itf = NULL;
 static SLAndroidSimpleBufferQueueItf g_sl_buffer_queue = NULL;
 
-static int16_t* g_sl_buffers[AUDIO_BUFFERS] = {NULL, NULL};
+static int16_t* g_sl_buffers[AUDIO_BUFFERS] = {NULL, NULL, NULL, NULL};
 static int g_sl_buffer_index = 0;
 static int g_sl_initialized = 0;
 
-/* Ring buffer for audio */
-#define RING_BUFFER_SIZE (32768)
+/* Lock-free ring buffer for audio */
+#define RING_BUFFER_SIZE (65536)
+#define RING_BUFFER_MASK (RING_BUFFER_SIZE - 1)
 static int16_t g_ring_buffer[RING_BUFFER_SIZE];
-static volatile int g_ring_read = 0;
-static volatile int g_ring_write = 0;
+static atomic_int g_ring_read = 0;
+static atomic_int g_ring_write = 0;
+
+/* Audio smoothing state */
+static int16_t g_last_sample_l = 0;
+static int16_t g_last_sample_r = 0;
+static int g_underrun_count = 0;
+static int g_audio_started = 0;
+static double g_audio_sample_rate = 32768.0;
+
+/* Rate detection state */
+static int g_rate_detection_frames = 0;
+static int g_rate_detection_samples = 0;
+static int g_rate_detected = 0;
+static double g_detected_rate = 0;
+
+/* Pre-buffer threshold - wait for this many samples before starting playback */
+#define PREBUFFER_SAMPLES (AUDIO_BUFFER_FRAMES * 2)
+
+/* Forward declarations */
+static void shutdown_opensl_audio(void);
+static int init_opensl_audio(double sample_rate);
+
+/* Get number of samples available in ring buffer */
+static inline int ring_buffer_available(void) {
+    int write_pos = atomic_load_explicit(&g_ring_write, memory_order_acquire);
+    int read_pos = atomic_load_explicit(&g_ring_read, memory_order_acquire);
+    return (write_pos - read_pos + RING_BUFFER_SIZE) & RING_BUFFER_MASK;
+}
+
+/* Get free space in ring buffer */
+static inline int ring_buffer_free(void) {
+    return RING_BUFFER_SIZE - 1 - ring_buffer_available();
+}
 
 static void sl_buffer_callback(SLAndroidSimpleBufferQueueItf bq, void* context) {
     (void)context;
@@ -143,22 +178,77 @@ static void sl_buffer_callback(SLAndroidSimpleBufferQueueItf bq, void* context) 
     int16_t* buffer = g_sl_buffers[g_sl_buffer_index];
     g_sl_buffer_index = (g_sl_buffer_index + 1) % AUDIO_BUFFERS;
     
-    /* Fill buffer from ring buffer */
     int samples_needed = AUDIO_BUFFER_FRAMES * 2; /* Stereo */
-    for (int i = 0; i < samples_needed; i++) {
-        if (g_ring_read != g_ring_write) {
-            buffer[i] = g_ring_buffer[g_ring_read];
-            g_ring_read = (g_ring_read + 1) % RING_BUFFER_SIZE;
+    int read_pos = atomic_load_explicit(&g_ring_read, memory_order_acquire);
+    int write_pos = atomic_load_explicit(&g_ring_write, memory_order_acquire);
+    int available = (write_pos - read_pos + RING_BUFFER_SIZE) & RING_BUFFER_MASK;
+    
+    /* Wait for pre-buffer before starting actual playback */
+    if (!g_audio_started) {
+        if (available < PREBUFFER_SAMPLES * 2) {
+            /* Not enough data yet - output silence */
+            memset(buffer, 0, samples_needed * sizeof(int16_t));
+            (*bq)->Enqueue(bq, buffer, samples_needed * sizeof(int16_t));
+            return;
+        }
+        g_audio_started = 1;
+        LOGI("Audio pre-buffer filled (%d samples), starting playback", available);
+    }
+    
+    /* Fill buffer from ring buffer */
+    for (int i = 0; i < samples_needed; i += 2) {
+        if (available >= 2) {
+            /* Read stereo pair */
+            g_last_sample_l = g_ring_buffer[read_pos];
+            read_pos = (read_pos + 1) & RING_BUFFER_MASK;
+            g_last_sample_r = g_ring_buffer[read_pos];
+            read_pos = (read_pos + 1) & RING_BUFFER_MASK;
+            available -= 2;
+            
+            buffer[i] = g_last_sample_l;
+            buffer[i + 1] = g_last_sample_r;
+            g_underrun_count = 0;
         } else {
-            buffer[i] = 0; /* Silence if underrun */
+            /* Underrun - fade to silence */
+            g_underrun_count++;
+            if (g_underrun_count < 64) {
+                g_last_sample_l = (g_last_sample_l * 15) >> 4;
+                g_last_sample_r = (g_last_sample_r * 15) >> 4;
+            } else {
+                g_last_sample_l = 0;
+                g_last_sample_r = 0;
+            }
+            buffer[i] = g_last_sample_l;
+            buffer[i + 1] = g_last_sample_r;
         }
     }
+    
+    /* Update read position atomically */
+    atomic_store_explicit(&g_ring_read, read_pos, memory_order_release);
     
     (*bq)->Enqueue(bq, buffer, samples_needed * sizeof(int16_t));
 }
 
-static int init_opensl_audio(void) {
+static int init_opensl_audio(double sample_rate) {
     SLresult result;
+    
+    /* Shutdown any existing audio first */
+    if (g_sl_initialized) {
+        shutdown_opensl_audio();
+    }
+    
+    /* Reset ring buffer state */
+    atomic_store(&g_ring_read, 0);
+    atomic_store(&g_ring_write, 0);
+    g_last_sample_l = 0;
+    g_last_sample_r = 0;
+    g_underrun_count = 0;
+    g_audio_started = 0;
+    memset(g_ring_buffer, 0, sizeof(g_ring_buffer));
+    
+    g_audio_sample_rate = sample_rate;
+    
+    LOGI("Initializing OpenSL ES audio at %.0f Hz", sample_rate);
     
     /* Create engine */
     result = slCreateEngine(&g_sl_engine, 0, NULL, 0, NULL, NULL);
@@ -198,10 +288,13 @@ static int init_opensl_audio(void) {
         AUDIO_BUFFERS
     };
     
+    /* Convert sample rate to millihertz for OpenSL ES */
+    SLuint32 sample_rate_mhz = (SLuint32)(sample_rate * 1000);
+    
     SLDataFormat_PCM format_pcm = {
         SL_DATAFORMAT_PCM,
         2,                           /* Stereo */
-        SL_SAMPLINGRATE_32,          /* 32kHz (GBA native rate) */
+        sample_rate_mhz,             /* Detected sample rate in millihertz */
         SL_PCMSAMPLEFORMAT_FIXED_16,
         SL_PCMSAMPLEFORMAT_FIXED_16,
         SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT,
@@ -272,12 +365,19 @@ static int init_opensl_audio(void) {
             AUDIO_BUFFER_FRAMES * 2 * sizeof(int16_t));
     }
     
-    LOGI("OpenSL ES audio initialized");
+    LOGI("OpenSL ES audio initialized: %.0fHz stereo, %d buffers x %d frames", 
+         sample_rate, AUDIO_BUFFERS, AUDIO_BUFFER_FRAMES);
     g_sl_initialized = 1;
     return 0;
 }
 
 static void shutdown_opensl_audio(void) {
+    g_sl_initialized = 0;
+    
+    if (g_sl_play_itf) {
+        (*g_sl_play_itf)->SetPlayState(g_sl_play_itf, SL_PLAYSTATE_STOPPED);
+    }
+    
     if (g_sl_player) {
         (*g_sl_player)->Destroy(g_sl_player);
         g_sl_player = NULL;
@@ -296,7 +396,18 @@ static void shutdown_opensl_audio(void) {
             g_sl_buffers[i] = NULL;
         }
     }
-    g_sl_initialized = 0;
+    
+    /* Reset ring buffer state */
+    atomic_store(&g_ring_read, 0);
+    atomic_store(&g_ring_write, 0);
+    g_last_sample_l = 0;
+    g_last_sample_r = 0;
+    g_underrun_count = 0;
+    g_audio_started = 0;
+    
+    g_sl_play_itf = NULL;
+    g_sl_buffer_queue = NULL;
+    g_sl_engine_itf = NULL;
 }
 #endif /* __ANDROID__ */
 
@@ -335,6 +446,26 @@ struct YageCore {
     size_t state_size;
 };
 
+/* Color correction for GBA - makes colors more vibrant on modern displays */
+static inline uint32_t apply_color_correction(uint8_t r, uint8_t g, uint8_t b) {
+    /* GBA color correction - slight boost to saturation and contrast */
+    /* This compensates for the original GBA's dark, non-backlit screen */
+    int ri = r, gi = g, bi = b;
+    
+    /* Boost contrast slightly */
+    ri = (ri - 128) * 110 / 100 + 128;
+    gi = (gi - 128) * 110 / 100 + 128;
+    bi = (bi - 128) * 110 / 100 + 128;
+    
+    /* Clamp values */
+    if (ri < 0) ri = 0; if (ri > 255) ri = 255;
+    if (gi < 0) gi = 0; if (gi > 255) gi = 255;
+    if (bi < 0) bi = 0; if (bi > 255) bi = 255;
+    
+    /* Return as RGBA with full alpha */
+    return 0xFF000000 | ((uint32_t)ri << 16) | ((uint32_t)gi << 8) | (uint32_t)bi;
+}
+
 /* Libretro callbacks */
 static void video_refresh_callback(const void* data, unsigned width, unsigned height, size_t pitch) {
     if (!data || !g_video_buffer) return;
@@ -354,7 +485,13 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
         
         for (unsigned y = 0; y < height; y++) {
             const uint32_t* row = (const uint32_t*)(src + y * pitch);
-            memcpy(&g_video_buffer[y * width], row, width * sizeof(uint32_t));
+            for (unsigned x = 0; x < width; x++) {
+                uint32_t pixel = row[x];
+                uint8_t r = (pixel >> 16) & 0xFF;
+                uint8_t g = (pixel >> 8) & 0xFF;
+                uint8_t b = pixel & 0xFF;
+                g_video_buffer[y * width + x] = apply_color_correction(r, g, b);
+            }
         }
     } else if (g_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
         /* RGB565: 16-bit per pixel, pitch is in bytes */
@@ -368,11 +505,11 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
                 uint8_t r = (pixel >> 11) & 0x1F;
                 uint8_t g = (pixel >> 5) & 0x3F;
                 uint8_t b = pixel & 0x1F;
-                /* Expand to 8-bit */
+                /* Expand to 8-bit with proper bit replication */
                 r = (r << 3) | (r >> 2);
                 g = (g << 2) | (g >> 4);
                 b = (b << 3) | (b >> 2);
-                g_video_buffer[y * width + x] = (r << 16) | (g << 8) | b;
+                g_video_buffer[y * width + x] = apply_color_correction(r, g, b);
             }
         }
     } else if (g_pixel_format == RETRO_PIXEL_FORMAT_0RGB1555) {
@@ -389,7 +526,7 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
                 r = (r << 3) | (r >> 2);
                 g = (g << 3) | (g >> 2);
                 b = (b << 3) | (b >> 2);
-                g_video_buffer[y * width + x] = (r << 16) | (g << 8) | b;
+                g_video_buffer[y * width + x] = apply_color_correction(r, g, b);
             }
         }
     } else {
@@ -401,7 +538,13 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
             const uint8_t* src = (const uint8_t*)data;
             for (unsigned y = 0; y < height; y++) {
                 const uint32_t* row = (const uint32_t*)(src + y * pitch);
-                memcpy(&g_video_buffer[y * width], row, width * sizeof(uint32_t));
+                for (unsigned x = 0; x < width; x++) {
+                    uint32_t pixel = row[x];
+                    uint8_t r = (pixel >> 16) & 0xFF;
+                    uint8_t g = (pixel >> 8) & 0xFF;
+                    uint8_t b = pixel & 0xFF;
+                    g_video_buffer[y * width + x] = apply_color_correction(r, g, b);
+                }
             }
         } else {
             /* Assume 16-bit RGB565 */
@@ -416,12 +559,15 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
                     r = (r << 3) | (r >> 2);
                     g = (g << 2) | (g >> 4);
                     b = (b << 3) | (b >> 2);
-                    g_video_buffer[y * width + x] = (r << 16) | (g << 8) | b;
+                    g_video_buffer[y * width + x] = apply_color_correction(r, g, b);
                 }
             }
         }
     }
 }
+
+static int g_audio_batch_count = 0;
+static int g_overflow_count = 0;
 
 static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
     if (!data || !g_audio_buffer) return frames;
@@ -433,18 +579,83 @@ static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
     
     memcpy(g_audio_buffer, data, samples * sizeof(int16_t));
     g_audio_samples = frames;
-    
+
 #ifdef __ANDROID__
+    /* 
+     * Rate detection: measure actual sample production rate over first 30 frames (~0.5 sec)
+     * Then reinitialize audio with the detected rate
+     */
+    if (!g_rate_detected) {
+        g_rate_detection_frames++;
+        g_rate_detection_samples += frames; /* Stereo frames */
+        
+        if (g_rate_detection_frames >= 30) {
+            /* Calculate actual rate: samples_per_frame * 60 fps */
+            double samples_per_frame = (double)g_rate_detection_samples / g_rate_detection_frames;
+            g_detected_rate = samples_per_frame * 59.7275; /* GBA fps */
+            
+            /* 
+             * Round to nearest common rate.
+             * Note: During startup, games may produce fewer samples.
+             * Use lower thresholds to catch high-rate games.
+             * - Pokemon produces ~1096 samples/frame when running = 65536 Hz
+             * - But during startup might only show ~700-900 samples/frame
+             * - Dragon Ball produces ~532 samples/frame = 32768 Hz
+             */
+            if (samples_per_frame > 700) {
+                /* High rate games (Pokemon, etc) - anything above ~700 samples/frame */
+                g_detected_rate = 65536;
+            } else if (samples_per_frame > 600) {
+                /* Medium-high rate */
+                g_detected_rate = 48000;
+            } else {
+                /* Standard rate games (Dragon Ball, etc) - ~530 samples/frame */
+                g_detected_rate = 32768;
+            }
+            
+            LOGI("Detected audio rate: %.0f Hz (%.1f samples/frame)", 
+                 g_detected_rate, samples_per_frame);
+            
+            /* Reinitialize audio with detected rate */
+            init_opensl_audio(g_detected_rate);
+            g_rate_detected = 1;
+        }
+        return frames;
+    }
+    
+    /* Debug logging every ~1 second (60 frames) */
+    g_audio_batch_count++;
+    if (g_audio_batch_count >= 60) {
+        g_audio_batch_count = 0;
+        if (g_overflow_count > 0) {
+            LOGI("Audio: %zu frames/batch, overflows: %d, rate: %.0f", 
+                 frames, g_overflow_count, g_detected_rate);
+            g_overflow_count = 0;
+        }
+    }
+
     /* Push audio to ring buffer for OpenSL ES playback */
     if (g_sl_initialized) {
-        for (size_t i = 0; i < samples; i++) {
-            int next_write = (g_ring_write + 1) % RING_BUFFER_SIZE;
-            if (next_write != g_ring_read) {
-                g_ring_buffer[g_ring_write] = data[i];
-                g_ring_write = next_write;
-            }
-            /* If buffer full, drop samples (avoid blocking) */
+        int write_pos = atomic_load_explicit(&g_ring_write, memory_order_acquire);
+        int read_pos = atomic_load_explicit(&g_ring_read, memory_order_acquire);
+        int free_space = (read_pos - write_pos - 1 + RING_BUFFER_SIZE) & RING_BUFFER_MASK;
+        
+        /* If buffer is full, advance read pointer to make room */
+        if ((int)samples > free_space) {
+            int need = samples - free_space + 256;
+            int new_read = (read_pos + need) & RING_BUFFER_MASK;
+            atomic_store_explicit(&g_ring_read, new_read, memory_order_release);
+            g_overflow_count++;
         }
+        
+        /* Write samples to ring buffer */
+        for (size_t i = 0; i < samples; i++) {
+            g_ring_buffer[write_pos] = data[i];
+            write_pos = (write_pos + 1) & RING_BUFFER_MASK;
+        }
+        
+        /* Update write position atomically */
+        atomic_store_explicit(&g_ring_write, write_pos, memory_order_release);
     }
 #endif
     
@@ -613,10 +824,7 @@ int yage_core_init(YageCore* core) {
     core->retro_init();
     core->initialized = 1;
     
-#ifdef __ANDROID__
-    /* Initialize audio output */
-    init_opensl_audio();
-#endif
+    /* Note: Audio is initialized in yage_core_load_rom after we know the sample rate */
     
     return 0;
 }
@@ -693,12 +901,28 @@ int yage_core_load_rom(YageCore* core, const char* path) {
     core->rom_path = strdup(path);
     
     /* Get AV info */
+    double reported_sample_rate = 32768.0; /* Default fallback */
     if (core->retro_get_system_av_info) {
         struct retro_system_av_info av_info;
         core->retro_get_system_av_info(&av_info);
         g_width = av_info.geometry.base_width;
         g_height = av_info.geometry.base_height;
+        reported_sample_rate = av_info.timing.sample_rate;
+        LOGI("AV Info: %ux%u, fps=%.2f, reported_sample_rate=%.0f", 
+             g_width, g_height, av_info.timing.fps, reported_sample_rate);
     }
+    
+#ifdef __ANDROID__
+    /* Reset rate detection state for new game */
+    g_rate_detection_frames = 0;
+    g_rate_detection_samples = 0;
+    g_rate_detected = 0;
+    g_detected_rate = 0;
+    
+    /* Initialize audio with reported rate - will be reinitialized after rate detection */
+    init_opensl_audio(reported_sample_rate);
+    LOGI("Audio will auto-detect actual sample rate from first 30 frames");
+#endif
     
     /* Allocate state buffer */
     if (core->retro_serialize_size) {

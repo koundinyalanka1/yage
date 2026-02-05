@@ -8,7 +8,7 @@ import '../utils/theme.dart';
 
 /// Virtual gamepad for touch input
 class VirtualGamepad extends StatefulWidget {
-  final Rect gameRect; // NEW
+  final Rect gameRect;
 
   final void Function(int keys) onKeysChanged;
   final double opacity;
@@ -17,10 +17,11 @@ class VirtualGamepad extends StatefulWidget {
   final GamepadLayout layout;
   final bool editMode;
   final void Function(GamepadLayout)? onLayoutChanged;
+  final bool useJoystick; // true = joystick, false = d-pad
 
   const VirtualGamepad({
     super.key,
-    required this.gameRect, // NEW
+    required this.gameRect,
     required this.onKeysChanged,
     this.opacity = 0.7,
     this.scale = 1.0,
@@ -28,6 +29,7 @@ class VirtualGamepad extends StatefulWidget {
     required this.layout,
     this.editMode = false,
     this.onLayoutChanged,
+    this.useJoystick = false,
   });
 
   @override
@@ -83,10 +85,13 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       
       double newX, newY;
       
+      // Use proportional margins (2% of screen dimension)
+      final double marginPercent = 0.02;
+      
       if (isPortrait) {
         // Portrait: widget IS the control area
-        final double marginX = 8.0;
-        final double marginY = 8.0;
+        final double marginX = screenSize.width * marginPercent;
+        final double marginY = screenSize.height * marginPercent;
         final double usableWidth = screenSize.width - marginX * 2;
         final double usableHeight = screenSize.height - marginY * 2;
         
@@ -94,8 +99,8 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
         newY = (currentLayout.y + delta.dy / usableHeight).clamp(0.0, 1.0);
       } else {
         // Landscape: x spans zone width, y spans full height
-        final double edgePadding = 8.0;
-        final double gameGap = 4.0;
+        final double edgePadding = screenSize.width * marginPercent;
+        final double gameGap = screenSize.width * 0.01;
         
         final bool isLeftSide =
             button == GamepadButton.dpad ||
@@ -203,22 +208,34 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
 
           return Stack(
             children: [
-              // D-Pad
+              // D-Pad or Joystick
               _buildPositionedButton(
                 layout: layout.dpad,
                 screenSize: screenSize,
                 button: GamepadButton.dpad,
-                child: _DPad(
-                  onDirectionChanged: (up, down, left, right) {
-                    _updateKey(GBAKey.up, up);
-                    _updateKey(GBAKey.down, down);
-                    _updateKey(GBAKey.left, left);
-                    _updateKey(GBAKey.right, right);
-                  },
-                  scale: layout.dpad.size * widget.scale * portraitBoost,
-                  baseSize: baseSize,
-                  editMode: widget.editMode,
-                ),
+                child: widget.useJoystick
+                    ? _Joystick(
+                        onDirectionChanged: (up, down, left, right) {
+                          _updateKey(GBAKey.up, up);
+                          _updateKey(GBAKey.down, down);
+                          _updateKey(GBAKey.left, left);
+                          _updateKey(GBAKey.right, right);
+                        },
+                        scale: layout.dpad.size * widget.scale * portraitBoost,
+                        baseSize: baseSize,
+                        editMode: widget.editMode,
+                      )
+                    : _DPad(
+                        onDirectionChanged: (up, down, left, right) {
+                          _updateKey(GBAKey.up, up);
+                          _updateKey(GBAKey.down, down);
+                          _updateKey(GBAKey.left, left);
+                          _updateKey(GBAKey.right, right);
+                        },
+                        scale: layout.dpad.size * widget.scale * portraitBoost,
+                        baseSize: baseSize,
+                        editMode: widget.editMode,
+                      ),
               ),
               
               // A Button
@@ -324,6 +341,9 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     double x = 0.0;
     double y = 0.0;
 
+    // Use proportional margins (2% of screen dimension) for screen independence
+    final double marginPercent = 0.02;
+    
     if (isPortrait) {
       // ================= PORTRAIT MODE =================
       // In portrait, VirtualGamepad widget IS the control area (positioned below game)
@@ -334,9 +354,9 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       final double widgetW = screenSize.width;
       final double widgetH = screenSize.height;
       
-      // Small margins from edges
-      final double marginX = 8.0;
-      final double marginY = 8.0;
+      // Proportional margins from edges
+      final double marginX = widgetW * marginPercent;
+      final double marginY = widgetH * marginPercent;
       
       final double usableWidth = widgetW - marginX * 2;
       final double usableHeight = widgetH - marginY * 2;
@@ -355,9 +375,9 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       final double screenW = screenSize.width;
       final double screenH = screenSize.height;
       
-      // Define zones with padding from edges
-      final double edgePadding = 8.0;
-      final double gameGap = 4.0; // Gap between controls and game
+      // Define zones with proportional padding from edges
+      final double edgePadding = screenW * marginPercent;
+      final double gameGap = screenW * 0.01; // 1% gap between controls and game
       
       // Left zone dimensions
       final double leftZoneLeft = edgePadding;
@@ -391,8 +411,8 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     }
 
     // ================= SAFE CLAMP =================
-    // Ensure buttons stay on screen
-    final double minMargin = 4.0;
+    // Ensure buttons stay on screen (1% margin for safety)
+    final double minMargin = screenSize.width * 0.01;
     final double clampedX = x.clamp(minMargin, screenSize.width - minMargin);
     final double clampedY = y.clamp(minMargin, screenSize.height - minMargin);
 
@@ -902,6 +922,239 @@ class _SmallButtonState extends State<_SmallButton> {
             letterSpacing: 0.5,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Joystick widget - analog-style directional input
+class _Joystick extends StatefulWidget {
+  final void Function(bool up, bool down, bool left, bool right) onDirectionChanged;
+  final double scale;
+  final double baseSize;
+  final bool editMode;
+
+  const _Joystick({
+    required this.onDirectionChanged,
+    this.scale = 1.0,
+    this.baseSize = 190.0,
+    this.editMode = false,
+  });
+
+  @override
+  State<_Joystick> createState() => _JoystickState();
+}
+
+class _JoystickState extends State<_Joystick> {
+  Offset _stickPosition = Offset.zero;
+  bool _up = false;
+  bool _down = false;
+  bool _left = false;
+  bool _right = false;
+
+  void _handlePan(Offset localPosition, Size size) {
+    if (widget.editMode) return;
+    
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width * 0.35;
+    final deadzone = size.width * 0.12;
+    
+    Offset delta = localPosition - center;
+    
+    // Clamp to max radius
+    final distance = delta.distance;
+    if (distance > maxRadius) {
+      delta = delta * (maxRadius / distance);
+    }
+    
+    setState(() {
+      _stickPosition = delta;
+    });
+    
+    // Calculate directions based on position
+    final newUp = delta.dy < -deadzone;
+    final newDown = delta.dy > deadzone;
+    final newLeft = delta.dx < -deadzone;
+    final newRight = delta.dx > deadzone;
+    
+    if (newUp != _up || newDown != _down || 
+        newLeft != _left || newRight != _right) {
+      _up = newUp;
+      _down = newDown;
+      _left = newLeft;
+      _right = newRight;
+      widget.onDirectionChanged(_up, _down, _left, _right);
+    }
+  }
+
+  void _reset() {
+    setState(() {
+      _stickPosition = Offset.zero;
+    });
+    
+    if (_up || _down || _left || _right) {
+      _up = false;
+      _down = false;
+      _left = false;
+      _right = false;
+      widget.onDirectionChanged(false, false, false, false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.baseSize * widget.scale;
+    final stickSize = size * 0.45;
+    
+    return GestureDetector(
+      onPanStart: widget.editMode ? null : (details) => _handlePan(details.localPosition, Size(size, size)),
+      onPanUpdate: widget.editMode ? null : (details) => _handlePan(details.localPosition, Size(size, size)),
+      onPanEnd: widget.editMode ? null : (_) => _reset(),
+      onPanCancel: widget.editMode ? null : _reset,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Outer ring (background)
+            Container(
+              width: size - 8,
+              height: size - 8,
+              decoration: BoxDecoration(
+                color: YageColors.surface.withAlpha(200),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: YageColors.surfaceLight,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(40),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+            
+            // Direction indicators (subtle)
+            ..._buildDirectionIndicators(size),
+            
+            // Movable stick
+            Transform.translate(
+              offset: _stickPosition,
+              child: Container(
+                width: stickSize,
+                height: stickSize,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    colors: [
+                      YageColors.primary.withAlpha(230),
+                      YageColors.primary.withAlpha(180),
+                    ],
+                    center: const Alignment(-0.3, -0.3),
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: YageColors.primary,
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: YageColors.primary.withAlpha(80),
+                      blurRadius: 12,
+                      spreadRadius: 2,
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withAlpha(60),
+                      blurRadius: 6,
+                      offset: const Offset(2, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Container(
+                    width: stickSize * 0.3,
+                    height: stickSize * 0.3,
+                    decoration: BoxDecoration(
+                      color: YageColors.backgroundLight.withAlpha(100),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildDirectionIndicators(double size) {
+    final indicatorSize = size * 0.08;
+    final offset = size * 0.38;
+    
+    return [
+      // Up indicator
+      Positioned(
+        top: size / 2 - offset - indicatorSize / 2,
+        left: size / 2 - indicatorSize / 2,
+        child: _DirectionIndicator(
+          isActive: _up,
+          size: indicatorSize,
+        ),
+      ),
+      // Down indicator
+      Positioned(
+        bottom: size / 2 - offset - indicatorSize / 2,
+        left: size / 2 - indicatorSize / 2,
+        child: _DirectionIndicator(
+          isActive: _down,
+          size: indicatorSize,
+        ),
+      ),
+      // Left indicator
+      Positioned(
+        left: size / 2 - offset - indicatorSize / 2,
+        top: size / 2 - indicatorSize / 2,
+        child: _DirectionIndicator(
+          isActive: _left,
+          size: indicatorSize,
+        ),
+      ),
+      // Right indicator
+      Positioned(
+        right: size / 2 - offset - indicatorSize / 2,
+        top: size / 2 - indicatorSize / 2,
+        child: _DirectionIndicator(
+          isActive: _right,
+          size: indicatorSize,
+        ),
+      ),
+    ];
+  }
+}
+
+class _DirectionIndicator extends StatelessWidget {
+  final bool isActive;
+  final double size;
+
+  const _DirectionIndicator({
+    required this.isActive,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: isActive 
+            ? YageColors.accent.withAlpha(200) 
+            : YageColors.surfaceLight.withAlpha(100),
+        shape: BoxShape.circle,
       ),
     );
   }

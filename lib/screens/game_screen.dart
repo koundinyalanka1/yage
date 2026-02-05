@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/game_rom.dart';
 import '../models/gamepad_layout.dart';
@@ -35,6 +36,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
+    // Keep screen awake while playing
+    WakelockPlus.enable();
+    
     // Hide system UI for immersive gaming
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     
@@ -56,6 +60,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    
+    // Allow screen to sleep again
+    WakelockPlus.disable();
     
     // Restore UI
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -232,13 +239,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ),
               
               // Main content - different layout for portrait vs landscape
-              // Landscape: no SafeArea to maximize screen usage
-              // Portrait: use SafeArea for proper spacing
+              // No SafeArea for either - maximize game display
               _isLandscape
                   ? _buildLandscapeLayout(emulator, settings, gameDisplay)
-                  : SafeArea(
-                      child: _buildPortraitLayout(emulator, settings, gameDisplay),
-                    ),
+                  : _buildPortraitLayout(emulator, settings, gameDisplay),
               
               // FPS overlay - positioned to avoid R button in landscape
               if (settings.showFps)
@@ -378,6 +382,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     emulator.setSpeed(speed);
                   },
                   onExit: _exitGame,
+                  useJoystick: settings.useJoystick,
+                  onToggleJoystick: () {
+                    context.read<SettingsService>().toggleJoystick();
+                  },
                 ),
             ],
           );
@@ -387,63 +395,65 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Portrait layout: Game on top, controls on bottom - MAXIMIZED
+  /// Portrait layout: Game on top, controls on bottom - FULLY MAXIMIZED
+  /// All values are PROPORTIONAL to screen size for consistent layout across devices
   Widget _buildPortraitLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     final layout = _tempLayout ?? settings.gamepadLayoutPortrait;
     final screenSize = MediaQuery.of(context).size;
     final safeArea = MediaQuery.of(context).padding;
     
-    // Calculate optimal game display - MAXIMIZE the game
+    // Calculate optimal game display - MAXIMUM SIZE, NO PADDING
     final aspectRatio = emulator.screenWidth / emulator.screenHeight;
     
-    // Use full width (5px padding each side)
-    final maxGameWidth = screenSize.width - 10;
+    // Use FULL width - no padding
+    final maxGameWidth = screenSize.width;
     
     // Calculate height from width
     double gameWidth = maxGameWidth;
     double gameHeight = gameWidth / aspectRatio;
     
-    // Top bar space (menu buttons) - extra clearance to avoid overlap
-    final topBarHeight = 55.0;
+    // Position game lower - PROPORTIONAL offset (7% of screen height)
+    // This ensures consistent look on all screen sizes
+    final gameTopOffset = screenSize.height * 0.07;
+    final gameTop = safeArea.top + gameTopOffset;
     
-    // Allow game to take more space - controls will overlay if needed
-    // Reserve minimum 220px for controls on smaller screens, less on larger
-    final minControlsHeight = screenSize.height > 700 ? 200.0 : 220.0;
-    final maxGameHeight = screenSize.height - safeArea.top - safeArea.bottom - minControlsHeight - topBarHeight;
+    // Allow game to take maximum space - controls will overlay
+    // Only constrain if game would be taller than available space
+    final maxGameHeight = screenSize.height - safeArea.top;
     
-    // Constrain if too tall
+    // Constrain if too tall (shouldn't happen in portrait for GBA 3:2 ratio)
     if (gameHeight > maxGameHeight) {
       gameHeight = maxGameHeight;
       gameWidth = gameHeight * aspectRatio;
     }
     
+    // Proportional overlap (5% of screen height)
+    final overlapAmount = screenSize.height * 0.05;
+    
     return Stack(
       children: [
-        // Game display at top
+        // Game display at top - FULL WIDTH, NO PADDING
         Positioned(
-          top: topBarHeight,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: SizedBox(
-              width: gameWidth,
-              height: gameHeight,
-              child: gameDisplay,
-            ),
+          top: gameTop,
+          left: (screenSize.width - gameWidth) / 2,
+          child: SizedBox(
+            width: gameWidth,
+            height: gameHeight,
+            child: gameDisplay,
           ),
         ),
         
-        // Virtual gamepad - positioned from bottom, can overlay game slightly
+        // Virtual gamepad - fills remaining space and can overlay game
         if (_showControls)
           Positioned(
             left: 0,
             right: 0,
-            bottom: safeArea.bottom,
-            height: screenSize.height - topBarHeight - safeArea.top - gameHeight + 30, // Allow 30px overlap
+            bottom: 0,
+            height: screenSize.height - gameTop - gameHeight + overlapAmount,
             child: VirtualGamepad(
               gameRect: Rect.fromLTWH(
                 (screenSize.width - gameWidth) / 2,
-                topBarHeight + safeArea.top,
+                gameTop,
                 gameWidth,
                 gameHeight,
               ),
@@ -456,37 +466,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               onLayoutChanged: (newLayout) {
                 setState(() => _tempLayout = newLayout);
               },
+              useJoystick: settings.useJoystick,
             ),
-
           ),
       ],
     );
   }
 
-  /// Landscape layout: Game centered, controls overlay on sides
+  /// Landscape layout: Game centered, controls overlay on sides - FULLY MAXIMIZED
   Widget _buildLandscapeLayout(EmulatorService emulator, settings, Widget gameDisplay) {
     final layout = _tempLayout ?? settings.gamepadLayoutLandscape;
     final screenSize = MediaQuery.of(context).size;
     
-    // Calculate game size - maximize with only 5px padding
+    // Calculate game size - MAXIMUM SIZE, NO PADDING
     final aspectRatio = emulator.screenWidth / emulator.screenHeight;
     
-    // Use nearly full height (5px margin top/bottom)
-    final availableHeight = screenSize.height - 10;
+    // Use FULL height - no padding
+    final availableHeight = screenSize.height;
     
     // Calculate width from height
     double gameHeight = availableHeight;
     double gameWidth = gameHeight * aspectRatio;
     
-    // If too wide, constrain by width (5px margin each side)
-    if (gameWidth > screenSize.width - 10) {
-      gameWidth = screenSize.width - 10;
+    // If too wide, constrain by width (no padding)
+    if (gameWidth > screenSize.width) {
+      gameWidth = screenSize.width;
       gameHeight = gameWidth / aspectRatio;
     }
     
     return Stack(
       children: [
-        // Game display - centered and MAXIMIZED
+        // Game display - centered and FULLY MAXIMIZED
         Center(
           child: SizedBox(
             width: gameWidth,
@@ -513,8 +523,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             onLayoutChanged: (newLayout) {
               setState(() => _tempLayout = newLayout);
             },
+            useJoystick: settings.useJoystick,
           ),
-
       ],
     );
   }
@@ -795,6 +805,8 @@ class _InGameMenu extends StatelessWidget {
   final double currentSpeed;
   final void Function(double speed) onSpeedChanged;
   final VoidCallback onExit;
+  final bool useJoystick;
+  final VoidCallback onToggleJoystick;
 
   const _InGameMenu({
     required this.game,
@@ -808,6 +820,8 @@ class _InGameMenu extends StatelessWidget {
     required this.currentSpeed,
     required this.onSpeedChanged,
     required this.onExit,
+    required this.useJoystick,
+    required this.onToggleJoystick,
   });
 
   @override
@@ -900,6 +914,13 @@ class _InGameMenu extends StatelessWidget {
                       icon: showControls ? Icons.gamepad : Icons.gamepad_outlined,
                       label: showControls ? 'Hide Controls' : 'Show Controls',
                       onTap: onToggleControls,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    // D-Pad / Joystick selector
+                    _InputTypeSelector(
+                      useJoystick: useJoystick,
+                      onChanged: onToggleJoystick,
                     ),
                     const SizedBox(height: 10),
                     
@@ -1202,6 +1223,135 @@ class _SpeedSelector extends StatelessWidget {
                 ),
               );
             }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InputTypeSelector extends StatelessWidget {
+  final bool useJoystick;
+  final VoidCallback onChanged;
+
+  const _InputTypeSelector({
+    required this.useJoystick,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: YageColors.backgroundLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: YageColors.surfaceLight, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.gamepad, color: YageColors.textSecondary, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Input Type',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: YageColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              // D-Pad option
+              Expanded(
+                child: GestureDetector(
+                  onTap: useJoystick ? onChanged : null,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: !useJoystick 
+                          ? YageColors.primary 
+                          : YageColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: !useJoystick 
+                          ? null 
+                          : Border.all(color: YageColors.surfaceLight),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.control_camera,
+                          size: 18,
+                          color: !useJoystick 
+                              ? YageColors.textPrimary 
+                              : YageColors.textMuted,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'D-Pad',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: !useJoystick 
+                                ? YageColors.textPrimary 
+                                : YageColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Joystick option
+              Expanded(
+                child: GestureDetector(
+                  onTap: !useJoystick ? onChanged : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: useJoystick 
+                          ? YageColors.primary 
+                          : YageColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: useJoystick 
+                          ? null 
+                          : Border.all(color: YageColors.surfaceLight),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.radio_button_checked,
+                          size: 18,
+                          color: useJoystick 
+                              ? YageColors.textPrimary 
+                              : YageColors.textMuted,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Joystick',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: useJoystick 
+                                ? YageColors.textPrimary 
+                                : YageColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

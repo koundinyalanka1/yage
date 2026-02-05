@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Game Mode configuration for Android 12+ -->
+<game-mode-config 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:supportsBatteryGameMode="true"
+    android:supportsPerformanceGameMode="true"
+    android:allowGameAngleDriver="true"
+    android:allowGameDownscaling="false"/>
+

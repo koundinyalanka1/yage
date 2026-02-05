@@ -99,49 +99,49 @@ class GamepadLayout {
     // D-pad: bottom-left corner of control area
     dpad: ButtonLayout(
       x: 0.02,
-      y: 0.45,
+      y: 0.62,
       size: 1.30,
     ),
 
     // A button: bottom-right, primary action
     aButton: ButtonLayout(
       x: 0.78,
-      y: 0.40,
+      y: 0.57,
       size: 1.20,
     ),
 
     // B button: left of A, slightly lower
     bButton: ButtonLayout(
       x: 0.58,
-      y: 0.55,
+      y: 0.72,
       size: 1.20,
     ),
 
     // L shoulder: left side, with more clearance from game
     lButton: ButtonLayout(
       x: 0.02,
-      y: 0.15,
+      y: 0.32,
       size: 1.10,
     ),
 
     // R shoulder: right side, with more clearance from game
     rButton: ButtonLayout(
       x: 0.82,
-      y: 0.15,
+      y: 0.32,
       size: 1.10,
     ),
 
     // Select: center-left
     selectButton: ButtonLayout(
       x: 0.22,
-      y: 0.25,
+      y: 0.42,
       size: 1.05,
     ),
 
     // Start: center-right
     startButton: ButtonLayout(
       x: 0.62,
-      y: 0.25,
+      y: 0.42,
       size: 1.05,
     ),
   );
