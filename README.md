@@ -1,8 +1,8 @@
-# YAGE - Yet Another Game Boy Emulator
+# RetroPal - Your Retro Gaming Companion
 
 A modern, cross-platform Game Boy / Game Boy Color / Game Boy Advance emulator built with Flutter, powered by the mGBA core.
 
-![YAGE Banner](docs/banner.png)
+![RetroPal Banner](docs/banner.png)
 
 ## Features
 
@@ -31,7 +31,7 @@ A modern, cross-platform Game Boy / Game Boy Color / Game Boy Advance emulator b
 
 ### Building the Native Library
 
-YAGE requires a native wrapper library that interfaces with mGBA. Follow these steps:
+RetroPal requires a native wrapper library that interfaces with mGBA. Follow these steps:
 
 1. **Build mGBA first:**
    ```bash
@@ -42,9 +42,9 @@ YAGE requires a native wrapper library that interfaces with mGBA. Follow these s
    cmake --build . --config Release
    ```
 
-2. **Build the YAGE native library:**
+2. **Build the RetroPal native library:**
    ```bash
-   cd yage/native
+   cd retropal/native
    mkdir build && cd build
    cmake .. -DMGBA_DIR=/path/to/mgba/build
    cmake --build . --config Release
@@ -107,7 +107,7 @@ flutter run -d android  # or ios
 ## Project Structure
 
 ```
-yage/
+retropal/
 ├── lib/
 │   ├── core/           # mGBA FFI bindings
 │   ├── models/         # Data models
@@ -117,8 +117,8 @@ yage/
 │   ├── widgets/        # Reusable widgets
 │   └── utils/          # Theme and utilities
 ├── native/             # C native library
-│   ├── yage_core.c     # mGBA wrapper implementation
-│   ├── yage_core.h     # C header file
+│   ├── yage_libretro.c # mGBA wrapper implementation
+│   ├── yage_libretro.h # C header file
 │   └── CMakeLists.txt  # Native build config
 ├── assets/             # App assets
 └── windows/            # Platform-specific code
@@ -128,7 +128,7 @@ yage/
 
 ### Architecture
 
-YAGE uses a layered architecture:
+RetroPal uses a layered architecture:
 
 1. **Native Layer** (`native/`): C wrapper around mGBA providing a simplified FFI interface
 2. **Core Layer** (`lib/core/`): Dart FFI bindings to the native library
@@ -157,7 +157,7 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ## Legal Notice
 
-**IMPORTANT**: YAGE does not include any copyrighted BIOS files or game ROMs. You must provide your own legally obtained ROM files and optional BIOS files.
+**IMPORTANT**: RetroPal does not include any copyrighted BIOS files or game ROMs. You must provide your own legally obtained ROM files and optional BIOS files.
 
 - BIOS files improve compatibility but are optional (mGBA can run without them)
 - Only use ROMs for games you legally own

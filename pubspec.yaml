@@ -1,5 +1,5 @@
-name: yage
-description: "YAGE - Yet Another Game Boy Emulator. A GBA/GB/GBC emulator powered by mGBA."
+name: retropal
+description: "RetroPal - Your retro gaming companion. A GBA/GB/GBC emulator powered by mGBA."
 publish_to: 'none'
 version: 0.1.0
 

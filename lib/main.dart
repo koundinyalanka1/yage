@@ -24,17 +24,17 @@ void main() {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
   
-  runApp(const YageApp());
+  runApp(const RetroPalApp());
 }
 
-class YageApp extends StatelessWidget {
-  const YageApp({super.key});
+class RetroPalApp extends StatelessWidget {
+  const RetroPalApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return AppProviders(
       child: MaterialApp(
-        title: 'YAGE',
+        title: 'RetroPal',
         debugShowCheckedModeBanner: false,
         theme: YageTheme.darkTheme,
         home: const HomeScreen(),

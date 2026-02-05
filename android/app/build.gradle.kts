@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.yourmateapps.yage"
+    namespace = "com.yourmateapps.retropal"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.yourmateapps.yage"
+        applicationId = "com.yourmateapps.retropal"
         minSdk = 24  // Android 7.0+ for better performance
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

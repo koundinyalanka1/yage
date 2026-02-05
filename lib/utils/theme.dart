@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// YAGE color palette - inspired by retro gaming with modern twist
+/// RetroPal color palette - inspired by retro gaming with modern twist
 class YageColors {
   // Primary colors - deep purple/violet theme
   static const Color primary = Color(0xFF6B4EE6);
@@ -35,7 +35,7 @@ class YageColors {
   static const Color error = Color(0xFFF44336);
 }
 
-/// YAGE theme configuration
+/// RetroPal theme configuration
 class YageTheme {
   static const String _fontFamily = 'Rajdhani';
   static const String _monoFontFamily = 'JetBrains Mono';
