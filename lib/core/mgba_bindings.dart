@@ -61,6 +61,19 @@ typedef MgbaCoreGetPlatform = int Function(NativeCore core);
 typedef MgbaCoreSetSaveDirNative = Void Function(NativeCore core, Pointer<Utf8> path);
 typedef MgbaCoreSetSaveDir = void Function(NativeCore core, Pointer<Utf8> path);
 
+typedef MgbaCoreSetVolumeNative = Void Function(NativeCore core, Float volume);
+typedef MgbaCoreSetVolume = void Function(NativeCore core, double volume);
+
+typedef MgbaCoreSetAudioEnabledNative = Void Function(NativeCore core, Int32 enabled);
+typedef MgbaCoreSetAudioEnabled = void Function(NativeCore core, int enabled);
+
+typedef MgbaCoreSetColorPaletteNative = Void Function(
+    NativeCore core, Int32 paletteIndex,
+    Uint32 color0, Uint32 color1, Uint32 color2, Uint32 color3);
+typedef MgbaCoreSetColorPalette = void Function(
+    NativeCore core, int paletteIndex,
+    int color0, int color1, int color2, int color3);
+
 // Battery/SRAM save functions
 typedef MgbaCoreGetSramSizeNative = Int32 Function(NativeCore core);
 typedef MgbaCoreGetSramSize = int Function(NativeCore core);
@@ -123,6 +136,9 @@ class MGBABindings {
   late final MgbaCoreGetSramData coreGetSramData;
   late final MgbaCoreSaveSram coreSaveSram;
   late final MgbaCoreLoadSram coreLoadSram;
+  late final MgbaCoreSetVolume coreSetVolume;
+  late final MgbaCoreSetAudioEnabled coreSetAudioEnabled;
+  late final MgbaCoreSetColorPalette coreSetColorPalette;
 
   bool get isLoaded => _isLoaded;
 
@@ -250,6 +266,18 @@ class MGBABindings {
     coreLoadSram = _lib
         .lookup<NativeFunction<MgbaCoreLoadSramNative>>('yage_core_load_sram')
         .asFunction();
+
+    coreSetVolume = _lib
+        .lookup<NativeFunction<MgbaCoreSetVolumeNative>>('yage_core_set_volume')
+        .asFunction();
+
+    coreSetAudioEnabled = _lib
+        .lookup<NativeFunction<MgbaCoreSetAudioEnabledNative>>('yage_core_set_audio_enabled')
+        .asFunction();
+
+    coreSetColorPalette = _lib
+        .lookup<NativeFunction<MgbaCoreSetColorPaletteNative>>('yage_core_set_color_palette')
+        .asFunction();
   }
 }
 
@@ -373,6 +401,9 @@ class MGBACore {
   }
 
   /// Get video buffer as RGBA pixel data
+  /// Native side now stores pixels in ABGR uint32 format which maps to
+  /// R,G,B,A bytes in little-endian memory — exactly what Flutter expects
+  /// for PixelFormat.rgba8888. Zero-copy via asTypedList.
   Uint8List? getVideoBuffer() {
     if (_corePtr == null) return null;
 
@@ -380,18 +411,8 @@ class MGBACore {
     if (buffer == nullptr) return null;
 
     final pixelCount = _width * _height;
-    final pixels = Uint8List(pixelCount * 4);
-    
-    for (int i = 0; i < pixelCount; i++) {
-      final color = buffer[i];
-      // Convert from XRGB8888 to RGBA8888
-      pixels[i * 4 + 0] = (color >> 16) & 0xFF; // R
-      pixels[i * 4 + 1] = (color >> 8) & 0xFF;  // G
-      pixels[i * 4 + 2] = color & 0xFF;         // B
-      pixels[i * 4 + 3] = 0xFF;                 // A
-    }
-
-    return pixels;
+    // Direct view of native memory as bytes — no per-pixel loop needed
+    return buffer.cast<Uint8>().asTypedList(pixelCount * 4);
   }
 
   /// Get audio samples
@@ -465,6 +486,30 @@ class MGBACore {
     } finally {
       calloc.free(pathPtr);
     }
+  }
+
+  /// Set audio volume (0.0 = mute, 1.0 = full)
+  void setVolume(double volume) {
+    if (_corePtr == null) return;
+    _bindings.coreSetVolume(_corePtr as Pointer<Void>, volume.clamp(0.0, 1.0));
+  }
+
+  /// Enable or disable audio output
+  void setAudioEnabled(bool enabled) {
+    if (_corePtr == null) return;
+    _bindings.coreSetAudioEnabled(_corePtr as Pointer<Void>, enabled ? 1 : 0);
+  }
+
+  /// Set color palette for original GB games
+  /// [paletteIndex] -1 to disable (use original colors), 0+ to enable
+  /// [colors] list of 4 ARGB color values [lightest, light, dark, darkest]
+  void setColorPalette(int paletteIndex, List<int> colors) {
+    if (_corePtr == null) return;
+    _bindings.coreSetColorPalette(
+      _corePtr as Pointer<Void>,
+      paletteIndex,
+      colors[0], colors[1], colors[2], colors[3],
+    );
   }
 
   /// Stop and clean up

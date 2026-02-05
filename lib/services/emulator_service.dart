@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -32,6 +33,7 @@ class EmulatorService extends ChangeNotifier {
   GameRom? _currentRom;
   EmulatorSettings _settings = const EmulatorSettings();
   String? _errorMessage;
+  String? _saveDir;
   
   Timer? _frameTimer;
   Stopwatch? _frameStopwatch;
@@ -64,12 +66,12 @@ class EmulatorService extends ChangeNotifier {
     notifyListeners();
   }
   
-  /// Toggle fast forward (between 1x and 2x)
+  /// Toggle fast forward between 1x and the configured turbo speed from settings
   void toggleFastForward() {
     if (_speedMultiplier > 1.0) {
       _speedMultiplier = 1.0;
     } else {
-      _speedMultiplier = 2.0;
+      _speedMultiplier = _settings.turboSpeed;
     }
     notifyListeners();
   }
@@ -99,6 +101,7 @@ class EmulatorService extends ChangeNotifier {
         _core = MGBACore(_bindings);
         if (_core!.initialize()) {
           final saveDir = await _getSaveDirectory();
+          _saveDir = saveDir;
           _core!.setSaveDir(saveDir);
           _useStub = false;
           _state = EmulatorState.ready;
@@ -203,6 +206,12 @@ class EmulatorService extends ChangeNotifier {
 
       // Load SRAM (battery save) if exists
       await _loadSram(rom);
+
+      // Apply audio settings to the native core
+      _applyAudioSettings();
+
+      // Apply color palette (for original GB games)
+      _applyColorPalette();
 
       _currentRom = rom.copyWith(lastPlayed: DateTime.now());
       _state = EmulatorState.paused;
@@ -328,8 +337,8 @@ class EmulatorService extends ChangeNotifier {
       // No need to process audio buffer in Dart
     }
 
-    // Calculate FPS
-    if (_frameStopwatch != null && _frameStopwatch!.elapsedMilliseconds >= 1000) {
+    // Calculate FPS — update every 500ms for a responsive counter
+    if (_frameStopwatch != null && _frameStopwatch!.elapsedMilliseconds >= 500) {
       _currentFps = _frameCount * 1000 / _frameStopwatch!.elapsedMilliseconds;
       _frameCount = 0;
       _frameStopwatch!.reset();
@@ -356,6 +365,34 @@ class EmulatorService extends ChangeNotifier {
       if (pixels != null && onFrame != null) {
         onFrame!(pixels, _core!.width, _core!.height);
       }
+    }
+  }
+
+  /// Set audio volume (0.0 = mute, 1.0 = full)
+  void setVolume(double volume) {
+    if (_useStub) {
+      _stub?.setVolume(volume);
+    } else {
+      _core?.setVolume(volume);
+    }
+  }
+
+  /// Enable or disable audio
+  void setAudioEnabled(bool enabled) {
+    if (_useStub) {
+      _stub?.setAudioEnabled(enabled);
+    } else {
+      _core?.setAudioEnabled(enabled);
+    }
+  }
+
+  /// Set color palette for original GB games
+  /// Pass paletteIndex = -1 to disable palette remapping
+  void setColorPalette(int paletteIndex, List<int> colors) {
+    if (_useStub) {
+      _stub?.setColorPalette(paletteIndex, colors);
+    } else {
+      _core?.setColorPalette(paletteIndex, colors);
     }
   }
 
@@ -386,11 +423,40 @@ class EmulatorService extends ChangeNotifier {
     }
   }
 
-  /// Save state to slot
+  /// Get the current video buffer (raw RGBA pixels)
+  Uint8List? getVideoBufferRaw() {
+    if (_useStub) return _stub?.getVideoBuffer();
+    return _core?.getVideoBuffer();
+  }
+
+  /// Get the save state file path for a slot
+  String? getStatePath(int slot) {
+    if (_saveDir == null || _currentRom == null) return null;
+    final romName = p.basename(_currentRom!.path);
+    return p.join(_saveDir!, '$romName.ss$slot');
+  }
+
+  /// Get the screenshot file path for a save state slot
+  String? getStateScreenshotPath(int slot) {
+    if (_saveDir == null || _currentRom == null) return null;
+    final romName = p.basename(_currentRom!.path);
+    return p.join(_saveDir!, '$romName.ss$slot.png');
+  }
+
+  /// Save state to slot (also captures a screenshot thumbnail)
   Future<bool> saveState(int slot) async {
-    if (_useStub) return _stub?.saveState(slot) ?? false;
-    if (_core == null) return false;
-    return _core!.saveState(slot);
+    bool success;
+    if (_useStub) {
+      success = _stub?.saveState(slot) ?? false;
+    } else if (_core == null) {
+      return false;
+    } else {
+      success = _core!.saveState(slot);
+    }
+    if (success) {
+      await _saveStateScreenshot(slot);
+    }
+    return success;
   }
 
   /// Load state from slot
@@ -410,10 +476,97 @@ class EmulatorService extends ChangeNotifier {
     return success;
   }
 
-  /// Update settings
+  /// Capture the current video frame and save as PNG for save state thumbnail
+  Future<void> _saveStateScreenshot(int slot) async {
+    final path = getStateScreenshotPath(slot);
+    if (path == null) return;
+
+    final pixels = getVideoBufferRaw();
+    if (pixels == null) return;
+
+    final w = screenWidth;
+    final h = screenHeight;
+
+    try {
+      // Copy pixel data since native memory may be reused
+      final pixelsCopy = Uint8List.fromList(pixels);
+
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        pixelsCopy, w, h, ui.PixelFormat.rgba8888,
+        (image) => completer.complete(image),
+      );
+      final image = await completer.future;
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+
+      if (byteData != null) {
+        await File(path).writeAsBytes(byteData.buffer.asUint8List());
+      }
+    } catch (e) {
+      debugPrint('Error saving state screenshot: $e');
+    }
+  }
+
+  /// Update settings — applies audio/palette changes to the native core immediately.
+  /// Only notifies listeners if settings actually changed.
   void updateSettings(EmulatorSettings newSettings) {
+    if (identical(_settings, newSettings)) return;
+    
+    final oldSettings = _settings;
     _settings = newSettings;
-    notifyListeners();
+
+    // Apply audio settings changes to the native core in real-time
+    if (oldSettings.volume != newSettings.volume ||
+        oldSettings.enableSound != newSettings.enableSound) {
+      _applyAudioSettings();
+    }
+
+    // Apply color palette changes
+    if (oldSettings.selectedColorPalette != newSettings.selectedColorPalette) {
+      _applyColorPalette();
+    }
+
+    // Apply turbo speed changes — if fast-forward is active, update to new speed
+    if (oldSettings.turboSpeed != newSettings.turboSpeed && _speedMultiplier > 1.0) {
+      _speedMultiplier = newSettings.turboSpeed;
+      notifyListeners();
+    }
+
+    // If turbo was disabled in settings while fast-forward is active, reset to 1x
+    if (oldSettings.enableTurbo && !newSettings.enableTurbo && _speedMultiplier > 1.0) {
+      _speedMultiplier = 1.0;
+      notifyListeners();
+    }
+  }
+
+  /// Apply current audio settings (volume + mute) to the native core
+  void _applyAudioSettings() {
+    setAudioEnabled(_settings.enableSound);
+    setVolume(_settings.enableSound ? _settings.volume : 0.0);
+  }
+
+  /// Apply color palette to the native core (only for original GB games)
+  void _applyColorPalette() {
+    final paletteIndex = _settings.selectedColorPalette;
+    
+    // Only apply palette remapping for original GB games
+    if (platform != GamePlatform.gb) {
+      // Disable palette for non-GB games
+      setColorPalette(-1, [0, 0, 0, 0]);
+      return;
+    }
+
+    if (paletteIndex < 0 || paletteIndex >= GBColorPalette.palettes.length) {
+      // Disable palette (use original colors)
+      setColorPalette(-1, [0, 0, 0, 0]);
+      return;
+    }
+
+    final palette = GBColorPalette.palettes[paletteIndex];
+    // Convert 0xRRGGBB to 0xFFRRGGBB (add full alpha)
+    final colors = palette.map((c) => 0xFF000000 | c).toList();
+    setColorPalette(paletteIndex, colors);
   }
 
   /// Stop and unload current ROM

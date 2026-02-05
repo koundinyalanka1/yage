@@ -164,14 +164,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [YageColors.primary, YageColors.accent],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Center(
+            child: Center(
               child: Text(
                 'Y',
                 style: TextStyle(
@@ -195,10 +195,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 decoration: InputDecoration(
                   hintText: 'Search...',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  prefixIcon: const Icon(Icons.search, color: YageColors.textMuted, size: 20),
+                  prefixIcon: Icon(Icons.search, color: YageColors.textMuted, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, color: YageColors.textMuted, size: 18),
+                          icon: Icon(Icons.clear, color: YageColors.textMuted, size: 18),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
@@ -223,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: DropdownButton<GamePlatform?>(
                 value: _selectedPlatform,
                 hint: const Text('All', style: TextStyle(fontSize: 12)),
-                style: const TextStyle(fontSize: 12, color: YageColors.textPrimary),
+                style: TextStyle(fontSize: 12, color: YageColors.textPrimary),
                 dropdownColor: YageColors.surface,
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All')),
@@ -251,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           
           // More options menu
           PopupMenuButton<String>(
-            icon: const Icon(
+            icon: Icon(
               Icons.more_vert,
               color: YageColors.textSecondary,
               size: 20,
@@ -310,7 +310,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [YageColors.primary, YageColors.accent],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -324,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                     ],
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
                       'Y',
                       style: TextStyle(
@@ -339,8 +339,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'YAGE',
+                    Text(
+                      'RetroPal',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -349,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                     ),
                     Text(
-                      'Yet Another GB Emulator',
+                      'Classic GB/GBC/GBA Games',
                       style: TextStyle(
                         fontSize: 10,
                         color: YageColors.textMuted,
@@ -373,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           
           // More options menu
           PopupMenuButton<String>(
-            icon: const Icon(
+            icon: Icon(
               Icons.more_vert,
               color: YageColors.textSecondary,
             ),
@@ -424,10 +424,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         onChanged: (value) => setState(() => _searchQuery = value),
         decoration: InputDecoration(
           hintText: 'Search games...',
-          prefixIcon: const Icon(Icons.search, color: YageColors.textMuted),
+          prefixIcon: Icon(Icons.search, color: YageColors.textMuted),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear, color: YageColors.textMuted),
+                  icon: Icon(Icons.clear, color: YageColors.textMuted),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
@@ -591,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             Container(
               width: 100,
               height: 100,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: YageColors.surface,
                 shape: BoxShape.circle,
               ),
@@ -604,7 +604,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const SizedBox(height: 24),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: YageColors.textPrimary,
@@ -613,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               color: YageColors.textMuted,
             ),
@@ -766,7 +766,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
                     game.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: YageColors.textPrimary,
@@ -826,8 +826,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     },
                   ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: YageColors.error),
-                  title: const Text(
+                  leading: Icon(Icons.delete_outline, color: YageColors.error),
+                  title: Text(
                     'Remove from Library',
                     style: TextStyle(color: YageColors.error),
                   ),
@@ -895,7 +895,7 @@ class _ArtworkDownloadDialogState extends State<_ArtworkDownloadDialog> {
       backgroundColor: YageColors.surface,
       title: Text(
         _isDownloading ? 'Downloading Artwork' : 'Download Complete',
-        style: const TextStyle(color: YageColors.textPrimary),
+        style: TextStyle(color: YageColors.textPrimary),
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -907,12 +907,12 @@ class _ArtworkDownloadDialogState extends State<_ArtworkDownloadDialog> {
                   ? _completed / widget.totalGames 
                   : 0,
               backgroundColor: YageColors.backgroundLight,
-              valueColor: const AlwaysStoppedAnimation(YageColors.primary),
+              valueColor: AlwaysStoppedAnimation(YageColors.primary),
             ),
             const SizedBox(height: 16),
             Text(
               'Processing $_completed of ${widget.totalGames} games...',
-              style: const TextStyle(color: YageColors.textSecondary),
+              style: TextStyle(color: YageColors.textSecondary),
             ),
           ] else ...[
             Icon(
@@ -925,7 +925,7 @@ class _ArtworkDownloadDialogState extends State<_ArtworkDownloadDialog> {
               _found > 0
                   ? 'Found artwork for $_found games!'
                   : 'No new artwork found',
-              style: const TextStyle(
+              style: TextStyle(
                 color: YageColors.textPrimary,
                 fontSize: 16,
               ),

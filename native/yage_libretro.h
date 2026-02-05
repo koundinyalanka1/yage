@@ -91,6 +91,17 @@ YAGE_API int yage_core_get_height(YageCore* core);
  */
 YAGE_API int16_t* yage_core_get_audio_buffer(YageCore* core);
 YAGE_API int yage_core_get_audio_samples(YageCore* core);
+YAGE_API void yage_core_set_volume(YageCore* core, float volume);
+YAGE_API void yage_core_set_audio_enabled(YageCore* core, int enabled);
+
+/*
+ * Color palette (for original GB)
+ * palette_index: -1 = disabled (original colors), 0+ = enabled
+ * color0..color3: ARGB colors [lightest, light, dark, darkest]
+ */
+YAGE_API void yage_core_set_color_palette(YageCore* core, int palette_index,
+                                           uint32_t color0, uint32_t color1,
+                                           uint32_t color2, uint32_t color3);
 
 /*
  * Save states

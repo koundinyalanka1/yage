@@ -91,14 +91,23 @@ class _GameDisplayState extends State<GameDisplay> {
     final height = _pendingHeight;
     _pendingPixels = null;
 
+    // Make a copy since native buffer may be overwritten before decode completes
+    final pixelsCopy = Uint8List.fromList(pixels);
+
     // Create image from pixel data
+    // Use targetWidth/targetHeight to let the GPU pre-scale to a larger
+    // resolution — this produces much sharper results than scaling a tiny
+    // 240×160 image in the paint phase. We use 3x which covers most
+    // phone screens (720p–1080p) without excessive memory.
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
-      pixels,
+      pixelsCopy,
       width,
       height,
       ui.PixelFormat.rgba8888,
       completer.complete,
+      targetWidth: width * 3,
+      targetHeight: height * 3,
     );
 
     final newImage = await completer.future;
@@ -194,27 +203,62 @@ class _GamePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..filterQuality = enableFiltering 
-          ? FilterQuality.high  // Use highest quality for sharp upscaling
-          : FilterQuality.none  // Pixel-perfect for retro look
-      ..isAntiAlias = enableFiltering;
-
-    // Calculate destination rect to fit and center
     final srcRect = Rect.fromLTWH(
-      0, 0, 
-      image.width.toDouble(), 
+      0, 0,
+      image.width.toDouble(),
       image.height.toDouble(),
     );
 
-    final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
+    if (enableFiltering) {
+      // Smooth bilinear/cubic scaling — good for large screens
+      final paint = Paint()
+        ..filterQuality = FilterQuality.medium
+        ..isAntiAlias = true;
+      final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
+      canvas.drawImageRect(image, srcRect, destRect, paint);
+    } else {
+      // Pixel-perfect: snap to nearest integer scale so every pixel
+      // has exactly the same size — eliminates shimmer/uneven pixels
+      final paint = Paint()
+        ..filterQuality = FilterQuality.none
+        ..isAntiAlias = false;
 
-    canvas.drawImageRect(image, srcRect, destRect, paint);
+      final imgW = image.width.toDouble();
+      final imgH = image.height.toDouble();
+
+      // Find largest integer scale that fits
+      final scaleX = (size.width / imgW).floor();
+      final scaleY = (size.height / imgH).floor();
+      final scale = scaleX < scaleY ? scaleX : scaleY;
+
+      if (scale >= 1) {
+        // Integer-scaled: centered with uniform pixel size
+        final destW = imgW * scale;
+        final destH = imgH * scale;
+        final offsetX = (size.width - destW) / 2;
+        final offsetY = (size.height - destH) / 2;
+        
+        // Fill the letterbox bars with black
+        if (offsetX > 0 || offsetY > 0) {
+          canvas.drawRect(
+            Rect.fromLTWH(0, 0, size.width, size.height),
+            Paint()..color = const Color(0xFF000000),
+          );
+        }
+        
+        final destRect = Rect.fromLTWH(offsetX, offsetY, destW, destH);
+        canvas.drawImageRect(image, srcRect, destRect, paint);
+      } else {
+        // Screen too small for even 1x — just fill
+        final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
+        canvas.drawImageRect(image, srcRect, destRect, paint);
+      }
+    }
   }
 
   @override
   bool shouldRepaint(_GamePainter oldDelegate) {
-    return oldDelegate.image != image || 
+    return oldDelegate.image != image ||
            oldDelegate.enableFiltering != enableFiltering;
   }
 }
@@ -243,7 +287,7 @@ class FpsOverlay extends StatelessWidget {
       ),
       child: Text(
         '${fps.toStringAsFixed(1)} FPS',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: YageColors.textPrimary,

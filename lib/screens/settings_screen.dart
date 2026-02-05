@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../models/emulator_settings.dart';
 import '../services/settings_service.dart';
 import '../services/game_library_service.dart';
 import '../utils/theme.dart';
@@ -27,6 +28,13 @@ class SettingsScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _SectionHeader(title: 'Theme'),
+              _ThemePicker(
+                selectedThemeId: settings.selectedTheme,
+                onChanged: settingsService.setAppTheme,
+              ),
+
+              const SizedBox(height: 24),
               _SectionHeader(title: 'Audio'),
               _SettingsCard(
                 children: [
@@ -75,6 +83,11 @@ class SettingsScreen extends StatelessWidget {
                     subtitle: 'Smooth pixel scaling',
                     value: settings.enableFiltering,
                     onChanged: (_) => settingsService.toggleFiltering(),
+                  ),
+                  const Divider(height: 1),
+                  _PaletteTile(
+                    selectedIndex: settings.selectedColorPalette,
+                    onChanged: settingsService.setColorPalette,
                   ),
                 ],
               ),
@@ -135,44 +148,6 @@ class SettingsScreen extends StatelessWidget {
                       onChanged: settingsService.setTurboSpeed,
                     ),
                   ],
-                  const Divider(height: 1),
-                  _SwitchTile(
-                    icon: Icons.skip_next,
-                    title: 'Skip BIOS',
-                    subtitle: 'Skip startup animation',
-                    value: settings.skipBios,
-                    onChanged: (_) => settingsService.toggleSkipBios(),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'BIOS Files'),
-              _SettingsCard(
-                children: [
-                  _FileTile(
-                    icon: Icons.memory,
-                    title: 'GBA BIOS',
-                    path: settings.biosPathGba,
-                    onSelect: () => _selectBios(context, 'gba'),
-                    onClear: () => settingsService.setGbaBiosPath(null),
-                  ),
-                  const Divider(height: 1),
-                  _FileTile(
-                    icon: Icons.memory,
-                    title: 'GBC BIOS',
-                    path: settings.biosPathGbc,
-                    onSelect: () => _selectBios(context, 'gbc'),
-                    onClear: () => settingsService.setGbcBiosPath(null),
-                  ),
-                  const Divider(height: 1),
-                  _FileTile(
-                    icon: Icons.memory,
-                    title: 'GB BIOS',
-                    path: settings.biosPathGb,
-                    onSelect: () => _selectBios(context, 'gb'),
-                    onClear: () => settingsService.setGbBiosPath(null),
-                  ),
                 ],
               ),
               
@@ -205,8 +180,8 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   _InfoTile(
                     icon: Icons.info_outline,
-                    title: 'YAGE',
-                    subtitle: 'Yet Another Game Boy Emulator\nVersion 0.1.0',
+                    title: 'RetroPal',
+                    subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
                   ),
                   const Divider(height: 1),
                   _ActionTile(
@@ -224,29 +199,6 @@ class SettingsScreen extends StatelessWidget {
         },
       ),
     );
-  }
-
-  Future<void> _selectBios(BuildContext context, String platform) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.any,
-    );
-
-    if (result != null && result.files.single.path != null && context.mounted) {
-      final path = result.files.single.path!;
-      final settings = context.read<SettingsService>();
-      
-      switch (platform) {
-        case 'gba':
-          await settings.setGbaBiosPath(path);
-          break;
-        case 'gbc':
-          await settings.setGbcBiosPath(path);
-          break;
-        case 'gb':
-          await settings.setGbBiosPath(path);
-          break;
-      }
-    }
   }
 
   void _showRomFolders(BuildContext context) {
@@ -275,7 +227,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'ROM Folders',
                     style: TextStyle(
                       fontSize: 18,
@@ -286,8 +238,8 @@ class SettingsScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   
                   if (library.romDirectories.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(32),
+                    Padding(
+                      padding: const EdgeInsets.all(32),
                       child: Text(
                         'No folders added yet',
                         style: TextStyle(color: YageColors.textMuted),
@@ -300,14 +252,14 @@ class SettingsScreen extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final dir = library.romDirectories[index];
                         return ListTile(
-                          leading: const Icon(Icons.folder, color: YageColors.accent),
+                          leading: Icon(Icons.folder, color: YageColors.accent),
                           title: Text(
                             dir.split(RegExp(r'[/\\]')).last,
-                            style: const TextStyle(color: YageColors.textPrimary),
+                            style: TextStyle(color: YageColors.textPrimary),
                           ),
                           subtitle: Text(
                             dir,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               color: YageColors.textMuted,
                             ),
@@ -315,7 +267,7 @@ class SettingsScreen extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: YageColors.error),
+                            icon: Icon(Icons.delete, color: YageColors.error),
                             onPressed: () {
                               library.removeRomDirectory(dir);
                               setState(() {});
@@ -353,13 +305,13 @@ class SettingsScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: YageColors.surface,
-        title: const Text(
+        title: Text(
           'Reset Settings?',
           style: TextStyle(
             color: YageColors.textPrimary,
           ),
         ),
-        content: const Text(
+        content: Text(
           'This will reset all settings to their default values.',
           style: TextStyle(color: YageColors.textSecondary),
         ),
@@ -373,7 +325,7 @@ class SettingsScreen extends StatelessWidget {
               context.read<SettingsService>().resetToDefaults();
               Navigator.pop(context);
             },
-            child: const Text(
+            child: Text(
               'Reset',
               style: TextStyle(color: YageColors.error),
             ),
@@ -395,7 +347,7 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
         title.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
           color: YageColors.primary,
@@ -450,14 +402,14 @@ class _SwitchTile extends StatelessWidget {
       leading: Icon(icon, color: YageColors.accent),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           color: YageColors.textPrimary,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           color: YageColors.textMuted,
         ),
@@ -505,7 +457,7 @@ class _SliderTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     color: YageColors.textPrimary,
                   ),
@@ -513,7 +465,7 @@ class _SliderTile extends StatelessWidget {
               ),
               Text(
                 '${value.toStringAsFixed(1)}$labelSuffix',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   color: YageColors.accent,
                 ),
@@ -526,61 +478,6 @@ class _SliderTile extends StatelessWidget {
             max: max,
             divisions: divisions,
             onChanged: onChanged,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FileTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? path;
-  final VoidCallback onSelect;
-  final VoidCallback onClear;
-
-  const _FileTile({
-    required this.icon,
-    required this.title,
-    required this.path,
-    required this.onSelect,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: YageColors.accent),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 14,
-          color: YageColors.textPrimary,
-        ),
-      ),
-      subtitle: Text(
-        path ?? 'Not set',
-        style: TextStyle(
-          fontSize: 11,
-          color: path != null ? YageColors.textSecondary : YageColors.textMuted,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (path != null)
-            IconButton(
-              icon: const Icon(Icons.clear, size: 20),
-              color: YageColors.textMuted,
-              onPressed: onClear,
-            ),
-          IconButton(
-            icon: const Icon(Icons.folder_open, size: 20),
-            color: YageColors.primary,
-            onPressed: onSelect,
           ),
         ],
       ),
@@ -615,7 +512,7 @@ class _ActionTile extends StatelessWidget {
           color: isDestructive ? YageColors.error : YageColors.textPrimary,
         ),
       ),
-      trailing: const Icon(
+      trailing: Icon(
         Icons.chevron_right,
         color: YageColors.textMuted,
       ),
@@ -641,7 +538,7 @@ class _InfoTile extends StatelessWidget {
       leading: Icon(icon, color: YageColors.accent),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
           color: YageColors.textPrimary,
@@ -649,7 +546,7 @@ class _InfoTile extends StatelessWidget {
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           color: YageColors.textMuted,
         ),
@@ -658,3 +555,285 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
+class _PaletteTile extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  const _PaletteTile({
+    required this.selectedIndex,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.palette, color: YageColors.accent, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'GB Color Palette',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: YageColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'Custom colors for original Game Boy',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: YageColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 60,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: GBColorPalette.palettes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final palette = GBColorPalette.palettes[index];
+                final isSelected = index == selectedIndex;
+                return GestureDetector(
+                  onTap: () => onChanged(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 72,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? YageColors.primary
+                            : YageColors.surfaceLight,
+                        width: isSelected ? 2.5 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                for (final color in palette)
+                                  Expanded(
+                                    child: Container(
+                                      color: Color(0xFF000000 | color),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? YageColors.primary.withValues(alpha: 0.15)
+                                : YageColors.surface,
+                            borderRadius: const BorderRadius.vertical(
+                              bottom: Radius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            GBColorPalette.names[index],
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: isSelected
+                                  ? YageColors.primary
+                                  : YageColors.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemePicker extends StatelessWidget {
+  final String selectedThemeId;
+  final ValueChanged<String> onChanged;
+
+  const _ThemePicker({
+    required this.selectedThemeId,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: YageColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: YageColors.surfaceLight,
+          width: 1,
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.color_lens, color: YageColors.accent, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'App Theme',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: YageColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'Choose your vibe',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: YageColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...AppThemes.all.map((theme) {
+            final isSelected = theme.id == selectedThemeId;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: GestureDetector(
+                onTap: () => onChanged(theme.id),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? theme.primary.withAlpha(30)
+                        : YageColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? theme.primary : YageColors.surfaceLight,
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Color swatch preview
+                      Container(
+                        width: 44,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          gradient: LinearGradient(
+                            colors: [
+                              theme.primary,
+                              theme.accent,
+                            ],
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            theme.emoji,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      // Name and color dots
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              theme.name,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? theme.primary
+                                    : YageColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                _colorDot(theme.backgroundDark),
+                                _colorDot(theme.surface),
+                                _colorDot(theme.primary),
+                                _colorDot(theme.accent),
+                                _colorDot(theme.textPrimary),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Check mark
+                      if (isSelected)
+                        Icon(
+                          Icons.check_circle,
+                          color: theme.primary,
+                          size: 22,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _colorDot(Color color) {
+    return Container(
+      width: 14,
+      height: 14,
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withAlpha(40),
+          width: 0.5,
+        ),
+      ),
+    );
+  }
+}

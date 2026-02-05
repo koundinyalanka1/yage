@@ -24,6 +24,7 @@ class EmulatorSettings {
   final GamepadLayout gamepadLayoutPortrait;
   final GamepadLayout gamepadLayoutLandscape;
   final bool useJoystick; // true = joystick, false = d-pad
+  final String selectedTheme; // theme id string
 
   const EmulatorSettings({
     this.volume = 0.8,
@@ -46,6 +47,7 @@ class EmulatorSettings {
     this.gamepadLayoutPortrait = GamepadLayout.defaultPortrait,
     this.gamepadLayoutLandscape = GamepadLayout.defaultLandscape,
     this.useJoystick = false,
+    this.selectedTheme = 'neon_night',
   });
 
   EmulatorSettings copyWith({
@@ -69,6 +71,7 @@ class EmulatorSettings {
     GamepadLayout? gamepadLayoutPortrait,
     GamepadLayout? gamepadLayoutLandscape,
     bool? useJoystick,
+    String? selectedTheme,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -91,6 +94,7 @@ class EmulatorSettings {
       gamepadLayoutPortrait: gamepadLayoutPortrait ?? this.gamepadLayoutPortrait,
       gamepadLayoutLandscape: gamepadLayoutLandscape ?? this.gamepadLayoutLandscape,
       useJoystick: useJoystick ?? this.useJoystick,
+      selectedTheme: selectedTheme ?? this.selectedTheme,
     );
   }
 
@@ -116,6 +120,7 @@ class EmulatorSettings {
       'gamepadLayoutPortrait': gamepadLayoutPortrait.toJson(),
       'gamepadLayoutLandscape': gamepadLayoutLandscape.toJson(),
       'useJoystick': useJoystick,
+      'selectedTheme': selectedTheme,
     };
   }
 
@@ -145,6 +150,7 @@ class EmulatorSettings {
           ? GamepadLayout.fromJson(json['gamepadLayoutLandscape'] as Map<String, dynamic>)
           : GamepadLayout.defaultLandscape,
       useJoystick: json['useJoystick'] as bool? ?? false,
+      selectedTheme: json['selectedTheme'] as String? ?? 'neon_night',
     );
   }
 

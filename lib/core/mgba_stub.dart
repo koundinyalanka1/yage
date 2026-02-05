@@ -130,6 +130,13 @@ class MGBAStub {
   bool saveSram(String path) => true;
   bool loadSram(String path) => true;
 
+  // Audio volume stubs
+  void setVolume(double volume) {}
+  void setAudioEnabled(bool enabled) {}
+
+  // Color palette stub
+  void setColorPalette(int paletteIndex, List<int> colors) {}
+
   void reset() {
     _frameCount = 0;
   }

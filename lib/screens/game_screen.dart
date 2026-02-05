@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -132,14 +134,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             width: 2,
           ),
         ),
-        title: const Text(
+        title: Text(
           'Exit Game?',
           style: TextStyle(
             color: YageColors.textPrimary,
             fontWeight: FontWeight.bold,
           ),
         ),
-        content: const Text(
+        content: Text(
           'Your progress will be saved automatically.',
           style: TextStyle(
             color: YageColors.textSecondary,
@@ -148,7 +150,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
+            child: Text(
               'Cancel',
               style: TextStyle(color: YageColors.textMuted),
             ),
@@ -158,7 +160,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             style: TextButton.styleFrom(
               backgroundColor: YageColors.error.withAlpha(51),
             ),
-            child: const Text(
+            child: Text(
               'Exit',
               style: TextStyle(
                 color: YageColors.error,
@@ -202,6 +204,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final emulator = context.watch<EmulatorService>();
     final settings = context.watch<SettingsService>().settings;
     
+    // Push audio settings to the native core whenever they change
+    emulator.updateSettings(settings);
+    
     // Create the game display once with a key to preserve it across rebuilds
     final gameDisplay = GameDisplay(
       key: _gameDisplayKey,
@@ -244,13 +249,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ? _buildLandscapeLayout(emulator, settings, gameDisplay)
                   : _buildPortraitLayout(emulator, settings, gameDisplay),
               
-              // FPS overlay - positioned to avoid R button in landscape
+              // FPS overlay - positioned to the left of the rotation button
               if (settings.showFps)
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 4,
                   right: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.12  // 12% from right
-                      : 8,
+                      ? MediaQuery.of(context).size.width * 0.12 + 52  // left of rotate btn
+                      : 56,  // 8 (rotate btn right) + 44 (rotate btn width) + 4 (gap)
                   child: FpsOverlay(fps: emulator.currentFps),
                 ),
               
@@ -265,7 +270,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       color: YageColors.warning.withAlpha(200),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: const Text(
+                    child: Text(
                       'DEMO MODE',
                       style: TextStyle(
                         fontSize: 10,
@@ -305,8 +310,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 4,
                   right: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.18  // 18% from right
-                      : (settings.showFps ? 70 : 8),
+                      ? MediaQuery.of(context).size.width * 0.12  // 12% from right
+                      : 8,
                   child: _RotationButton(
                     isLandscape: _isLandscape,
                     onTap: () => _toggleOrientation(),
@@ -378,6 +383,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   showControls: _showControls,
                   onEditLayout: _enterEditMode,
                   currentSpeed: emulator.speedMultiplier,
+                  turboSpeed: settings.turboSpeed,
                   onSpeedChanged: (speed) {
                     emulator.setSpeed(speed);
                   },
@@ -613,7 +619,7 @@ class _MenuButton extends StatelessWidget {
             width: 1,
           ),
         ),
-        child: const Icon(
+        child: Icon(
           Icons.menu,
           color: YageColors.textSecondary,
           size: 24,
@@ -690,9 +696,9 @@ class _LayoutEditorToolbar extends StatelessWidget {
           // Header
           Row(
             children: [
-              const Icon(Icons.tune, color: YageColors.accent, size: 20),
+              Icon(Icons.tune, color: YageColors.accent, size: 20),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'EDIT LAYOUT',
                   style: TextStyle(
@@ -706,14 +712,14 @@ class _LayoutEditorToolbar extends StatelessWidget {
               // Close button
               GestureDetector(
                 onTap: onCancel,
-                child: const Icon(Icons.close, color: YageColors.textMuted, size: 20),
+                child: Icon(Icons.close, color: YageColors.textMuted, size: 20),
               ),
             ],
           ),
           const SizedBox(height: 8),
           
           // Instructions
-          const Text(
+          Text(
             'Drag buttons to move • Tap to select • Use +/- to resize',
             style: TextStyle(
               fontSize: 11,
@@ -737,7 +743,7 @@ class _LayoutEditorToolbar extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: YageColors.surfaceLight),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.restart_alt, color: YageColors.textSecondary, size: 18),
@@ -767,7 +773,7 @@ class _LayoutEditorToolbar extends StatelessWidget {
                       color: YageColors.primary,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.check, color: YageColors.textPrimary, size: 18),
@@ -803,6 +809,7 @@ class _InGameMenu extends StatelessWidget {
   final bool showControls;
   final VoidCallback onEditLayout;
   final double currentSpeed;
+  final double turboSpeed;
   final void Function(double speed) onSpeedChanged;
   final VoidCallback onExit;
   final bool useJoystick;
@@ -818,6 +825,7 @@ class _InGameMenu extends StatelessWidget {
     required this.showControls,
     required this.onEditLayout,
     required this.currentSpeed,
+    this.turboSpeed = 2.0,
     required this.onSpeedChanged,
     required this.onExit,
     required this.useJoystick,
@@ -857,7 +865,7 @@ class _InGameMenu extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Title
-                    const Text(
+                    Text(
                       'PAUSED',
                       style: TextStyle(
                         fontSize: 24,
@@ -869,7 +877,7 @@ class _InGameMenu extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       game.name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         color: YageColors.textSecondary,
                       ),
@@ -893,7 +901,7 @@ class _InGameMenu extends StatelessWidget {
                         Expanded(
                           child: _MenuActionButton(
                             icon: Icons.save,
-                            label: 'Save',
+                            label: 'Save State',
                             onTap: () => _showStateSlots(context, true),
                           ),
                         ),
@@ -901,7 +909,7 @@ class _InGameMenu extends StatelessWidget {
                         Expanded(
                           child: _MenuActionButton(
                             icon: Icons.upload_file,
-                            label: 'Load',
+                            label: 'Load State',
                             onTap: () => _showStateSlots(context, false),
                           ),
                         ),
@@ -934,6 +942,7 @@ class _InGameMenu extends StatelessWidget {
                     // Speed control
                     _SpeedSelector(
                       currentSpeed: currentSpeed,
+                      turboSpeed: turboSpeed,
                       onSpeedChanged: onSpeedChanged,
                     ),
                     const SizedBox(height: 10),
@@ -962,63 +971,245 @@ class _InGameMenu extends StatelessWidget {
   }
 
   void _showStateSlots(BuildContext context, bool isSave) {
+    final emulator = context.read<EmulatorService>();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: YageColors.surface,
-        title: Text(
-          isSave ? 'Save State' : 'Load State',
-          style: const TextStyle(
-            color: YageColors.textPrimary,
+      builder: (dialogContext) => _StateSlotDialog(
+        isSave: isSave,
+        emulator: emulator,
+        onSelect: (slot) {
+          Navigator.pop(dialogContext);
+          if (isSave) {
+            onSaveState(slot);
+          } else {
+            onLoadState(slot);
+          }
+        },
+      ),
+    );
+  }
+}
+
+class _StateSlotDialog extends StatefulWidget {
+  final bool isSave;
+  final EmulatorService emulator;
+  final void Function(int slot) onSelect;
+
+  const _StateSlotDialog({
+    required this.isSave,
+    required this.emulator,
+    required this.onSelect,
+  });
+
+  @override
+  State<_StateSlotDialog> createState() => _StateSlotDialogState();
+}
+
+class _StateSlotDialogState extends State<_StateSlotDialog> {
+  final Map<int, bool> _hasState = {};
+  final Map<int, File?> _screenshotFiles = {};
+  final Map<int, DateTime?> _timestamps = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSlotInfo();
+  }
+
+  void _loadSlotInfo() {
+    for (int i = 0; i < 6; i++) {
+      final statePath = widget.emulator.getStatePath(i);
+      final ssPath = widget.emulator.getStateScreenshotPath(i);
+
+      if (statePath != null) {
+        final stateFile = File(statePath);
+        if (stateFile.existsSync()) {
+          _hasState[i] = true;
+          _timestamps[i] = stateFile.lastModifiedSync();
+        }
+      }
+
+      if (ssPath != null) {
+        final ssFile = File(ssPath);
+        if (ssFile.existsSync()) {
+          _screenshotFiles[i] = ssFile;
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: YageColors.primary.withAlpha(77),
+          width: 2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      title: Row(
+        children: [
+          Icon(
+            widget.isSave ? Icons.save : Icons.upload_file,
+            color: YageColors.accent,
+            size: 22,
           ),
-        ),
-        content: Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: List.generate(4, (index) {
-            return InkWell(
-              onTap: () {
-                Navigator.pop(context);
-                if (isSave) {
-                  onSaveState(index);
-                } else {
-                  onLoadState(index);
-                }
-              },
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: YageColors.backgroundLight,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: YageColors.surfaceLight,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    '${index + 1}',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: YageColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+          const SizedBox(width: 10),
+          Text(
+            widget.isSave ? 'Save State' : 'Load State',
+            style: TextStyle(
+              color: YageColors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
           ),
         ],
       ),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(6, (i) => _buildSlot(i)),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: YageColors.textMuted),
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildSlot(int index) {
+    final hasState = _hasState[index] == true;
+    final hasScreenshot = _screenshotFiles.containsKey(index);
+    final timestamp = _timestamps[index];
+    final isDisabled = !widget.isSave && !hasState;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isDisabled ? null : () => widget.onSelect(index),
+          borderRadius: BorderRadius.circular(12),
+          child: Opacity(
+            opacity: isDisabled ? 0.4 : 1.0,
+            child: Container(
+              decoration: BoxDecoration(
+                color: YageColors.backgroundLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: hasState
+                      ? YageColors.primary.withAlpha(120)
+                      : YageColors.surfaceLight,
+                  width: hasState ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Screenshot thumbnail (GBA 3:2 aspect ratio)
+                  ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(11),
+                      bottomLeft: Radius.circular(11),
+                    ),
+                    child: SizedBox(
+                      width: 96,
+                      height: 64,
+                      child: hasScreenshot
+                          ? Image.file(
+                              _screenshotFiles[index]!,
+                              fit: BoxFit.cover,
+                              cacheWidth: 192,
+                              errorBuilder: (_, __, ___) =>
+                                  _placeholderWidget(hasState),
+                            )
+                          : _placeholderWidget(hasState),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Slot info
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Slot ${index + 1}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: YageColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            hasState && timestamp != null
+                                ? _formatTimestamp(timestamp)
+                                : 'Empty',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: hasState
+                                  ? YageColors.textSecondary
+                                  : YageColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Chevron indicator
+                  if (!isDisabled)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Icon(
+                        Icons.chevron_right,
+                        color: YageColors.textMuted,
+                        size: 20,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholderWidget(bool hasState) {
+    return Container(
+      color: YageColors.backgroundDark,
+      child: Center(
+        child: Icon(
+          hasState ? Icons.image_outlined : Icons.add_photo_alternate_outlined,
+          color: YageColors.textMuted.withAlpha(60),
+          size: 24,
+        ),
+      ),
+    );
+  }
+
+  String _formatTimestamp(DateTime dt) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour = dt.hour > 12
+        ? dt.hour - 12
+        : (dt.hour == 0 ? 12 : dt.hour);
+    final amPm = dt.hour >= 12 ? 'PM' : 'AM';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '${months[dt.month - 1]} ${dt.day}, $hour:$minute $amPm';
   }
 }
 
@@ -1126,7 +1317,7 @@ class _FastForwardButton extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 '${speed.toStringAsFixed(0)}x',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   color: YageColors.backgroundDark,
@@ -1142,14 +1333,26 @@ class _FastForwardButton extends StatelessWidget {
 
 class _SpeedSelector extends StatelessWidget {
   final double currentSpeed;
+  final double turboSpeed;
   final void Function(double speed) onSpeedChanged;
 
   const _SpeedSelector({
     required this.currentSpeed,
     required this.onSpeedChanged,
+    this.turboSpeed = 2.0,
   });
 
-  static const List<double> speeds = [0.5, 1.0, 2.0, 4.0];
+  List<double> get speeds {
+    // Build speed list: always include 0.5, 1.0, and the configured turbo speed
+    final s = <double>{0.5, 1.0};
+    // Add 2.0 if turbo is higher
+    if (turboSpeed > 2.0) s.add(2.0);
+    s.add(turboSpeed);
+    // Add a higher step if turbo allows (e.g. 4x if turbo is 4+)
+    if (turboSpeed >= 4.0 && turboSpeed > 4.0) s.add(4.0);
+    final list = s.toList()..sort();
+    return list;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1165,9 +1368,9 @@ class _SpeedSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.speed, color: YageColors.textSecondary, size: 18),
+              Icon(Icons.speed, color: YageColors.textSecondary, size: 18),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Speed',
                 style: TextStyle(
                   fontSize: 13,
@@ -1178,7 +1381,7 @@ class _SpeedSelector extends StatelessWidget {
               const Spacer(),
               Text(
                 '${currentSpeed.toStringAsFixed(1)}x',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
                   color: YageColors.accent,
@@ -1209,7 +1412,7 @@ class _SpeedSelector extends StatelessWidget {
                     ),
                     child: Center(
                       child: Text(
-                        '${speed.toStringAsFixed(speed == 0.5 ? 1 : 0)}x',
+                        '${speed == speed.roundToDouble() ? speed.toStringAsFixed(0) : speed.toStringAsFixed(1)}x',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -1253,9 +1456,9 @@ class _InputTypeSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.gamepad, color: YageColors.textSecondary, size: 18),
+              Icon(Icons.gamepad, color: YageColors.textSecondary, size: 18),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Input Type',
                 style: TextStyle(
                   fontSize: 13,

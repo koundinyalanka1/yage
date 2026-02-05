@@ -147,7 +147,7 @@ class GameCard extends StatelessWidget {
                             ),
                             child: Text(
                               game.platformShortName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 color: YageColors.backgroundDark,
@@ -184,7 +184,7 @@ class GameCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             game.name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
                               color: YageColors.textPrimary,
@@ -199,7 +199,7 @@ class GameCard extends StatelessWidget {
                         // Size
                         Text(
                           game.formattedSize,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
                             color: YageColors.textMuted,
                           ),
@@ -323,7 +323,7 @@ class GameListTile extends StatelessWidget {
       leading: _buildLeading(),
       title: Text(
         game.name,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
           color: YageColors.textPrimary,
@@ -333,7 +333,7 @@ class GameListTile extends StatelessWidget {
       ),
       subtitle: Text(
         '${game.platformName} • ${game.formattedSize}',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           color: YageColors.textMuted,
         ),
@@ -342,15 +342,15 @@ class GameListTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (game.isFavorite)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
               child: Icon(
                 Icons.favorite,
                 size: 18,
                 color: YageColors.accentAlt,
               ),
             ),
-          const Icon(
+          Icon(
             Icons.chevron_right,
             color: YageColors.textMuted,
           ),

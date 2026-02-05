@@ -116,6 +116,11 @@ class SettingsService extends ChangeNotifier {
     await update((s) => s.copyWith(skipBios: !s.skipBios));
   }
 
+  /// Set app theme
+  Future<void> setAppTheme(String themeId) async {
+    await update((s) => s.copyWith(selectedTheme: themeId));
+  }
+
   /// Set color palette
   Future<void> setColorPalette(int index) async {
     await update((s) => s.copyWith(selectedColorPalette: index));

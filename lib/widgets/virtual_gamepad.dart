@@ -226,16 +226,16 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                         editMode: widget.editMode,
                       )
                     : _DPad(
-                        onDirectionChanged: (up, down, left, right) {
-                          _updateKey(GBAKey.up, up);
-                          _updateKey(GBAKey.down, down);
-                          _updateKey(GBAKey.left, left);
-                          _updateKey(GBAKey.right, right);
-                        },
-                        scale: layout.dpad.size * widget.scale * portraitBoost,
-                        baseSize: baseSize,
-                        editMode: widget.editMode,
-                      ),
+                  onDirectionChanged: (up, down, left, right) {
+                    _updateKey(GBAKey.up, up);
+                    _updateKey(GBAKey.down, down);
+                    _updateKey(GBAKey.left, left);
+                    _updateKey(GBAKey.right, right);
+                  },
+                  scale: layout.dpad.size * widget.scale * portraitBoost,
+                  baseSize: baseSize,
+                  editMode: widget.editMode,
+                ),
               ),
               
               // A Button
@@ -343,7 +343,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
 
     // Use proportional margins (2% of screen dimension) for screen independence
     final double marginPercent = 0.02;
-    
+
     if (isPortrait) {
       // ================= PORTRAIT MODE =================
       // In portrait, VirtualGamepad widget IS the control area (positioned below game)
@@ -371,10 +371,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       // gameRect tells us where the game display is
       // Left zone: left edge to game left
       // Right zone: game right to right edge
-      
+
       final double screenW = screenSize.width;
       final double screenH = screenSize.height;
-      
+
       // Define zones with proportional padding from edges
       final double edgePadding = screenW * marginPercent;
       final double gameGap = screenW * 0.01; // 1% gap between controls and game
@@ -388,15 +388,15 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       final double rightZoneLeft = gameRect.right + gameGap;
       final double rightZoneRight = screenW - edgePadding;
       final double rightZoneWidth = math.max(0, rightZoneRight - rightZoneLeft);
-      
+
       // Vertical: full screen height with small margins
       final double marginY = edgePadding;
       final double usableHeight = screenH - marginY * 2;
-      
+
       final bool isLeftSide =
           button == GamepadButton.dpad ||
-          button == GamepadButton.lButton ||
-          button == GamepadButton.selectButton;
+              button == GamepadButton.lButton ||
+              button == GamepadButton.selectButton;
 
       if (isLeftSide) {
         // Left zone: x=0 at left edge, x=1 at right edge (near game)
@@ -405,7 +405,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
         // Right zone: x=0 at left edge (near game), x=1 at right edge
         x = rightZoneLeft + layout.x * rightZoneWidth;
       }
-      
+
       // Y position within usable height
       y = marginY + layout.y * usableHeight;
     }
@@ -421,13 +421,13 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       top: clampedY,
       child: widget.editMode
           ? _EditableButtonWrapper(
-              isSelected: isSelected,
-              onDrag: (delta) => _onButtonDrag(button, delta, screenSize),
-              onScaleUp: () => _onButtonResize(button, 0.1),
-              onScaleDown: () => _onButtonResize(button, -0.1),
-              onTap: () => setState(() => _selectedButton = button),
-              child: child,
-            )
+        isSelected: isSelected,
+        onDrag: (delta) => _onButtonDrag(button, delta, screenSize),
+        onScaleUp: () => _onButtonResize(button, 0.1),
+        onScaleDown: () => _onButtonResize(button, -0.1),
+        onTap: () => setState(() => _selectedButton = button),
+        child: child,
+      )
           : child,
     );
   }
