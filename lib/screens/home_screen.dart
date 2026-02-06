@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -40,7 +41,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  static const _deviceChannel = MethodChannel('com.yourmateapps.retropal/device');
+  
   late TabController _tabController;
   GamePlatform? _selectedPlatform;
   String _searchQuery = '';
@@ -52,13 +55,61 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
+
+    // Check if the app was opened via a file intent
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkIncomingFile());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Check again when app is resumed (e.g. user opened another file while app was in background)
+    if (state == AppLifecycleState.resumed) {
+      _checkIncomingFile();
+    }
+  }
+
+  /// Check if the app was opened via a VIEW intent with a ROM file path.
+  /// If so, add it to the library and launch it immediately.
+  Future<void> _checkIncomingFile() async {
+    try {
+      final path = await _deviceChannel.invokeMethod<String>('getOpenFilePath');
+      if (path == null || path.isEmpty || !mounted) return;
+
+      final game = GameRom.fromPath(path);
+      if (game == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Unsupported file: $path')),
+          );
+        }
+        return;
+      }
+
+      // Add to library if not already there
+      final library = context.read<GameLibraryService>();
+      await library.addRom(path);
+
+      // Find the game entry (addRom might return null if it already exists)
+      final libraryGame = library.games.firstWhere(
+        (g) => g.path == path,
+        orElse: () => game,
+      );
+
+      if (mounted) {
+        _launchGame(libraryGame);
+      }
+    } catch (_) {
+      // Channel not available (non-Android) — ignore
+    }
   }
 
   /// Sort a list of games according to the current sort option

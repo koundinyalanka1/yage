@@ -8,12 +8,32 @@ import 'services/settings_service.dart';
 import 'utils/theme.dart';
 import 'utils/tv_detector.dart';
 
+const _deviceChannel = MethodChannel('com.yourmateapps.retropal/device');
+
+/// Request storage permission at startup (Android only).
+/// On Android 11+ this opens the "All files access" settings page.
+/// On older versions it requests READ/WRITE_EXTERNAL_STORAGE.
+Future<void> _requestStoragePermission() async {
+  try {
+    final hasPermission =
+        await _deviceChannel.invokeMethod<bool>('hasStoragePermission') ?? false;
+    if (!hasPermission) {
+      await _deviceChannel.invokeMethod<bool>('requestStoragePermission');
+    }
+  } catch (_) {
+    // Not on Android or channel unavailable — ignore
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Detect Android TV before building the UI
   await TvDetector.initialize();
-  
+
+  // Request storage permission early
+  await _requestStoragePermission();
+
   // Allow all orientations
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -21,7 +41,7 @@ void main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-  
+
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -29,7 +49,7 @@ void main() async {
     systemNavigationBarColor: YageColors.backgroundDark,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
-  
+
   runApp(const RetroPalApp());
 }
 

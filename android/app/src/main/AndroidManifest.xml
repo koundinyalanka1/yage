@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
         android:maxSdkVersion="29"/>
     
+    <!-- Android 11+ broad file access (for browsing ROMs on shared storage) -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    
     <!-- Android 13+ media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
@@ -65,6 +68,35 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Open ROM files directly (.gba, .gb, .gbc, .zip) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="file"/>
+                <data android:scheme="content"/>
+                <data android:mimeType="*/*"/>
+                <data android:pathPattern=".*\\.gba"/>
+                <data android:pathPattern=".*\\.gb"/>
+                <data android:pathPattern=".*\\.gbc"/>
+                <data android:pathPattern=".*\\.zip"/>
+                <data android:pathPattern=".*\\.GBA"/>
+                <data android:pathPattern=".*\\.GB"/>
+                <data android:pathPattern=".*\\.GBC"/>
+                <data android:pathPattern=".*\\.ZIP"/>
+            </intent-filter>
+            <!-- Fallback for file managers that use host/path matching -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="file"/>
+                <data android:host="*"/>
+                <data android:pathPattern=".*\\.gba"/>
+                <data android:pathPattern=".*\\.gb"/>
+                <data android:pathPattern=".*\\.gbc"/>
+                <data android:pathPattern=".*\\.zip"/>
             </intent-filter>
         </activity>
         
