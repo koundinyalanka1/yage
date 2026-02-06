@@ -14,3 +14,7 @@
 # YAGE specific
 -keep class com.yourmateapps.yage.** { *; }
 
+# Google Play Core (referenced by Flutter's deferred components support)
+-dontwarn com.google.android.play.core.splitcompat.**
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.tasks.**
