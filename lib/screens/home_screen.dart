@@ -11,6 +11,7 @@ import '../services/save_backup_service.dart';
 import '../utils/tv_detector.dart';
 import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
+import '../widgets/tv_file_browser.dart';
 import '../widgets/tv_focusable.dart';
 import '../utils/theme.dart';
 import 'game_screen.dart';
@@ -92,21 +93,31 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _addRomFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.any,
-      allowMultiple: true,
-    );
+    List<String>? paths;
 
-    if (result != null && mounted) {
+    if (TvDetector.isTV) {
+      // TV: use built-in file browser (no system picker available)
+      paths = await TvFileBrowser.pickFiles(context);
+    } else {
+      // Phone/tablet: use system file picker
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: true,
+      );
+      paths = result?.files
+          .where((f) => f.path != null)
+          .map((f) => f.path!)
+          .toList();
+    }
+
+    if (paths != null && paths.isNotEmpty && mounted) {
       final library = context.read<GameLibraryService>();
       final addedGames = <GameRom>[];
       
-      for (final file in result.files) {
-        if (file.path != null) {
-          final game = await library.addRom(file.path!);
-          if (game != null) {
-            addedGames.add(game);
-          }
+      for (final path in paths) {
+        final game = await library.addRom(path);
+        if (game != null) {
+          addedGames.add(game);
         }
       }
       
@@ -135,11 +146,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _addRomFolder() async {
-    final result = await FilePicker.platform.getDirectoryPath();
+    String? dirPath;
 
-    if (result != null && mounted) {
+    if (TvDetector.isTV) {
+      // TV: use built-in folder browser
+      dirPath = await TvFileBrowser.pickDirectory(context);
+    } else {
+      dirPath = await FilePicker.platform.getDirectoryPath();
+    }
+
+    if (dirPath != null && mounted) {
       final library = context.read<GameLibraryService>();
-      await library.addRomDirectory(result);
+      await library.addRomDirectory(dirPath);
     }
   }
 
