@@ -110,6 +110,15 @@ YAGE_API int yage_core_save_state(YageCore* core, int slot);
 YAGE_API int yage_core_load_state(YageCore* core, int slot);
 
 /*
+ * Rewind (in-memory ring buffer of serialized states)
+ */
+YAGE_API int yage_core_rewind_init(YageCore* core, int capacity);
+YAGE_API void yage_core_rewind_deinit(YageCore* core);
+YAGE_API int yage_core_rewind_push(YageCore* core);
+YAGE_API int yage_core_rewind_pop(YageCore* core);
+YAGE_API int yage_core_rewind_count(YageCore* core);
+
+/*
  * Battery/SRAM saves (.sav files)
  */
 YAGE_API int yage_core_get_sram_size(YageCore* core);

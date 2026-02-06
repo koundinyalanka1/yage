@@ -137,6 +137,13 @@ class MGBAStub {
   // Color palette stub
   void setColorPalette(int paletteIndex, List<int> colors) {}
 
+  // Rewind stubs
+  int rewindInit(int capacity) => 0;
+  void rewindDeinit() {}
+  int rewindPush() => 0;
+  int rewindPop() => -1; // No states available in stub
+  int rewindCount() => 0;
+
   void reset() {
     _frameCount = 0;
   }

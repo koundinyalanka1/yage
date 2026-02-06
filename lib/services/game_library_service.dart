@@ -211,17 +211,7 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> removeCoverArt(GameRom game) async {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
-      _games[index] = GameRom(
-        path: _games[index].path,
-        name: _games[index].name,
-        extension: _games[index].extension,
-        platform: _games[index].platform,
-        sizeBytes: _games[index].sizeBytes,
-        lastPlayed: _games[index].lastPlayed,
-        coverPath: null,
-        isFavorite: _games[index].isFavorite,
-        totalPlayTimeSeconds: _games[index].totalPlayTimeSeconds,
-      );
+      _games[index] = _games[index].copyWith(coverPath: null);
       await _saveLibrary();
       notifyListeners();
     }

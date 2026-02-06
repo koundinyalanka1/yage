@@ -129,6 +129,13 @@ static uint32_t g_palette_colors[4] = {
     0xFF0F380F  /* Darkest  - ABGR of 0x0F380F */
 };
 
+/* Rewind ring buffer — stores serialized save states for instant rewind */
+static void** g_rewind_snapshots = NULL;  /* Array of serialized state buffers */
+static int g_rewind_head = 0;            /* Next write position */
+static int g_rewind_count = 0;           /* Number of valid snapshots */
+static int g_rewind_capacity = 0;        /* Allocated capacity */
+static size_t g_rewind_state_size = 0;   /* Size of each serialized state */
+
 #ifdef __ANDROID__
 #include <stdatomic.h>
 
@@ -935,6 +942,9 @@ int yage_core_init(YageCore* core) {
 void yage_core_destroy(YageCore* core) {
     if (!core) return;
     
+    /* Free rewind buffer */
+    yage_core_rewind_deinit(core);
+    
 #ifdef __ANDROID__
     shutdown_opensl_audio();
 #endif
@@ -1294,6 +1304,104 @@ void yage_core_set_color_palette(YageCore* core, int palette_index,
              color0 & 0xFFFFFF, color1 & 0xFFFFFF,
              color2 & 0xFFFFFF, color3 & 0xFFFFFF);
     }
+}
+
+/*
+ * Rewind Ring Buffer
+ *
+ * Pre-allocates `capacity` serialized-state slots. yage_core_rewind_push()
+ * captures the current emulator state into the next slot (ring overwrites
+ * the oldest when full). yage_core_rewind_pop() restores the most recent
+ * snapshot and removes it from the buffer.
+ */
+
+int yage_core_rewind_init(YageCore* core, int capacity) {
+    if (!core || !core->game_loaded || !core->retro_serialize_size) return -1;
+
+    /* Clean up any existing buffer first */
+    yage_core_rewind_deinit(core);
+
+    g_rewind_state_size = core->retro_serialize_size();
+    if (g_rewind_state_size == 0) return -1;
+
+    if (capacity <= 0 || capacity > 256) capacity = 36;
+
+    g_rewind_snapshots = (void**)calloc(capacity, sizeof(void*));
+    if (!g_rewind_snapshots) return -1;
+
+    for (int i = 0; i < capacity; i++) {
+        g_rewind_snapshots[i] = malloc(g_rewind_state_size);
+        if (!g_rewind_snapshots[i]) {
+            for (int j = 0; j < i; j++) free(g_rewind_snapshots[j]);
+            free(g_rewind_snapshots);
+            g_rewind_snapshots = NULL;
+            return -1;
+        }
+    }
+
+    g_rewind_capacity = capacity;
+    g_rewind_head = 0;
+    g_rewind_count = 0;
+
+    LOGI("Rewind initialized: %d slots x %zu bytes = %.1f MB",
+         capacity, g_rewind_state_size,
+         (capacity * g_rewind_state_size) / (1024.0 * 1024.0));
+
+    return 0;
+}
+
+void yage_core_rewind_deinit(YageCore* core) {
+    (void)core;
+
+    if (g_rewind_snapshots) {
+        for (int i = 0; i < g_rewind_capacity; i++) {
+            if (g_rewind_snapshots[i]) free(g_rewind_snapshots[i]);
+        }
+        free(g_rewind_snapshots);
+        g_rewind_snapshots = NULL;
+    }
+
+    g_rewind_head = 0;
+    g_rewind_count = 0;
+    g_rewind_capacity = 0;
+    g_rewind_state_size = 0;
+}
+
+int yage_core_rewind_push(YageCore* core) {
+    if (!core || !core->retro_serialize || !g_rewind_snapshots) return -1;
+    if (g_rewind_capacity == 0 || g_rewind_state_size == 0) return -1;
+
+    if (!core->retro_serialize(g_rewind_snapshots[g_rewind_head], g_rewind_state_size)) {
+        return -1;
+    }
+
+    g_rewind_head = (g_rewind_head + 1) % g_rewind_capacity;
+    if (g_rewind_count < g_rewind_capacity) {
+        g_rewind_count++;
+    }
+
+    return 0;
+}
+
+int yage_core_rewind_pop(YageCore* core) {
+    if (!core || !core->retro_unserialize || !g_rewind_snapshots) return -1;
+    if (g_rewind_count == 0) return -1;
+
+    /* Move head back one position */
+    g_rewind_head = (g_rewind_head - 1 + g_rewind_capacity) % g_rewind_capacity;
+    g_rewind_count--;
+
+    /* Restore the state */
+    if (!core->retro_unserialize(g_rewind_snapshots[g_rewind_head], g_rewind_state_size)) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int yage_core_rewind_count(YageCore* core) {
+    (void)core;
+    return g_rewind_count;
 }
 
 /* Case-insensitive string compare for cross-platform */

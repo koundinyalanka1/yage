@@ -30,6 +30,8 @@ class EmulatorSettings {
   final GamepadSkinType gamepadSkin; // visual theme for touch controls
   final GameFrameType gameFrame; // decorative console shell overlay
   final String selectedTheme; // theme id string
+  final bool enableRewind; // hold-to-rewind feature
+  final int rewindBufferSeconds; // seconds of rewind history (1-10)
 
   const EmulatorSettings({
     this.volume = 0.8,
@@ -56,6 +58,8 @@ class EmulatorSettings {
     this.gamepadSkin = GamepadSkinType.classic,
     this.gameFrame = GameFrameType.none,
     this.selectedTheme = 'neon_night',
+    this.enableRewind = false,
+    this.rewindBufferSeconds = 3,
   });
 
   EmulatorSettings copyWith({
@@ -83,6 +87,8 @@ class EmulatorSettings {
     GamepadSkinType? gamepadSkin,
     GameFrameType? gameFrame,
     String? selectedTheme,
+    bool? enableRewind,
+    int? rewindBufferSeconds,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -109,6 +115,8 @@ class EmulatorSettings {
       gamepadSkin: gamepadSkin ?? this.gamepadSkin,
       gameFrame: gameFrame ?? this.gameFrame,
       selectedTheme: selectedTheme ?? this.selectedTheme,
+      enableRewind: enableRewind ?? this.enableRewind,
+      rewindBufferSeconds: rewindBufferSeconds ?? this.rewindBufferSeconds,
     );
   }
 
@@ -138,6 +146,8 @@ class EmulatorSettings {
       'gamepadSkin': gamepadSkin.index,
       'gameFrame': gameFrame.index,
       'selectedTheme': selectedTheme,
+      'enableRewind': enableRewind,
+      'rewindBufferSeconds': rewindBufferSeconds,
     };
   }
 
@@ -175,6 +185,8 @@ class EmulatorSettings {
         json['gameFrame'] as int? ?? 0,
       ) ?? GameFrameType.none,
       selectedTheme: json['selectedTheme'] as String? ?? 'neon_night',
+      enableRewind: json['enableRewind'] as bool? ?? false,
+      rewindBufferSeconds: json['rewindBufferSeconds'] as int? ?? 3,
     );
   }
 

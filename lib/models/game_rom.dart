@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../core/mgba_bindings.dart';
 
+const _sentinel = Object();
+
 /// Represents a game ROM file
 class GameRom {
   final String path;
@@ -101,8 +103,8 @@ class GameRom {
     String? extension,
     GamePlatform? platform,
     int? sizeBytes,
-    DateTime? lastPlayed,
-    String? coverPath,
+    Object? lastPlayed = _sentinel,
+    Object? coverPath = _sentinel,
     bool? isFavorite,
     int? totalPlayTimeSeconds,
   }) {
@@ -112,8 +114,8 @@ class GameRom {
       extension: extension ?? this.extension,
       platform: platform ?? this.platform,
       sizeBytes: sizeBytes ?? this.sizeBytes,
-      lastPlayed: lastPlayed ?? this.lastPlayed,
-      coverPath: coverPath ?? this.coverPath,
+      lastPlayed: lastPlayed == _sentinel ? this.lastPlayed : lastPlayed as DateTime?,
+      coverPath: coverPath == _sentinel ? this.coverPath : coverPath as String?,
       isFavorite: isFavorite ?? this.isFavorite,
       totalPlayTimeSeconds: totalPlayTimeSeconds ?? this.totalPlayTimeSeconds,
     );

@@ -202,6 +202,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _onRewindHold(bool held) {
+    final emulator = context.read<EmulatorService>();
+    if (held) {
+      emulator.startRewind();
+    } else {
+      emulator.stopRewind();
+    }
+  }
+
   void _exitGame() {
     final emulator = context.read<EmulatorService>();
     _flushPlayTime();
@@ -391,13 +400,26 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   child: _MenuButton(onTap: _toggleMenu),
                 ),
               
-              // Fast forward button (hide in edit mode) - next to menu
+              // Rewind button (hold to rewind) - next to menu
+              if (!_editingLayout && settings.enableRewind)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 4,
+                  left: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.18
+                      : 60,
+                  child: _RewindButton(
+                    isActive: emulator.isRewinding,
+                    onHoldChanged: _onRewindHold,
+                  ),
+                ),
+
+              // Fast forward button (hide in edit mode) - next to menu/rewind
               if (!_editingLayout)
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 4,
                   left: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.18  // 18% from left
-                      : 60,
+                      ? MediaQuery.of(context).size.width * (settings.enableRewind ? 0.24 : 0.18)
+                      : settings.enableRewind ? 108 : 60,
                   child: _FastForwardButton(
                     isActive: emulator.speedMultiplier > 1.0,
                     speed: emulator.speedMultiplier,
@@ -1435,6 +1457,44 @@ class _MenuActionButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RewindButton extends StatelessWidget {
+  final bool isActive;
+  final void Function(bool held) onHoldChanged;
+
+  const _RewindButton({
+    required this.isActive,
+    required this.onHoldChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => onHoldChanged(true),
+      onTapUp: (_) => onHoldChanged(false),
+      onTapCancel: () => onHoldChanged(false),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: isActive 
+              ? YageColors.accent.withAlpha(230)
+              : YageColors.surface.withAlpha(204),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive ? YageColors.accent : YageColors.surfaceLight,
+            width: 1,
+          ),
+        ),
+        child: Icon(
+          Icons.fast_rewind,
+          color: isActive ? YageColors.backgroundDark : YageColors.textSecondary,
+          size: 22,
         ),
       ),
     );

@@ -192,5 +192,15 @@ class SettingsService extends ChangeNotifier {
   Future<void> setGameFrame(GameFrameType frame) async {
     await update((s) => s.copyWith(gameFrame: frame));
   }
+
+  /// Toggle rewind feature
+  Future<void> toggleRewind() async {
+    await update((s) => s.copyWith(enableRewind: !s.enableRewind));
+  }
+
+  /// Set rewind buffer duration in seconds
+  Future<void> setRewindBufferSeconds(int seconds) async {
+    await update((s) => s.copyWith(rewindBufferSeconds: seconds.clamp(1, 10)));
+  }
 }
 

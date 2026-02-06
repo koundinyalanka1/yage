@@ -87,6 +87,22 @@ typedef MgbaCoreSaveSram = int Function(NativeCore core, Pointer<Utf8> path);
 typedef MgbaCoreLoadSramNative = Int32 Function(NativeCore core, Pointer<Utf8> path);
 typedef MgbaCoreLoadSram = int Function(NativeCore core, Pointer<Utf8> path);
 
+// Rewind functions
+typedef MgbaCoreRewindInitNative = Int32 Function(NativeCore core, Int32 capacity);
+typedef MgbaCoreRewindInit = int Function(NativeCore core, int capacity);
+
+typedef MgbaCoreRewindDeinitNative = Void Function(NativeCore core);
+typedef MgbaCoreRewindDeinit = void Function(NativeCore core);
+
+typedef MgbaCoreRewindPushNative = Int32 Function(NativeCore core);
+typedef MgbaCoreRewindPush = int Function(NativeCore core);
+
+typedef MgbaCoreRewindPopNative = Int32 Function(NativeCore core);
+typedef MgbaCoreRewindPop = int Function(NativeCore core);
+
+typedef MgbaCoreRewindCountNative = Int32 Function(NativeCore core);
+typedef MgbaCoreRewindCount = int Function(NativeCore core);
+
 /// Game Boy key codes matching mGBA's input format
 class GBAKey {
   static const int a = 1 << 0;
@@ -139,6 +155,11 @@ class MGBABindings {
   late final MgbaCoreSetVolume coreSetVolume;
   late final MgbaCoreSetAudioEnabled coreSetAudioEnabled;
   late final MgbaCoreSetColorPalette coreSetColorPalette;
+  late final MgbaCoreRewindInit coreRewindInit;
+  late final MgbaCoreRewindDeinit coreRewindDeinit;
+  late final MgbaCoreRewindPush coreRewindPush;
+  late final MgbaCoreRewindPop coreRewindPop;
+  late final MgbaCoreRewindCount coreRewindCount;
 
   bool get isLoaded => _isLoaded;
 
@@ -277,6 +298,26 @@ class MGBABindings {
 
     coreSetColorPalette = _lib
         .lookup<NativeFunction<MgbaCoreSetColorPaletteNative>>('yage_core_set_color_palette')
+        .asFunction();
+
+    coreRewindInit = _lib
+        .lookup<NativeFunction<MgbaCoreRewindInitNative>>('yage_core_rewind_init')
+        .asFunction();
+
+    coreRewindDeinit = _lib
+        .lookup<NativeFunction<MgbaCoreRewindDeinitNative>>('yage_core_rewind_deinit')
+        .asFunction();
+
+    coreRewindPush = _lib
+        .lookup<NativeFunction<MgbaCoreRewindPushNative>>('yage_core_rewind_push')
+        .asFunction();
+
+    coreRewindPop = _lib
+        .lookup<NativeFunction<MgbaCoreRewindPopNative>>('yage_core_rewind_pop')
+        .asFunction();
+
+    coreRewindCount = _lib
+        .lookup<NativeFunction<MgbaCoreRewindCountNative>>('yage_core_rewind_count')
         .asFunction();
   }
 }
@@ -510,6 +551,36 @@ class MGBACore {
       paletteIndex,
       colors[0], colors[1], colors[2], colors[3],
     );
+  }
+
+  /// Initialize rewind ring buffer with given capacity (number of snapshots)
+  int rewindInit(int capacity) {
+    if (_corePtr == null) return -1;
+    return _bindings.coreRewindInit(_corePtr as Pointer<Void>, capacity);
+  }
+
+  /// Free the rewind ring buffer
+  void rewindDeinit() {
+    if (_corePtr == null) return;
+    _bindings.coreRewindDeinit(_corePtr as Pointer<Void>);
+  }
+
+  /// Push current state into the rewind ring buffer
+  int rewindPush() {
+    if (_corePtr == null) return -1;
+    return _bindings.coreRewindPush(_corePtr as Pointer<Void>);
+  }
+
+  /// Pop and restore the most recent state from the rewind ring buffer
+  int rewindPop() {
+    if (_corePtr == null) return -1;
+    return _bindings.coreRewindPop(_corePtr as Pointer<Void>);
+  }
+
+  /// Get the number of available rewind snapshots
+  int rewindCount() {
+    if (_corePtr == null) return 0;
+    return _bindings.coreRewindCount(_corePtr as Pointer<Void>);
   }
 
   /// Stop and clean up

@@ -174,6 +174,28 @@ class SettingsScreen extends StatelessWidget {
                       onChanged: settingsService.setTurboSpeed,
                     ),
                   ],
+                  const Divider(height: 1),
+                  _SwitchTile(
+                    icon: Icons.fast_rewind,
+                    title: 'Rewind',
+                    subtitle: 'Hold button to step backward in time',
+                    value: settings.enableRewind,
+                    onChanged: (_) => settingsService.toggleRewind(),
+                  ),
+                  if (settings.enableRewind) ...[
+                    const Divider(height: 1),
+                    _SliderTile(
+                      icon: Icons.timelapse,
+                      title: 'Rewind Buffer',
+                      value: settings.rewindBufferSeconds.toDouble(),
+                      min: 1.0,
+                      max: 10.0,
+                      divisions: 9,
+                      labelSuffix: 's',
+                      onChanged: (v) =>
+                          settingsService.setRewindBufferSeconds(v.round()),
+                    ),
+                  ],
                 ],
               ),
               

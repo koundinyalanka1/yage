@@ -49,6 +49,13 @@ class EmulatorService extends ChangeNotifier {
   final Stopwatch _playTimeStopwatch = Stopwatch();
   int _flushedPlayTimeSeconds = 0;
   
+  // Rewind state
+  bool _isRewinding = false;
+  int _rewindCaptureCounter = 0;
+  int _rewindStepCounter = 0;
+  static const int _rewindCaptureInterval = 5;  // Capture every 5 frames
+  static const int _rewindStepFrames = 3;        // Pop state every 3 frame-ticks while rewinding
+  
   // Frame timing (GBA runs at ~59.7275 fps)
   static const Duration _baseFrameTime = Duration(microseconds: 16742);
   Duration get _targetFrameTime => Duration(
@@ -67,6 +74,7 @@ class EmulatorService extends ChangeNotifier {
   bool get isRunning => _state == EmulatorState.running;
   bool get isUsingStub => _useStub;
   double get speedMultiplier => _speedMultiplier;
+  bool get isRewinding => _isRewinding;
   
   /// Total play time in the current session (seconds)
   int get sessionPlayTimeSeconds => _playTimeStopwatch.elapsed.inSeconds;
@@ -306,6 +314,11 @@ class EmulatorService extends ChangeNotifier {
       // Apply color palette (for original GB games)
       _applyColorPalette();
 
+      // Initialize rewind buffer if enabled
+      if (_settings.enableRewind) {
+        _initRewind();
+      }
+
       _currentRom = rom.copyWith(lastPlayed: DateTime.now());
       _state = EmulatorState.paused;
       notifyListeners();
@@ -344,6 +357,9 @@ class EmulatorService extends ChangeNotifier {
   /// Pause emulation (also saves SRAM)
   Future<void> pause() async {
     if (_state != EmulatorState.running) return;
+
+    // Stop rewind if active
+    if (_isRewinding) stopRewind();
 
     _state = EmulatorState.paused;
     _frameTimer?.cancel();
@@ -411,6 +427,19 @@ class EmulatorService extends ChangeNotifier {
   Duration _frameAccumulator = Duration.zero;
 
   void _runFrame() {
+    // ── Rewind mode: step backward through ring buffer ──
+    if (_isRewinding && !_useStub) {
+      _rewindStepCounter++;
+      if (_rewindStepCounter >= _rewindStepFrames) {
+        _rewindStepCounter = 0;
+        _performRewindStep();
+      }
+      _frameCount++;
+      _updateFps();
+      return;
+    }
+
+    // ── Normal frame execution ──
     if (_useStub) {
       if (_stub == null || !_stub!.isRunning) return;
       _stub!.runFrame();
@@ -432,8 +461,21 @@ class EmulatorService extends ChangeNotifier {
       
       // Note: Audio is now handled natively by OpenSL ES on Android
       // No need to process audio buffer in Dart
+
+      // Capture rewind snapshot every N frames
+      if (_settings.enableRewind) {
+        _rewindCaptureCounter++;
+        if (_rewindCaptureCounter >= _rewindCaptureInterval) {
+          _rewindCaptureCounter = 0;
+          _core!.rewindPush();
+        }
+      }
     }
 
+    _updateFps();
+  }
+
+  void _updateFps() {
     // Calculate FPS — update every 500ms for a responsive counter
     if (_frameStopwatch != null && _frameStopwatch!.elapsedMilliseconds >= 500) {
       _currentFps = _frameCount * 1000 / _frameStopwatch!.elapsedMilliseconds;
@@ -462,6 +504,68 @@ class EmulatorService extends ChangeNotifier {
       if (pixels != null && onFrame != null) {
         onFrame!(pixels, _core!.width, _core!.height);
       }
+    }
+  }
+
+  // ── Rewind ──
+
+  /// Initialize the rewind ring buffer based on current settings.
+  /// Call after a ROM is loaded and the native state size is known.
+  void _initRewind() {
+    if (_useStub || _core == null) return;
+
+    final capturesPerSecond = 60.0 / _rewindCaptureInterval;
+    final capacity = (capturesPerSecond * _settings.rewindBufferSeconds).round();
+    _core!.rewindInit(capacity.clamp(12, 256));
+    _rewindCaptureCounter = 0;
+  }
+
+  /// Start rewinding (call while the rewind button is held).
+  void startRewind() {
+    if (!_settings.enableRewind || _useStub) return;
+    if (_state != EmulatorState.running || _core == null) return;
+
+    _isRewinding = true;
+    _rewindStepCounter = 0;
+
+    // Mute audio during rewind to avoid garbled sound
+    _core!.setAudioEnabled(false);
+
+    // Perform an immediate first step for instant feedback
+    _performRewindStep();
+
+    notifyListeners();
+  }
+
+  /// Stop rewinding (call when the rewind button is released).
+  void stopRewind() {
+    if (!_isRewinding) return;
+
+    _isRewinding = false;
+
+    // Restore audio settings
+    if (_core != null) {
+      _applyAudioSettings();
+    }
+
+    notifyListeners();
+  }
+
+  /// Pop one state from the rewind buffer and display it.
+  void _performRewindStep() {
+    if (_core == null) return;
+
+    final count = _core!.rewindCount();
+    if (count <= 0) return; // Buffer empty
+
+    if (_core!.rewindPop() != 0) return; // Pop failed
+
+    // Run one frame to produce video output from the restored state
+    _core!.runFrame();
+
+    final pixels = _core!.getVideoBuffer();
+    if (pixels != null && onFrame != null) {
+      onFrame!(pixels, _core!.width, _core!.height);
     }
   }
 
@@ -682,6 +786,22 @@ class EmulatorService extends ChangeNotifier {
       notifyListeners();
     }
 
+    // Handle rewind setting changes
+    if (oldSettings.enableRewind != newSettings.enableRewind) {
+      if (newSettings.enableRewind && !_useStub && _core != null &&
+          _state != EmulatorState.uninitialized && _currentRom != null) {
+        _initRewind();
+      } else if (!newSettings.enableRewind) {
+        if (_isRewinding) stopRewind();
+        if (!_useStub && _core != null) _core!.rewindDeinit();
+      }
+    }
+    if (oldSettings.rewindBufferSeconds != newSettings.rewindBufferSeconds &&
+        newSettings.enableRewind && !_useStub && _core != null &&
+        _state != EmulatorState.uninitialized) {
+      _initRewind(); // Reinitialize with new capacity
+    }
+
     // Restart auto-save timer if interval changed while running
     if (oldSettings.autoSaveInterval != newSettings.autoSaveInterval &&
         _state == EmulatorState.running) {
@@ -743,6 +863,8 @@ class EmulatorService extends ChangeNotifier {
 
   /// Stop and unload current ROM
   Future<void> stop() async {
+    if (_isRewinding) stopRewind();
+    
     _frameTimer?.cancel();
     _frameTimer = null;
     _playTimeStopwatch.stop();
@@ -750,6 +872,11 @@ class EmulatorService extends ChangeNotifier {
     
     // Save SRAM before stopping
     await saveSram();
+    
+    // Reset rewind state
+    _isRewinding = false;
+    _rewindCaptureCounter = 0;
+    _rewindStepCounter = 0;
     
     if (_useStub) {
       _stub?.dispose();

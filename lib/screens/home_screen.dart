@@ -289,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           
           // Sort button
           PopupMenuButton<GameSortOption>(
-            icon: Icon(Icons.sort, color: YageColors.textSecondary, size: 20),
+            icon: Icon(Icons.swap_vert, color: YageColors.textSecondary, size: 20),
             tooltip: 'Sort by',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -449,7 +449,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           
           // Sort button
           PopupMenuButton<GameSortOption>(
-            icon: Icon(Icons.sort, color: YageColors.textSecondary),
+            icon: Icon(Icons.swap_vert, color: YageColors.textSecondary),
             tooltip: 'Sort by',
             color: YageColors.surface,
             onSelected: (value) => setState(() => _sortOption = value),
