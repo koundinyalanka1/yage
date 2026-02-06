@@ -175,28 +175,43 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          children: [
-            // In landscape, combine header elements into a single row
-            if (isLandscape)
-              _buildCompactHeader()
-            else ...[
-              _buildHeader(),
-              _buildSearchBar(),
-              _buildPlatformFilter(),
-            ],
-            _buildTabBar(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildAllGames(),
-                  _buildRecentGames(),
-                  _buildFavorites(),
-                ],
+        child: FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: Column(
+            children: [
+              // In landscape, combine header elements into a single row
+              if (isLandscape)
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(0),
+                  child: _buildCompactHeader(),
+                )
+              else ...[
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(0),
+                  child: _buildHeader(),
+                ),
+                _buildSearchBar(),
+                _buildPlatformFilter(),
+              ],
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(1),
+                child: _buildTabBar(),
               ),
-            ),
-          ],
+              Expanded(
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(2),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildAllGames(),
+                      _buildRecentGames(),
+                      _buildFavorites(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: _buildFAB(),
@@ -334,7 +349,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
           
-          // More options menu
+          // On TV: direct buttons (popup menus are hard with D-pad)
+          if (TvDetector.isTV) ...[
+            IconButton(
+              icon: Icon(Icons.download, color: YageColors.textSecondary, size: 20),
+              tooltip: 'Download All Artwork',
+              onPressed: _downloadAllArtwork,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
+            IconButton(
+              icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary, size: 20),
+              tooltip: 'Settings',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
+          ] else
+          // More options menu (phone/tablet)
           PopupMenuButton<String>(
             icon: Icon(
               Icons.more_vert,
@@ -489,7 +523,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onPressed: () => setState(() => _isGridView = !_isGridView),
           ),
           
-          // More options menu
+          // On TV: direct settings button (popup menus are hard to navigate with D-pad)
+          if (TvDetector.isTV) ...[
+            IconButton(
+              icon: Icon(Icons.download, color: YageColors.textSecondary),
+              tooltip: 'Download All Artwork',
+              onPressed: _downloadAllArtwork,
+            ),
+            IconButton(
+              icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary),
+              tooltip: 'Settings',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
+            ),
+          ] else
+          // More options menu (phone/tablet)
           PopupMenuButton<String>(
             icon: Icon(
               Icons.more_vert,
@@ -765,16 +814,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              OutlinedButton.icon(
-                onPressed: _addRomFile,
-                icon: const Icon(Icons.add),
-                label: const Text('Add ROMs'),
+              TvFocusable(
+                autofocus: TvDetector.isTV,
+                borderRadius: BorderRadius.circular(12),
+                onTap: _addRomFile,
+                child: OutlinedButton.icon(
+                  onPressed: _addRomFile,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add ROMs'),
+                ),
               ),
               const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: _addRomFolder,
-                icon: const Icon(Icons.folder_open),
-                label: const Text('Add Folder'),
+              TvFocusable(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _addRomFolder,
+                child: ElevatedButton.icon(
+                  onPressed: _addRomFolder,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Add Folder'),
+                ),
               ),
             ],
           ),
@@ -784,9 +842,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildFAB() {
-    return FloatingActionButton(
-      onPressed: _addRomFile,
-      child: const Icon(Icons.add),
+    return TvFocusable(
+      borderRadius: BorderRadius.circular(16),
+      onTap: _addRomFile,
+      child: FloatingActionButton(
+        onPressed: _addRomFile,
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
