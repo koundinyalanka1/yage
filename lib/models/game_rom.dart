@@ -12,6 +12,7 @@ class GameRom {
   final DateTime? lastPlayed;
   final String? coverPath;
   final bool isFavorite;
+  final int totalPlayTimeSeconds;
 
   GameRom({
     required this.path,
@@ -22,6 +23,7 @@ class GameRom {
     this.lastPlayed,
     this.coverPath,
     this.isFavorite = false,
+    this.totalPlayTimeSeconds = 0,
   });
 
   /// Create from file path
@@ -79,6 +81,20 @@ class GameRom {
     }
   }
 
+  /// Format total play time as a human-readable string
+  String get formattedPlayTime {
+    if (totalPlayTimeSeconds <= 0) return 'Never played';
+    final hours = totalPlayTimeSeconds ~/ 3600;
+    final minutes = (totalPlayTimeSeconds % 3600) ~/ 60;
+    if (hours > 0) {
+      return '${hours}h ${minutes}m';
+    } else if (minutes > 0) {
+      return '${minutes}m';
+    } else {
+      return '<1m';
+    }
+  }
+
   GameRom copyWith({
     String? path,
     String? name,
@@ -88,6 +104,7 @@ class GameRom {
     DateTime? lastPlayed,
     String? coverPath,
     bool? isFavorite,
+    int? totalPlayTimeSeconds,
   }) {
     return GameRom(
       path: path ?? this.path,
@@ -98,6 +115,7 @@ class GameRom {
       lastPlayed: lastPlayed ?? this.lastPlayed,
       coverPath: coverPath ?? this.coverPath,
       isFavorite: isFavorite ?? this.isFavorite,
+      totalPlayTimeSeconds: totalPlayTimeSeconds ?? this.totalPlayTimeSeconds,
     );
   }
 
@@ -111,6 +129,7 @@ class GameRom {
       'lastPlayed': lastPlayed?.toIso8601String(),
       'coverPath': coverPath,
       'isFavorite': isFavorite,
+      'totalPlayTimeSeconds': totalPlayTimeSeconds,
     };
   }
 
@@ -126,6 +145,7 @@ class GameRom {
           : null,
       coverPath: json['coverPath'] as String?,
       isFavorite: json['isFavorite'] as bool? ?? false,
+      totalPlayTimeSeconds: json['totalPlayTimeSeconds'] as int? ?? 0,
     );
   }
 }

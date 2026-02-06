@@ -6,10 +6,14 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/game_rom.dart';
+import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
 import '../services/emulator_service.dart';
+import '../services/game_library_service.dart';
 import '../services/settings_service.dart';
+import '../services/gamepad_input.dart';
 import '../widgets/game_display.dart';
+import '../widgets/game_frame_overlay.dart';
 import '../widgets/virtual_gamepad.dart';
 import '../utils/theme.dart';
 
@@ -32,6 +36,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   
   // Use a key to preserve GameDisplay state across orientation changes
   final _gameDisplayKey = GlobalKey();
+  
+  // External gamepad / keyboard input
+  final GamepadMapper _gamepadMapper = GamepadMapper();
+  final FocusNode _focusNode = FocusNode();
+  int _virtualKeys = 0;
+  int _physicalKeys = 0;
 
   @override
   void initState() {
@@ -62,6 +72,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _focusNode.dispose();
     
     // Allow screen to sleep again
     WakelockPlus.disable();
@@ -86,6 +97,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     
     if (state == AppLifecycleState.paused) {
       emulator.pause();
+      _flushPlayTime();
     } else if (state == AppLifecycleState.resumed) {
       if (!_showMenu) {
         emulator.start();
@@ -101,14 +113,69 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
     
     if (_showMenu) {
+      _gamepadMapper.reset();
+      _physicalKeys = 0;
       emulator.pause();
     } else {
       emulator.start();
+      // Re-request focus for gamepad input
+      _focusNode.requestFocus();
+    }
+  }
+
+  /// Merge virtual and physical keys and push to emulator
+  void _syncKeys() {
+    final emulator = context.read<EmulatorService>();
+    emulator.setKeys(_virtualKeys | _physicalKeys);
+  }
+
+  /// Called by VirtualGamepad when touch keys change
+  void _onVirtualKeysChanged(int keys) {
+    _virtualKeys = keys;
+    _syncKeys();
+  }
+
+  /// Handle physical key events from Focus widget
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    final settings = context.read<SettingsService>().settings;
+    if (!settings.enableExternalGamepad) return KeyEventResult.ignored;
+    if (_showMenu || _editingLayout) return KeyEventResult.ignored;
+
+    final wasDetected = _gamepadMapper.controllerDetected;
+    final handled = _gamepadMapper.handleKeyEvent(event);
+    if (handled) {
+      _physicalKeys = _gamepadMapper.keys;
+      _syncKeys();
+
+      // Auto-hide virtual gamepad the first time a real controller is detected
+      if (!wasDetected && _gamepadMapper.controllerDetected && _showControls) {
+        setState(() => _showControls = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Controller detected — touch controls hidden'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Flush accumulated session play time to the library
+  void _flushPlayTime() {
+    final emulator = context.read<EmulatorService>();
+    final library = context.read<GameLibraryService>();
+    final delta = emulator.flushPlayTime();
+    if (delta > 0) {
+      library.addPlayTime(widget.game, delta);
     }
   }
 
   void _exitGame() {
     final emulator = context.read<EmulatorService>();
+    _flushPlayTime();
     emulator.stop();
     Navigator.of(context).pop();
   }
@@ -221,9 +288,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         if (didPop) return;
         await _showExitDialog();
       },
-      child: Scaffold(
-        backgroundColor: YageColors.backgroundDark,
-        body: OrientationBuilder(
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _onKeyEvent,
+        child: Scaffold(
+          backgroundColor: YageColors.backgroundDark,
+          body: OrientationBuilder(
         builder: (context, orientation) {
           _isLandscape = orientation == Orientation.landscape;
           
@@ -392,10 +463,26 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   onToggleJoystick: () {
                     context.read<SettingsService>().toggleJoystick();
                   },
+                  onScreenshot: () async {
+                    final path = await emulator.captureScreenshot();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            path != null
+                                ? 'Screenshot saved'
+                                : 'Failed to capture screenshot',
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
                 ),
             ],
           );
         },
+      ),
       ),
       ),
     );
@@ -436,8 +523,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Proportional overlap (5% of screen height)
     final overlapAmount = screenSize.height * 0.05;
     
+    final gameRectPortrait = Rect.fromLTWH(
+      (screenSize.width - gameWidth) / 2,
+      gameTop,
+      gameWidth,
+      gameHeight,
+    );
+
     return Stack(
       children: [
+        // Console frame overlay (behind game display)
+        if (settings.gameFrame != GameFrameType.none)
+          Positioned.fill(
+            child: GameFrameOverlay(
+              frame: settings.gameFrame,
+              gameRect: gameRectPortrait,
+            ),
+          ),
+
         // Game display at top - FULL WIDTH, NO PADDING
         Positioned(
           top: gameTop,
@@ -463,7 +566,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 gameWidth,
                 gameHeight,
               ),
-              onKeysChanged: emulator.setKeys,
+              onKeysChanged: _onVirtualKeysChanged,
               opacity: settings.gamepadOpacity,
               scale: settings.gamepadScale,
               enableVibration: settings.enableVibration,
@@ -473,6 +576,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 setState(() => _tempLayout = newLayout);
               },
               useJoystick: settings.useJoystick,
+              skin: settings.gamepadSkin,
             ),
           ),
       ],
@@ -500,8 +604,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       gameHeight = gameWidth / aspectRatio;
     }
     
+    final gameRectLandscape = Rect.fromLTWH(
+      (screenSize.width - gameWidth) / 2,
+      (screenSize.height - gameHeight) / 2,
+      gameWidth,
+      gameHeight,
+    );
+
     return Stack(
       children: [
+        // Console frame overlay (behind game display)
+        if (settings.gameFrame != GameFrameType.none)
+          Positioned.fill(
+            child: GameFrameOverlay(
+              frame: settings.gameFrame,
+              gameRect: gameRectLandscape,
+            ),
+          ),
+
         // Game display - centered and FULLY MAXIMIZED
         Center(
           child: SizedBox(
@@ -520,7 +640,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               gameWidth,
               gameHeight,
             ),
-            onKeysChanged: emulator.setKeys,
+            onKeysChanged: _onVirtualKeysChanged,
             opacity: settings.gamepadOpacity,
             scale: settings.gamepadScale,
             enableVibration: settings.enableVibration,
@@ -530,6 +650,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               setState(() => _tempLayout = newLayout);
             },
             useJoystick: settings.useJoystick,
+            skin: settings.gamepadSkin,
           ),
       ],
     );
@@ -814,6 +935,7 @@ class _InGameMenu extends StatelessWidget {
   final VoidCallback onExit;
   final bool useJoystick;
   final VoidCallback onToggleJoystick;
+  final VoidCallback onScreenshot;
 
   const _InGameMenu({
     required this.game,
@@ -830,6 +952,7 @@ class _InGameMenu extends StatelessWidget {
     required this.onExit,
     required this.useJoystick,
     required this.onToggleJoystick,
+    required this.onScreenshot,
   });
 
   @override
@@ -892,6 +1015,14 @@ class _InGameMenu extends StatelessWidget {
                       label: 'Resume',
                       onTap: onResume,
                       isPrimary: true,
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    // Screenshot button
+                    _MenuActionButton(
+                      icon: Icons.camera_alt,
+                      label: 'Screenshot',
+                      onTap: onScreenshot,
                     ),
                     const SizedBox(height: 10),
                     

@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'game_frame.dart';
 import 'gamepad_layout.dart';
+import 'gamepad_skin.dart';
 
 /// Emulator settings configuration
 class EmulatorSettings {
@@ -24,6 +26,9 @@ class EmulatorSettings {
   final GamepadLayout gamepadLayoutPortrait;
   final GamepadLayout gamepadLayoutLandscape;
   final bool useJoystick; // true = joystick, false = d-pad
+  final bool enableExternalGamepad; // physical controller support
+  final GamepadSkinType gamepadSkin; // visual theme for touch controls
+  final GameFrameType gameFrame; // decorative console shell overlay
   final String selectedTheme; // theme id string
 
   const EmulatorSettings({
@@ -47,6 +52,9 @@ class EmulatorSettings {
     this.gamepadLayoutPortrait = GamepadLayout.defaultPortrait,
     this.gamepadLayoutLandscape = GamepadLayout.defaultLandscape,
     this.useJoystick = false,
+    this.enableExternalGamepad = true,
+    this.gamepadSkin = GamepadSkinType.classic,
+    this.gameFrame = GameFrameType.none,
     this.selectedTheme = 'neon_night',
   });
 
@@ -71,6 +79,9 @@ class EmulatorSettings {
     GamepadLayout? gamepadLayoutPortrait,
     GamepadLayout? gamepadLayoutLandscape,
     bool? useJoystick,
+    bool? enableExternalGamepad,
+    GamepadSkinType? gamepadSkin,
+    GameFrameType? gameFrame,
     String? selectedTheme,
   }) {
     return EmulatorSettings(
@@ -94,6 +105,9 @@ class EmulatorSettings {
       gamepadLayoutPortrait: gamepadLayoutPortrait ?? this.gamepadLayoutPortrait,
       gamepadLayoutLandscape: gamepadLayoutLandscape ?? this.gamepadLayoutLandscape,
       useJoystick: useJoystick ?? this.useJoystick,
+      enableExternalGamepad: enableExternalGamepad ?? this.enableExternalGamepad,
+      gamepadSkin: gamepadSkin ?? this.gamepadSkin,
+      gameFrame: gameFrame ?? this.gameFrame,
       selectedTheme: selectedTheme ?? this.selectedTheme,
     );
   }
@@ -120,6 +134,9 @@ class EmulatorSettings {
       'gamepadLayoutPortrait': gamepadLayoutPortrait.toJson(),
       'gamepadLayoutLandscape': gamepadLayoutLandscape.toJson(),
       'useJoystick': useJoystick,
+      'enableExternalGamepad': enableExternalGamepad,
+      'gamepadSkin': gamepadSkin.index,
+      'gameFrame': gameFrame.index,
       'selectedTheme': selectedTheme,
     };
   }
@@ -150,6 +167,13 @@ class EmulatorSettings {
           ? GamepadLayout.fromJson(json['gamepadLayoutLandscape'] as Map<String, dynamic>)
           : GamepadLayout.defaultLandscape,
       useJoystick: json['useJoystick'] as bool? ?? false,
+      enableExternalGamepad: json['enableExternalGamepad'] as bool? ?? true,
+      gamepadSkin: GamepadSkinType.values.elementAtOrNull(
+        json['gamepadSkin'] as int? ?? 0,
+      ) ?? GamepadSkinType.classic,
+      gameFrame: GameFrameType.values.elementAtOrNull(
+        json['gameFrame'] as int? ?? 0,
+      ) ?? GameFrameType.none,
       selectedTheme: json['selectedTheme'] as String? ?? 'neon_night',
     );
   }

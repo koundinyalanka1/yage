@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../core/mgba_bindings.dart';
 import '../models/gamepad_layout.dart';
+import '../models/gamepad_skin.dart';
 import '../utils/theme.dart';
 
 /// Virtual gamepad for touch input
@@ -18,6 +19,7 @@ class VirtualGamepad extends StatefulWidget {
   final bool editMode;
   final void Function(GamepadLayout)? onLayoutChanged;
   final bool useJoystick; // true = joystick, false = d-pad
+  final GamepadSkinType skin;
 
   const VirtualGamepad({
     super.key,
@@ -30,6 +32,7 @@ class VirtualGamepad extends StatefulWidget {
     this.editMode = false,
     this.onLayoutChanged,
     this.useJoystick = false,
+    this.skin = GamepadSkinType.classic,
   });
 
   @override
@@ -205,6 +208,8 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               : gameRect.width * 0.12;
           final portraitBoost = isPortrait ? 1.1 : 1.0;
 
+          // Resolve skin once per build
+          final skin = GamepadSkinData.resolve(widget.skin);
 
           return Stack(
             children: [
@@ -224,6 +229,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                         scale: layout.dpad.size * widget.scale * portraitBoost,
                         baseSize: baseSize,
                         editMode: widget.editMode,
+                        skin: skin,
                       )
                     : _DPad(
                   onDirectionChanged: (up, down, left, right) {
@@ -235,6 +241,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   scale: layout.dpad.size * widget.scale * portraitBoost,
                   baseSize: baseSize,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
               
@@ -249,6 +256,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   onChanged: (pressed) => _updateKey(GBAKey.a, pressed),
                   size: buttonBase * layout.aButton.size * widget.scale,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
               
@@ -263,6 +271,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   onChanged: (pressed) => _updateKey(GBAKey.b, pressed),
                   size: buttonBase * layout.bButton.size * widget.scale,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
               
@@ -277,6 +286,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   scale: layout.lButton.size * widget.scale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
               
@@ -291,6 +301,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   scale: layout.rButton.size * widget.scale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
               
@@ -305,6 +316,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   scale: layout.startButton.size * widget.scale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
               
@@ -319,6 +331,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                   scale: layout.selectButton.size * widget.scale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
+                  skin: skin,
                 ),
               ),
             ],
@@ -529,12 +542,14 @@ class _DPad extends StatefulWidget {
   final double scale;
   final double baseSize;
   final bool editMode;
+  final GamepadSkinData skin;
 
   const _DPad({
     required this.onDirectionChanged,
     this.scale = 1.0,
     this.baseSize = 190.0,
     this.editMode = false,
+    required this.skin,
   });
 
   @override
@@ -604,12 +619,13 @@ class _DPadState extends State<_DPad> {
                 width: size - 16,
                 height: size - 16,
                 decoration: BoxDecoration(
-                  color: YageColors.surface.withAlpha(210),
-                  borderRadius: BorderRadius.circular(18),
+                  color: widget.skin.dpadBackground,
+                  borderRadius: BorderRadius.circular(widget.skin.dpadRadius),
                   border: Border.all(
-                    color: YageColors.surfaceLight,
-                    width: 1.5,
+                    color: widget.skin.dpadBorder,
+                    width: widget.skin.dpadBorderWidth,
                   ),
+                  boxShadow: widget.skin.normalShadows,
                 ),
               ),
             ),
@@ -622,6 +638,7 @@ class _DPadState extends State<_DPad> {
                 isPressed: _up,
                 icon: Icons.keyboard_arrow_up,
                 size: buttonSize,
+                skin: widget.skin,
               ),
             ),
             
@@ -633,6 +650,7 @@ class _DPadState extends State<_DPad> {
                 isPressed: _down,
                 icon: Icons.keyboard_arrow_down,
                 size: buttonSize,
+                skin: widget.skin,
               ),
             ),
             
@@ -644,6 +662,7 @@ class _DPadState extends State<_DPad> {
                 isPressed: _left,
                 icon: Icons.keyboard_arrow_left,
                 size: buttonSize,
+                skin: widget.skin,
               ),
             ),
             
@@ -655,20 +674,21 @@ class _DPadState extends State<_DPad> {
                 isPressed: _right,
                 icon: Icons.keyboard_arrow_right,
                 size: buttonSize,
+                skin: widget.skin,
               ),
             ),
             
-            // Center circle - matching app theme
+            // Center circle
             Center(
               child: Container(
                 width: 36 * widget.scale,
                 height: 36 * widget.scale,
                 decoration: BoxDecoration(
-                  color: YageColors.backgroundMedium,
+                  color: widget.skin.dpadCenter,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: YageColors.surfaceLight,
-                    width: 1.5,
+                    color: widget.skin.dpadBorder,
+                    width: widget.skin.dpadBorderWidth,
                   ),
                 ),
               ),
@@ -684,11 +704,13 @@ class _DPadButton extends StatelessWidget {
   final bool isPressed;
   final IconData icon;
   final double size;
+  final GamepadSkinData skin;
 
   const _DPadButton({
     required this.isPressed,
     required this.icon,
     this.size = 60,
+    required this.skin,
   });
 
   @override
@@ -697,20 +719,17 @@ class _DPadButton extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: isPressed 
-            ? YageColors.primary.withAlpha(230)
-            : YageColors.surface.withAlpha(220),
-        borderRadius: BorderRadius.circular(12),
+        color: isPressed ? skin.buttonFillPressed : skin.buttonFill,
+        borderRadius: BorderRadius.circular(skin.buttonRadius),
         border: Border.all(
-          color: isPressed ? YageColors.primary : YageColors.surfaceLight,
-          width: 1,
+          color: isPressed ? skin.buttonBorderPressed : skin.buttonBorder,
+          width: skin.buttonBorderWidth,
         ),
+        boxShadow: isPressed ? skin.pressedShadows : skin.normalShadows,
       ),
       child: Icon(
         icon,
-        color: isPressed 
-            ? YageColors.textPrimary 
-            : YageColors.textSecondary,
+        color: isPressed ? skin.textPressed : skin.textNormal,
         size: size * 0.55,
       ),
     );
@@ -723,6 +742,7 @@ class _CircleButton extends StatefulWidget {
   final void Function(bool pressed) onChanged;
   final double size;
   final bool editMode;
+  final GamepadSkinData skin;
 
   const _CircleButton({
     required this.label,
@@ -730,6 +750,7 @@ class _CircleButton extends StatefulWidget {
     required this.onChanged,
     this.size = 80,
     this.editMode = false,
+    required this.skin,
   });
 
   @override
@@ -760,14 +781,19 @@ class _CircleButtonState extends State<_CircleButton> {
         width: widget.size,
         height: widget.size,
         decoration: BoxDecoration(
-          color: _isPressed 
-              ? YageColors.primary.withAlpha(230)
-              : YageColors.surface.withAlpha(220),
+          color: _isPressed
+              ? widget.skin.buttonFillPressed
+              : widget.skin.buttonFill,
           shape: BoxShape.circle,
           border: Border.all(
-            color: _isPressed ? YageColors.primary : YageColors.surfaceLight,
-            width: 1.5,
+            color: _isPressed
+                ? widget.skin.buttonBorderPressed
+                : widget.skin.buttonBorder,
+            width: widget.skin.buttonBorderWidth,
           ),
+          boxShadow: _isPressed
+              ? widget.skin.pressedShadows
+              : widget.skin.normalShadows,
         ),
         child: Center(
           child: Text(
@@ -775,9 +801,9 @@ class _CircleButtonState extends State<_CircleButton> {
             style: TextStyle(
               fontSize: widget.size * 0.35,
               fontWeight: FontWeight.bold,
-              color: _isPressed 
-                  ? YageColors.textPrimary
-                  : YageColors.textSecondary,
+              color: _isPressed
+                  ? widget.skin.textPressed
+                  : widget.skin.textNormal,
             ),
           ),
         ),
@@ -793,6 +819,7 @@ class _ShoulderButton extends StatefulWidget {
   final double scale;
   final double baseSize;
   final bool editMode;
+  final GamepadSkinData skin;
 
   const _ShoulderButton({
     required this.label,
@@ -800,6 +827,7 @@ class _ShoulderButton extends StatefulWidget {
     this.scale = 1.0,
     this.baseSize = 80.0,
     this.editMode = false,
+    required this.skin,
   });
 
   @override
@@ -830,14 +858,19 @@ class _ShoulderButtonState extends State<_ShoulderButton> {
         width: widget.baseSize * 0.55 * widget.scale,
         height: widget.baseSize * 0.30 * widget.scale,
         decoration: BoxDecoration(
-          color: _isPressed 
-              ? YageColors.primary.withAlpha(230)
-              : YageColors.surface.withAlpha(210),
-          borderRadius: BorderRadius.circular(14),
+          color: _isPressed
+              ? widget.skin.buttonFillPressed
+              : widget.skin.buttonFill,
+          borderRadius: BorderRadius.circular(widget.skin.buttonRadius + 2),
           border: Border.all(
-            color: _isPressed ? YageColors.primary : YageColors.surfaceLight,
-            width: 1.5,
+            color: _isPressed
+                ? widget.skin.buttonBorderPressed
+                : widget.skin.buttonBorder,
+            width: widget.skin.buttonBorderWidth,
           ),
+          boxShadow: _isPressed
+              ? widget.skin.pressedShadows
+              : widget.skin.normalShadows,
         ),
         child: Center(
           child: Text(
@@ -845,9 +878,9 @@ class _ShoulderButtonState extends State<_ShoulderButton> {
             style: TextStyle(
               fontSize: widget.baseSize * 0.12 * widget.scale,
               fontWeight: FontWeight.bold,
-              color: _isPressed 
-                  ? YageColors.textPrimary
-                  : YageColors.textSecondary,
+              color: _isPressed
+                  ? widget.skin.textPressed
+                  : widget.skin.textNormal,
             ),
           ),
         ),
@@ -863,6 +896,7 @@ class _SmallButton extends StatefulWidget {
   final double scale;
   final double baseSize;
   final bool editMode;
+  final GamepadSkinData skin;
 
   const _SmallButton({
     required this.label,
@@ -870,6 +904,7 @@ class _SmallButton extends StatefulWidget {
     this.scale = 1.0,
     this.baseSize = 80.0,
     this.editMode = false,
+    required this.skin,
   });
 
   @override
@@ -902,23 +937,28 @@ class _SmallButtonState extends State<_SmallButton> {
           vertical: widget.baseSize * 0.06 * widget.scale,
         ),
         decoration: BoxDecoration(
-          color: _isPressed 
-              ? YageColors.primary.withAlpha(230)
-              : YageColors.surface.withAlpha(210),
-          borderRadius: BorderRadius.circular(12),
+          color: _isPressed
+              ? widget.skin.buttonFillPressed
+              : widget.skin.buttonFill,
+          borderRadius: BorderRadius.circular(widget.skin.buttonRadius),
           border: Border.all(
-            color: _isPressed ? YageColors.primary : YageColors.surfaceLight,
-            width: 1.5,
+            color: _isPressed
+                ? widget.skin.buttonBorderPressed
+                : widget.skin.buttonBorder,
+            width: widget.skin.buttonBorderWidth,
           ),
+          boxShadow: _isPressed
+              ? widget.skin.pressedShadows
+              : widget.skin.normalShadows,
         ),
         child: Text(
           widget.label,
           style: TextStyle(
             fontSize: widget.baseSize * 0.09 * widget.scale,
             fontWeight: FontWeight.bold,
-            color: _isPressed 
-                ? YageColors.textPrimary
-                : YageColors.textSecondary,
+            color: _isPressed
+                ? widget.skin.textPressed
+                : widget.skin.textNormal,
             letterSpacing: 0.5,
           ),
         ),
@@ -933,12 +973,14 @@ class _Joystick extends StatefulWidget {
   final double scale;
   final double baseSize;
   final bool editMode;
+  final GamepadSkinData skin;
 
   const _Joystick({
     required this.onDirectionChanged,
     this.scale = 1.0,
     this.baseSize = 190.0,
     this.editMode = false,
+    required this.skin,
   });
 
   @override
@@ -1011,7 +1053,7 @@ class _JoystickState extends State<_Joystick> {
       onPanUpdate: widget.editMode ? null : (details) => _handlePan(details.localPosition, Size(size, size)),
       onPanEnd: widget.editMode ? null : (_) => _reset(),
       onPanCancel: widget.editMode ? null : _reset,
-      child: SizedBox(
+        child: SizedBox(
         width: size,
         height: size,
         child: Stack(
@@ -1022,19 +1064,13 @@ class _JoystickState extends State<_Joystick> {
               width: size - 8,
               height: size - 8,
               decoration: BoxDecoration(
-                color: YageColors.surface.withAlpha(200),
+                color: widget.skin.joystickBg,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: YageColors.surfaceLight,
-                  width: 2,
+                  color: widget.skin.joystickBorder,
+                  width: widget.skin.joystickBorderWidth,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(40),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ],
+                boxShadow: widget.skin.normalShadows,
               ),
             ),
             
@@ -1050,39 +1086,40 @@ class _JoystickState extends State<_Joystick> {
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: [
-                      YageColors.primary.withAlpha(230),
-                      YageColors.primary.withAlpha(180),
+                      widget.skin.stickColor,
+                      widget.skin.stickColor.withAlpha(
+                        (widget.skin.stickColor.alpha * 0.78).round(),
+                      ),
                     ],
                     center: const Alignment(-0.3, -0.3),
                   ),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: YageColors.primary,
-                    width: 2,
+                    color: widget.skin.stickBorder,
+                    width: widget.skin.joystickBorderWidth,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: YageColors.primary.withAlpha(80),
-                      blurRadius: 12,
-                      spreadRadius: 2,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withAlpha(60),
-                      blurRadius: 6,
-                      offset: const Offset(2, 2),
-                    ),
-                  ],
+                  boxShadow: widget.skin.pressedShadows.isNotEmpty
+                      ? widget.skin.pressedShadows
+                      : [
+                          BoxShadow(
+                            color: widget.skin.stickBorder.withAlpha(80),
+                            blurRadius: 12,
+                            spreadRadius: 2,
+                          ),
+                        ],
                 ),
-                child: Center(
-                  child: Container(
-                    width: stickSize * 0.3,
-                    height: stickSize * 0.3,
-                    decoration: BoxDecoration(
-                      color: YageColors.backgroundLight.withAlpha(100),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
+                child: widget.skin.stickHighlight != null
+                    ? Center(
+                        child: Container(
+                          width: stickSize * 0.3,
+                          height: stickSize * 0.3,
+                          decoration: BoxDecoration(
+                            color: widget.skin.stickHighlight,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      )
+                    : null,
               ),
             ),
           ],
@@ -1103,6 +1140,8 @@ class _JoystickState extends State<_Joystick> {
         child: _DirectionIndicator(
           isActive: _up,
           size: indicatorSize,
+          activeColor: widget.skin.buttonBorderPressed,
+          inactiveColor: widget.skin.dpadBorder.withAlpha(100),
         ),
       ),
       // Down indicator
@@ -1112,6 +1151,8 @@ class _JoystickState extends State<_Joystick> {
         child: _DirectionIndicator(
           isActive: _down,
           size: indicatorSize,
+          activeColor: widget.skin.buttonBorderPressed,
+          inactiveColor: widget.skin.dpadBorder.withAlpha(100),
         ),
       ),
       // Left indicator
@@ -1121,6 +1162,8 @@ class _JoystickState extends State<_Joystick> {
         child: _DirectionIndicator(
           isActive: _left,
           size: indicatorSize,
+          activeColor: widget.skin.buttonBorderPressed,
+          inactiveColor: widget.skin.dpadBorder.withAlpha(100),
         ),
       ),
       // Right indicator
@@ -1130,6 +1173,8 @@ class _JoystickState extends State<_Joystick> {
         child: _DirectionIndicator(
           isActive: _right,
           size: indicatorSize,
+          activeColor: widget.skin.buttonBorderPressed,
+          inactiveColor: widget.skin.dpadBorder.withAlpha(100),
         ),
       ),
     ];
@@ -1139,10 +1184,14 @@ class _JoystickState extends State<_Joystick> {
 class _DirectionIndicator extends StatelessWidget {
   final bool isActive;
   final double size;
+  final Color activeColor;
+  final Color inactiveColor;
 
   const _DirectionIndicator({
     required this.isActive,
     required this.size,
+    required this.activeColor,
+    required this.inactiveColor,
   });
 
   @override
@@ -1151,9 +1200,9 @@ class _DirectionIndicator extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: isActive 
-            ? YageColors.accent.withAlpha(200) 
-            : YageColors.surfaceLight.withAlpha(100),
+        color: isActive
+            ? activeColor.withAlpha(200)
+            : inactiveColor,
         shape: BoxShape.circle,
       ),
     );

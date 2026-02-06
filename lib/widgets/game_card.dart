@@ -176,34 +176,80 @@ class GameCard extends StatelessWidget {
                 Expanded(
                   flex: 2,
                   child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: const EdgeInsets.only(left: 12, top: 12, bottom: 12, right: 4),
+                    child: Row(
                       children: [
-                        // Title
                         Expanded(
-                          child: Text(
-                            game.name,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: YageColors.textPrimary,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Title
+                              Expanded(
+                                child: Text(
+                                  game.name,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: YageColors.textPrimary,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 4),
+                              
+                              // Size and play time
+                              Row(
+                                children: [
+                                  Text(
+                                    game.formattedSize,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: YageColors.textMuted,
+                                    ),
+                                  ),
+                                  if (game.totalPlayTimeSeconds > 0) ...[
+                                    Text(
+                                      '  •  ',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: YageColors.textMuted,
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.timer_outlined,
+                                      size: 11,
+                                      color: YageColors.textMuted,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      game.formattedPlayTime,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: YageColors.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // More options hint
+                        if (onLongPress != null)
+                          GestureDetector(
+                            onTap: onLongPress,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                              child: Icon(
+                                Icons.more_vert,
+                                size: 18,
+                                color: YageColors.textMuted.withAlpha(140),
+                              ),
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        
-                        const SizedBox(height: 4),
-                        
-                        // Size
-                        Text(
-                          game.formattedSize,
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: YageColors.textMuted,
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -332,7 +378,9 @@ class GameListTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${game.platformName} • ${game.formattedSize}',
+        game.totalPlayTimeSeconds > 0
+            ? '${game.platformName} • ${game.formattedSize} • ${game.formattedPlayTime}'
+            : '${game.platformName} • ${game.formattedSize}',
         style: TextStyle(
           fontSize: 12,
           color: YageColors.textMuted,
@@ -343,17 +391,31 @@ class GameListTile extends StatelessWidget {
         children: [
           if (game.isFavorite)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 4),
               child: Icon(
                 Icons.favorite,
                 size: 18,
                 color: YageColors.accentAlt,
               ),
             ),
-          Icon(
-            Icons.chevron_right,
-            color: YageColors.textMuted,
-          ),
+          if (onLongPress != null)
+            GestureDetector(
+              onTap: onLongPress,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.more_vert,
+                  size: 20,
+                  color: YageColors.textMuted,
+                ),
+              ),
+            )
+          else
+            Icon(
+              Icons.chevron_right,
+              color: YageColors.textMuted,
+            ),
         ],
       ),
     );

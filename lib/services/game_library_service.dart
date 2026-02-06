@@ -184,6 +184,19 @@ class GameLibraryService extends ChangeNotifier {
     }
   }
 
+  /// Add play time (seconds) to a game's total
+  Future<void> addPlayTime(GameRom game, int seconds) async {
+    if (seconds <= 0) return;
+    final index = _games.indexWhere((g) => g.path == game.path);
+    if (index != -1) {
+      _games[index] = _games[index].copyWith(
+        totalPlayTimeSeconds: _games[index].totalPlayTimeSeconds + seconds,
+      );
+      await _saveLibrary();
+      notifyListeners();
+    }
+  }
+
   /// Set cover art for a game
   Future<void> setCoverArt(GameRom game, String coverPath) async {
     final index = _games.indexWhere((g) => g.path == game.path);
@@ -207,6 +220,7 @@ class GameLibraryService extends ChangeNotifier {
         lastPlayed: _games[index].lastPlayed,
         coverPath: null,
         isFavorite: _games[index].isFavorite,
+        totalPlayTimeSeconds: _games[index].totalPlayTimeSeconds,
       );
       await _saveLibrary();
       notifyListeners();
@@ -218,9 +232,9 @@ class GameLibraryService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // Keep favorites and play history
+    // Keep favorites, play history, and play time
     final gameData = Map.fromEntries(
-      _games.map((g) => MapEntry(g.path, (g.isFavorite, g.lastPlayed))),
+      _games.map((g) => MapEntry(g.path, (g.isFavorite, g.lastPlayed, g.totalPlayTimeSeconds))),
     );
 
     _games.clear();
@@ -236,6 +250,7 @@ class GameLibraryService extends ChangeNotifier {
         _games[i] = _games[i].copyWith(
           isFavorite: data.$1,
           lastPlayed: data.$2,
+          totalPlayTimeSeconds: data.$3,
         );
       }
     }

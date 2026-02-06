@@ -18,6 +18,11 @@ dependencies:
   collection: ^1.18.0
   http: ^1.2.0
   wakelock_plus: ^1.2.8
+  archive: ^3.6.1
+  share_plus: ^10.1.4
+  google_sign_in: ^6.2.1
+  googleapis: ^13.2.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
 
 dev_dependencies:
   flutter_test:

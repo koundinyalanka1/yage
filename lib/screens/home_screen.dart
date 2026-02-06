@@ -7,11 +7,27 @@ import '../models/game_rom.dart';
 import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
 import '../services/artwork_service.dart';
+import '../services/save_backup_service.dart';
 import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
 import '../utils/theme.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
+
+/// Sort options for the game library
+enum GameSortOption {
+  nameAsc('Name (A-Z)', Icons.sort_by_alpha),
+  nameDesc('Name (Z-A)', Icons.sort_by_alpha),
+  lastPlayed('Last Played', Icons.history),
+  mostPlayed('Most Played', Icons.timer),
+  platform('Platform', Icons.devices),
+  sizeAsc('Size (Small)', Icons.straighten),
+  sizeDesc('Size (Large)', Icons.straighten);
+
+  final String label;
+  final IconData icon;
+  const GameSortOption(this.label, this.icon);
+}
 
 /// Main home screen with game library
 class HomeScreen extends StatefulWidget {
@@ -26,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   GamePlatform? _selectedPlatform;
   String _searchQuery = '';
   bool _isGridView = true;
+  GameSortOption _sortOption = GameSortOption.nameAsc;
   final _searchController = TextEditingController();
 
   @override
@@ -39,6 +56,37 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Sort a list of games according to the current sort option
+  List<GameRom> _sortGames(List<GameRom> games) {
+    final sorted = List<GameRom>.from(games);
+    switch (_sortOption) {
+      case GameSortOption.nameAsc:
+        sorted.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      case GameSortOption.nameDesc:
+        sorted.sort((a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()));
+      case GameSortOption.lastPlayed:
+        sorted.sort((a, b) {
+          // Games never played go to the bottom
+          if (a.lastPlayed == null && b.lastPlayed == null) return 0;
+          if (a.lastPlayed == null) return 1;
+          if (b.lastPlayed == null) return -1;
+          return b.lastPlayed!.compareTo(a.lastPlayed!); // most recent first
+        });
+      case GameSortOption.mostPlayed:
+        sorted.sort((a, b) => b.totalPlayTimeSeconds.compareTo(a.totalPlayTimeSeconds));
+      case GameSortOption.platform:
+        sorted.sort((a, b) {
+          final cmp = a.platformShortName.compareTo(b.platformShortName);
+          return cmp != 0 ? cmp : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+      case GameSortOption.sizeAsc:
+        sorted.sort((a, b) => a.sizeBytes.compareTo(b.sizeBytes));
+      case GameSortOption.sizeDesc:
+        sorted.sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
+    }
+    return sorted;
   }
 
   Future<void> _addRomFile() async {
@@ -237,6 +285,41 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(width: 8),
           
+          // Sort button
+          PopupMenuButton<GameSortOption>(
+            icon: Icon(Icons.sort, color: YageColors.textSecondary, size: 20),
+            tooltip: 'Sort by',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            color: YageColors.surface,
+            onSelected: (value) => setState(() => _sortOption = value),
+            itemBuilder: (context) => GameSortOption.values.map((opt) {
+              final isSelected = _sortOption == opt;
+              return PopupMenuItem(
+                value: opt,
+                child: ListTile(
+                  leading: Icon(
+                    opt.icon,
+                    size: 20,
+                    color: isSelected ? YageColors.accent : null,
+                  ),
+                  title: Text(
+                    opt.label,
+                    style: TextStyle(
+                      color: isSelected ? YageColors.accent : null,
+                      fontWeight: isSelected ? FontWeight.bold : null,
+                    ),
+                  ),
+                  trailing: isSelected
+                      ? Icon(Icons.check, size: 18, color: YageColors.accent)
+                      : null,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              );
+            }).toList(),
+          ),
+
           // View toggle
           IconButton(
             icon: Icon(
@@ -362,6 +445,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
           
+          // Sort button
+          PopupMenuButton<GameSortOption>(
+            icon: Icon(Icons.sort, color: YageColors.textSecondary),
+            tooltip: 'Sort by',
+            color: YageColors.surface,
+            onSelected: (value) => setState(() => _sortOption = value),
+            itemBuilder: (context) => GameSortOption.values.map((opt) {
+              final isSelected = _sortOption == opt;
+              return PopupMenuItem(
+                value: opt,
+                child: ListTile(
+                  leading: Icon(
+                    opt.icon,
+                    size: 20,
+                    color: isSelected ? YageColors.accent : null,
+                  ),
+                  title: Text(
+                    opt.label,
+                    style: TextStyle(
+                      color: isSelected ? YageColors.accent : null,
+                      fontWeight: isSelected ? FontWeight.bold : null,
+                    ),
+                  ),
+                  trailing: isSelected
+                      ? Icon(Icons.check, size: 18, color: YageColors.accent)
+                      : null,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              );
+            }).toList(),
+          ),
+
           // View toggle
           IconButton(
             icon: Icon(
@@ -496,6 +612,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             g.name.toLowerCase().contains(_searchQuery.toLowerCase())
           ).toList();
         }
+        games = _sortGames(games);
 
         if (games.isEmpty) {
           return _buildEmptyState();
@@ -509,7 +626,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildRecentGames() {
     return Consumer<GameLibraryService>(
       builder: (context, library, _) {
-        final games = library.recentlyPlayed;
+        var games = _sortGames(library.recentlyPlayed);
 
         if (games.isEmpty) {
           return _buildEmptyState(
@@ -527,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildFavorites() {
     return Consumer<GameLibraryService>(
       builder: (context, library, _) {
-        final games = library.favorites;
+        var games = _sortGames(library.favorites);
 
         if (games.isEmpty) {
           return _buildEmptyState(
@@ -826,6 +943,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     },
                   ),
                 ListTile(
+                  leading: const Icon(Icons.archive_outlined),
+                  title: const Text('Export Save Data'),
+                  subtitle: Text(
+                    'Backup .sav & save states to ZIP',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: YageColors.textMuted,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _exportGameSaves(game);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_sweep, color: YageColors.warning),
+                  title: Text(
+                    'Delete Save Data',
+                    style: TextStyle(color: YageColors.warning),
+                  ),
+                  subtitle: Text(
+                    'Remove .sav, save states & screenshots',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: YageColors.textMuted,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _confirmDeleteSaveData(game);
+                  },
+                ),
+                ListTile(
                   leading: Icon(Icons.delete_outline, color: YageColors.error),
                   title: Text(
                     'Remove from Library',
@@ -842,6 +992,213 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
       },
     );
+  }
+
+  Future<void> _exportGameSaves(GameRom game) async {
+    final emulator = context.read<EmulatorService>();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Creating save backup…')),
+    );
+
+    try {
+      final zipPath = await SaveBackupService.exportGameSaves(
+        game: game,
+        appSaveDir: emulator.saveDir,
+      );
+
+      if (!mounted) return;
+
+      if (zipPath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No save files found for ${game.name}')),
+        );
+        return;
+      }
+
+      // Let the user choose: share or save
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: YageColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: YageColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      'Save backup ready for ${game.name}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: YageColors.textPrimary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    leading: const Icon(Icons.share),
+                    title: const Text('Share'),
+                    subtitle: Text(
+                      'Send via Google Drive, email, etc.',
+                      style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      SaveBackupService.shareZip(zipPath);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.save_alt),
+                    title: const Text('Save to…'),
+                    subtitle: Text(
+                      'Choose a folder on this device',
+                      style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      final saved =
+                          await SaveBackupService.saveZipToUserLocation(zipPath);
+                      if (saved != null && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Saved to $saved')),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteSaveData(GameRom game) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: YageColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: YageColors.warning.withAlpha(80), width: 2),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: YageColors.warning, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Delete Save Data?',
+                style: TextStyle(
+                  color: YageColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This will permanently delete all save data for:',
+              style: TextStyle(color: YageColors.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              game.name,
+              style: TextStyle(
+                color: YageColors.textPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '• Battery save (.sav)\n'
+              '• All save states (slots 0-5)\n'
+              '• Save state thumbnails\n'
+              '• In-game screenshots',
+              style: TextStyle(color: YageColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This cannot be undone.',
+              style: TextStyle(
+                color: YageColors.warning,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: YageColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              backgroundColor: YageColors.warning.withAlpha(30),
+            ),
+            child: Text(
+              'Delete',
+              style: TextStyle(
+                color: YageColors.warning,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final emulator = context.read<EmulatorService>();
+      final count = await emulator.deleteSaveData(game);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count > 0
+                  ? 'Deleted $count save file${count == 1 ? '' : 's'} for ${game.name}'
+                  : 'No save files found for ${game.name}',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 }
 

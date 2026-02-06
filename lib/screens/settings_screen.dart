@@ -1,10 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../models/emulator_settings.dart';
+import '../models/game_frame.dart';
+import '../models/game_rom.dart';
+import '../models/gamepad_skin.dart';
 import '../services/settings_service.dart';
 import '../services/game_library_service.dart';
+import '../services/emulator_service.dart';
+import '../services/save_backup_service.dart';
 import '../utils/theme.dart';
 
 /// Settings screen
@@ -89,6 +97,11 @@ class SettingsScreen extends StatelessWidget {
                     selectedIndex: settings.selectedColorPalette,
                     onChanged: settingsService.setColorPalette,
                   ),
+                  const Divider(height: 1),
+                  _GameFrameTile(
+                    selected: settings.gameFrame,
+                    onChanged: settingsService.setGameFrame,
+                  ),
                 ],
               ),
               
@@ -120,6 +133,19 @@ class SettingsScreen extends StatelessWidget {
                     min: 0.5,
                     max: 2.0,
                     onChanged: settingsService.setGamepadScale,
+                  ),
+                  const Divider(height: 1),
+                  _SwitchTile(
+                    icon: Icons.sports_esports,
+                    title: 'External Controller',
+                    subtitle: 'Bluetooth / USB gamepad & keyboard',
+                    value: settings.enableExternalGamepad,
+                    onChanged: (_) => settingsService.toggleExternalGamepad(),
+                  ),
+                  const Divider(height: 1),
+                  _GamepadSkinTile(
+                    selected: settings.gamepadSkin,
+                    onChanged: settingsService.setGamepadSkin,
                   ),
                 ],
               ),
@@ -174,6 +200,36 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
               
+              const SizedBox(height: 24),
+              _SectionHeader(title: 'Backup & Restore'),
+              _SettingsCard(
+                children: [
+                  _ActionTile(
+                    icon: Icons.upload_file,
+                    title: 'Export All Saves to ZIP',
+                    onTap: () => _exportAllSaves(context),
+                  ),
+                  const Divider(height: 1),
+                  _ActionTile(
+                    icon: Icons.download,
+                    title: 'Import Saves from ZIP',
+                    onTap: () => _importSaves(context),
+                  ),
+                  const Divider(height: 1),
+                  _ActionTile(
+                    icon: Icons.cloud_upload,
+                    title: 'Backup to Google Drive',
+                    onTap: () => _backupToDrive(context),
+                  ),
+                  const Divider(height: 1),
+                  _ActionTile(
+                    icon: Icons.cloud_download,
+                    title: 'Restore from Google Drive',
+                    onTap: () => _restoreFromDrive(context),
+                  ),
+                ],
+              ),
+
               const SizedBox(height: 24),
               _SectionHeader(title: 'About'),
               _SettingsCard(
@@ -332,6 +388,100 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _exportAllSaves(BuildContext context) async {
+    final library = context.read<GameLibraryService>();
+    final emulator = context.read<EmulatorService>();
+    final games = library.games;
+
+    if (games.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No games in library to export')),
+      );
+      return;
+    }
+
+    // Show progress dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _BackupProgressDialog(
+        title: 'Exporting Saves',
+        games: games,
+        appSaveDir: emulator.saveDir,
+      ),
+    );
+  }
+
+  void _importSaves(BuildContext context) async {
+    final library = context.read<GameLibraryService>();
+    final games = library.games;
+
+    if (games.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add games to library first before importing saves')),
+      );
+      return;
+    }
+
+    try {
+      final count = await SaveBackupService.importFromZipPicker(games: games);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count > 0
+                ? 'Restored $count save file${count == 1 ? '' : 's'}'
+                : 'No matching save files found in ZIP',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
+  void _backupToDrive(BuildContext context) async {
+    final library = context.read<GameLibraryService>();
+    final emulator = context.read<EmulatorService>();
+    final games = library.games;
+
+    if (games.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No games in library to backup')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DriveBackupDialog(
+        games: games,
+        appSaveDir: emulator.saveDir,
+      ),
+    );
+  }
+
+  void _restoreFromDrive(BuildContext context) async {
+    final library = context.read<GameLibraryService>();
+
+    if (library.games.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add games to library first before restoring')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DriveRestoreDialog(games: library.games),
     );
   }
 }
@@ -834,6 +984,837 @@ class _ThemePicker extends StatelessWidget {
           width: 0.5,
         ),
       ),
+    );
+  }
+}
+
+/// Gamepad skin picker — horizontal chips with mini preview
+class _GamepadSkinTile extends StatelessWidget {
+  final GamepadSkinType selected;
+  final ValueChanged<GamepadSkinType> onChanged;
+
+  const _GamepadSkinTile({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.brush, color: YageColors.accent, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Button Skin',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: YageColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: GamepadSkinType.values.map((skin) {
+              final isSelected = skin == selected;
+              final skinData = GamepadSkinData.resolve(skin);
+              return GestureDetector(
+                onTap: () => onChanged(skin),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? YageColors.primary.withAlpha(40)
+                        : YageColors.surface.withAlpha(120),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? YageColors.primary
+                          : YageColors.surfaceLight,
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Mini preview: two small circles showing button style
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _MiniButtonPreview(
+                            fill: skinData.buttonFill,
+                            border: skinData.buttonBorder,
+                            borderWidth: skinData.buttonBorderWidth,
+                            shadows: skinData.normalShadows,
+                          ),
+                          const SizedBox(width: 4),
+                          _MiniButtonPreview(
+                            fill: skinData.buttonFillPressed,
+                            border: skinData.buttonBorderPressed,
+                            borderWidth: skinData.buttonBorderWidth,
+                            shadows: skinData.pressedShadows,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        skin.label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected
+                              ? YageColors.primary
+                              : YageColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniButtonPreview extends StatelessWidget {
+  final Color fill;
+  final Color border;
+  final double borderWidth;
+  final List<BoxShadow> shadows;
+
+  const _MiniButtonPreview({
+    required this.fill,
+    required this.border,
+    required this.borderWidth,
+    required this.shadows,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: fill,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: border,
+          width: borderWidth.clamp(0.5, 2.0),
+        ),
+        boxShadow: shadows,
+      ),
+    );
+  }
+}
+
+/// Game frame / shell picker — horizontal chips with console color preview
+class _GameFrameTile extends StatelessWidget {
+  final GameFrameType selected;
+  final ValueChanged<GameFrameType> onChanged;
+
+  const _GameFrameTile({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.phone_android, color: YageColors.accent, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Console Frame',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: YageColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Decorative Game Boy shell around the screen',
+            style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: GameFrameType.values.map((frame) {
+              final isSelected = frame == selected;
+              return GestureDetector(
+                onTap: () => onChanged(frame),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? YageColors.primary.withAlpha(40)
+                        : YageColors.surface.withAlpha(120),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? YageColors.primary
+                          : YageColors.surfaceLight,
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Mini console preview
+                      _MiniFramePreview(
+                        frame: frame,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        frame.label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: isSelected
+                              ? YageColors.primary
+                              : YageColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tiny console silhouette for the frame picker chips
+class _MiniFramePreview extends StatelessWidget {
+  final GameFrameType frame;
+
+  const _MiniFramePreview({required this.frame});
+
+  @override
+  Widget build(BuildContext context) {
+    if (frame == GameFrameType.none) {
+      return Container(
+        width: 28,
+        height: 22,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(
+            color: YageColors.textMuted.withAlpha(60),
+            width: 1,
+          ),
+        ),
+        child: Icon(Icons.crop_free,
+            size: 14, color: YageColors.textMuted.withAlpha(80)),
+      );
+    }
+
+    final isLandscape = frame == GameFrameType.advance;
+    final w = isLandscape ? 32.0 : 20.0;
+    final h = isLandscape ? 20.0 : 28.0;
+    final screenW = isLandscape ? 16.0 : 14.0;
+    final screenH = isLandscape ? 10.0 : 10.0;
+
+    return SizedBox(
+      width: w,
+      height: h,
+      child: CustomPaint(
+        painter: _MiniFramePainter(
+          bodyColor: frame.previewColor,
+          screenRect: Rect.fromCenter(
+            center: Offset(w / 2, h * (isLandscape ? 0.45 : 0.35)),
+            width: screenW,
+            height: screenH,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniFramePainter extends CustomPainter {
+  final Color bodyColor;
+  final Rect screenRect;
+
+  _MiniFramePainter({required this.bodyColor, required this.screenRect});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Body
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        const Radius.circular(3),
+      ),
+      Paint()..color = bodyColor,
+    );
+    // Screen cutout (dark)
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(screenRect, const Radius.circular(1.5)),
+      Paint()..color = const Color(0xFF1A1A24),
+    );
+    // Tiny green "screen" glow
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(screenRect.deflate(1), const Radius.circular(1)),
+      Paint()..color = const Color(0xFF4A6A4A).withAlpha(120),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MiniFramePainter old) => old.bodyColor != bodyColor;
+}
+
+// ─────────────────────────────────────────────────────────
+//  Backup / Restore dialogs
+// ─────────────────────────────────────────────────────────
+
+/// Dialog that exports all saves to ZIP and offers Save / Share options.
+class _BackupProgressDialog extends StatefulWidget {
+  final List<GameRom> games;
+  final String? appSaveDir;
+
+  const _BackupProgressDialog({
+    required this.title,
+    required this.games,
+    required this.appSaveDir,
+  });
+
+  final String title;
+
+  @override
+  State<_BackupProgressDialog> createState() => _BackupProgressDialogState();
+}
+
+class _BackupProgressDialogState extends State<_BackupProgressDialog> {
+  String _status = 'Collecting save files…';
+  double _progress = 0;
+  String? _zipPath;
+  bool _done = false;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _export();
+  }
+
+  Future<void> _export() async {
+    try {
+      final zipPath = await SaveBackupService.exportAllSaves(
+        games: widget.games,
+        appSaveDir: widget.appSaveDir,
+        onProgress: (done, total) {
+          if (mounted) {
+            setState(() {
+              _progress = total > 0 ? done / total : 0;
+              _status = 'Scanning game $done of $total…';
+            });
+          }
+        },
+      );
+
+      if (!mounted) return;
+
+      if (zipPath == null) {
+        setState(() {
+          _status = 'No save files found.';
+          _done = true;
+        });
+        return;
+      }
+
+      final fileSize = File(zipPath).lengthSync();
+      final sizeMb = (fileSize / (1024 * 1024)).toStringAsFixed(1);
+
+      setState(() {
+        _zipPath = zipPath;
+        _status = 'Backup ready! ($sizeMb MB)';
+        _done = true;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Export failed: $e';
+          _done = true;
+          _error = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(
+            _error
+                ? Icons.error_outline
+                : (_done ? Icons.check_circle : Icons.archive),
+            color: _error
+                ? YageColors.error
+                : (_done ? YageColors.accent : YageColors.textSecondary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              widget.title,
+              style: TextStyle(
+                color: YageColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!_done) ...[
+            LinearProgressIndicator(
+              value: _progress > 0 ? _progress : null,
+              backgroundColor: YageColors.surfaceLight,
+              valueColor: AlwaysStoppedAnimation(YageColors.accent),
+            ),
+            const SizedBox(height: 12),
+          ],
+          Text(
+            _status,
+            style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+          ),
+        ],
+      ),
+      actions: [
+        if (_done && !_error)
+          TextButton.icon(
+            icon: const Icon(Icons.share, size: 18),
+            label: const Text('Share'),
+            onPressed: _zipPath != null
+                ? () {
+                    SaveBackupService.shareZip(_zipPath!);
+                  }
+                : null,
+          ),
+        if (_done && !_error)
+          TextButton.icon(
+            icon: const Icon(Icons.save_alt, size: 18),
+            label: const Text('Save to…'),
+            onPressed: _zipPath != null
+                ? () async {
+                    final saved =
+                        await SaveBackupService.saveZipToUserLocation(_zipPath!);
+                    if (saved != null && context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Saved to $saved')),
+                      );
+                    }
+                  }
+                : null,
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            _done ? 'Close' : 'Cancel',
+            style: TextStyle(color: YageColors.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog that handles Google Drive backup (sign in → export → upload).
+class _DriveBackupDialog extends StatefulWidget {
+  final List<GameRom> games;
+  final String? appSaveDir;
+
+  const _DriveBackupDialog({
+    required this.games,
+    required this.appSaveDir,
+  });
+
+  @override
+  State<_DriveBackupDialog> createState() => _DriveBackupDialogState();
+}
+
+class _DriveBackupDialogState extends State<_DriveBackupDialog> {
+  String _status = 'Signing in to Google…';
+  bool _done = false;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    try {
+      // Step 1: Sign in
+      final signedIn = await SaveBackupService.googleSignIn();
+      if (!signedIn) {
+        if (mounted) {
+          setState(() {
+            _status = 'Google Sign-In cancelled or failed.\n\n'
+                'Make sure Google Sign-In is configured in your project.';
+            _done = true;
+            _error = true;
+          });
+        }
+        return;
+      }
+
+      // Step 2: Export to ZIP
+      if (mounted) setState(() => _status = 'Creating backup ZIP…');
+      final zipPath = await SaveBackupService.exportAllSaves(
+        games: widget.games,
+        appSaveDir: widget.appSaveDir,
+      );
+
+      if (zipPath == null) {
+        if (mounted) {
+          setState(() {
+            _status = 'No save files found to backup.';
+            _done = true;
+          });
+        }
+        return;
+      }
+
+      // Step 3: Upload to Drive
+      if (mounted) setState(() => _status = 'Uploading to Google Drive…');
+      final fileId = await SaveBackupService.uploadToDrive(zipPath);
+
+      if (mounted) {
+        setState(() {
+          _done = true;
+          if (fileId != null) {
+            _status = 'Backup uploaded to Google Drive!\n'
+                'Saved in the "RetroPal" folder.';
+          } else {
+            _status = 'Upload to Google Drive failed.';
+            _error = true;
+          }
+        });
+      }
+
+      // Clean up temp ZIP
+      try {
+        File(zipPath).deleteSync();
+      } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Error: $e';
+          _done = true;
+          _error = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(
+            _error
+                ? Icons.error_outline
+                : (_done ? Icons.cloud_done : Icons.cloud_upload),
+            color: _error
+                ? YageColors.error
+                : (_done ? YageColors.accent : YageColors.textSecondary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Google Drive Backup',
+              style: TextStyle(
+                color: YageColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!_done) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: 12),
+          ],
+          Text(
+            _status,
+            style: TextStyle(
+              color: _error ? YageColors.error : YageColors.textSecondary,
+              fontSize: 13,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            _done ? 'Close' : 'Cancel',
+            style: TextStyle(color: YageColors.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog that lists Drive backups and lets user pick one to restore.
+class _DriveRestoreDialog extends StatefulWidget {
+  final List<GameRom> games;
+
+  const _DriveRestoreDialog({required this.games});
+
+  @override
+  State<_DriveRestoreDialog> createState() => _DriveRestoreDialogState();
+}
+
+class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
+  String _status = 'Signing in to Google…';
+  List<drive.File>? _backups;
+  bool _loading = true;
+  bool _error = false;
+  bool _restoring = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackups();
+  }
+
+  Future<void> _loadBackups() async {
+    try {
+      final signedIn = await SaveBackupService.googleSignIn();
+      if (!signedIn) {
+        if (mounted) {
+          setState(() {
+            _status = 'Google Sign-In cancelled or failed.';
+            _loading = false;
+            _error = true;
+          });
+        }
+        return;
+      }
+
+      if (mounted) setState(() => _status = 'Loading backups…');
+      final backups = await SaveBackupService.listDriveBackups();
+
+      if (mounted) {
+        setState(() {
+          _backups = backups;
+          _loading = false;
+          _status = backups.isEmpty
+              ? 'No backups found in Google Drive.\n'
+                  'Use "Backup to Google Drive" first.'
+              : 'Select a backup to restore:';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Error: $e';
+          _loading = false;
+          _error = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _restore(drive.File backup) async {
+    if (_restoring) return;
+    setState(() {
+      _restoring = true;
+      _status = 'Downloading ${backup.name}…';
+    });
+
+    try {
+      final zipPath = await SaveBackupService.downloadFromDrive(backup.id!);
+      if (zipPath == null) {
+        if (mounted) {
+          setState(() {
+            _status = 'Download failed.';
+            _restoring = false;
+            _error = true;
+          });
+        }
+        return;
+      }
+
+      if (mounted) setState(() => _status = 'Restoring saves…');
+      final count = await SaveBackupService.importFromZip(
+        zipPath: zipPath,
+        games: widget.games,
+      );
+
+      // Clean up temp file
+      try {
+        File(zipPath).deleteSync();
+      } catch (_) {}
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count > 0
+                  ? 'Restored $count save file${count == 1 ? '' : 's'} from Drive'
+                  : 'No matching save files found in backup',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Restore failed: $e';
+          _restoring = false;
+          _error = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(
+            _error ? Icons.error_outline : Icons.cloud_download,
+            color: _error ? YageColors.error : YageColors.accent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Restore from Drive',
+              style: TextStyle(
+                color: YageColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_loading || _restoring) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 12),
+            ],
+            Text(
+              _status,
+              style: TextStyle(
+                color: _error ? YageColors.error : YageColors.textSecondary,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (_backups != null && _backups!.isNotEmpty && !_restoring) ...[
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 250),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _backups!.length,
+                  itemBuilder: (context, index) {
+                    final backup = _backups![index];
+                    final modified = backup.modifiedTime;
+                    final sizeBytes = int.tryParse(backup.size ?? '') ?? 0;
+                    final sizeMb = (sizeBytes / (1024 * 1024)).toStringAsFixed(1);
+                    final dateStr = modified != null
+                        ? '${modified.year}-${modified.month.toString().padLeft(2, '0')}-${modified.day.toString().padLeft(2, '0')} '
+                          '${modified.hour.toString().padLeft(2, '0')}:${modified.minute.toString().padLeft(2, '0')}'
+                        : 'Unknown date';
+
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.archive, size: 20),
+                      title: Text(
+                        backup.name ?? 'Backup',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: YageColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '$dateStr · $sizeMb MB',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: YageColors.textMuted,
+                        ),
+                      ),
+                      onTap: () => _restore(backup),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _restoring ? null : () => Navigator.pop(context),
+          child: Text(
+            'Close',
+            style: TextStyle(color: YageColors.textSecondary),
+          ),
+        ),
+      ],
     );
   }
 }

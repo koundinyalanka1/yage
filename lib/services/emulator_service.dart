@@ -34,12 +34,20 @@ class EmulatorService extends ChangeNotifier {
   EmulatorSettings _settings = const EmulatorSettings();
   String? _errorMessage;
   String? _saveDir;
+
+  /// Public accessor for the app-internal save directory (for backup service).
+  String? get saveDir => _saveDir;
   
   Timer? _frameTimer;
+  Timer? _autoSaveTimer;
   Stopwatch? _frameStopwatch;
   int _frameCount = 0;
   double _currentFps = 0;
   double _speedMultiplier = 1.0;
+  
+  // Play time tracking — accumulates while the emulator is running
+  final Stopwatch _playTimeStopwatch = Stopwatch();
+  int _flushedPlayTimeSeconds = 0;
   
   // Frame timing (GBA runs at ~59.7275 fps)
   static const Duration _baseFrameTime = Duration(microseconds: 16742);
@@ -59,6 +67,18 @@ class EmulatorService extends ChangeNotifier {
   bool get isRunning => _state == EmulatorState.running;
   bool get isUsingStub => _useStub;
   double get speedMultiplier => _speedMultiplier;
+  
+  /// Total play time in the current session (seconds)
+  int get sessionPlayTimeSeconds => _playTimeStopwatch.elapsed.inSeconds;
+  
+  /// Consume accumulated play time since last flush.
+  /// Returns seconds played since the last call to this method.
+  int flushPlayTime() {
+    final total = _playTimeStopwatch.elapsed.inSeconds;
+    final delta = total - _flushedPlayTimeSeconds;
+    _flushedPlayTimeSeconds = total;
+    return delta;
+  }
   
   /// Set emulation speed (0.5x, 1x, 2x, 4x, etc.)
   void setSpeed(double speed) {
@@ -141,10 +161,26 @@ class EmulatorService extends ChangeNotifier {
     return saveDir.path;
   }
 
-  /// Get the .sav file path for a ROM (battery/SRAM save)
-  Future<String> _getSramPath(GameRom rom) async {
-    final saveDir = await _getSaveDirectory();
-    // Use ROM name without extension + .sav
+  /// Get the directory where save files are stored for a ROM.
+  /// Primary: same directory as the ROM file.
+  /// Fallback: app-internal saves directory (if ROM dir is not writable).
+  String _getRomSaveDir(GameRom rom) {
+    final romDir = p.dirname(rom.path);
+    // Quick writability check: try creating a temp file
+    try {
+      final testFile = File(p.join(romDir, '.retropal_write_test'));
+      testFile.writeAsStringSync('');
+      testFile.deleteSync();
+      return romDir;
+    } catch (_) {
+      // ROM directory not writable — fall back to app-internal
+      return _saveDir ?? romDir;
+    }
+  }
+
+  /// Get the .sav file path for a ROM (battery/SRAM save) — stored next to the ROM
+  String _getSramPath(GameRom rom) {
+    final saveDir = _getRomSaveDir(rom);
     final saveName = p.basenameWithoutExtension(rom.path);
     return p.join(saveDir, '$saveName.sav');
   }
@@ -154,7 +190,7 @@ class EmulatorService extends ChangeNotifier {
     if (_useStub || _core == null) return;
     
     try {
-      final sramPath = await _getSramPath(rom);
+      final sramPath = _getSramPath(rom);
       if (File(sramPath).existsSync()) {
         final success = _core!.loadSram(sramPath);
         debugPrint('Loaded SRAM from $sramPath: $success');
@@ -169,12 +205,65 @@ class EmulatorService extends ChangeNotifier {
     if (_useStub || _core == null || _currentRom == null) return;
     
     try {
-      final sramPath = await _getSramPath(_currentRom!);
+      final sramPath = _getSramPath(_currentRom!);
       final success = _core!.saveSram(sramPath);
       debugPrint('Saved SRAM to $sramPath: $success');
     } catch (e) {
       debugPrint('Error saving SRAM: $e');
     }
+  }
+
+  /// Delete all save data for a game: SRAM (.sav), save states (.ss0-5),
+  /// and save state thumbnails (.ss0.png-5.png).
+  /// Returns the number of files deleted.
+  Future<int> deleteSaveData(GameRom rom) async {
+    int deleted = 0;
+    final saveDir = _getRomSaveDir(rom);
+    final baseName = p.basenameWithoutExtension(rom.path);
+
+    // Also check app-internal save dir in case saves were created there
+    final dirs = <String>{saveDir};
+    if (_saveDir != null && _saveDir != saveDir) {
+      dirs.add(_saveDir!);
+    }
+
+    for (final dir in dirs) {
+      // SRAM (.sav)
+      final sramFile = File(p.join(dir, '$baseName.sav'));
+      if (sramFile.existsSync()) {
+        try { sramFile.deleteSync(); deleted++; } catch (_) {}
+      }
+
+      // Save states and thumbnails (slots 0-5)
+      for (int slot = 0; slot < 6; slot++) {
+        final stateFile = File(p.join(dir, '$baseName.ss$slot'));
+        if (stateFile.existsSync()) {
+          try { stateFile.deleteSync(); deleted++; } catch (_) {}
+        }
+        final ssFile = File(p.join(dir, '$baseName.ss$slot.png'));
+        if (ssFile.existsSync()) {
+          try { ssFile.deleteSync(); deleted++; } catch (_) {}
+        }
+      }
+
+      // Screenshots (timestamped PNGs matching <baseName>_*.png)
+      try {
+        final directory = Directory(dir);
+        if (directory.existsSync()) {
+          for (final entity in directory.listSync()) {
+            if (entity is File) {
+              final name = p.basename(entity.path);
+              if (name.startsWith('${baseName}_') && name.endsWith('.png')) {
+                try { entity.deleteSync(); deleted++; } catch (_) {}
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    debugPrint('Deleted $deleted save file(s) for ${rom.name}');
+    return deleted;
   }
 
   /// Load a ROM file
@@ -197,6 +286,10 @@ class EmulatorService extends ChangeNotifier {
       if (biosPath != null && File(biosPath).existsSync()) {
         _core!.loadBIOS(biosPath);
       }
+
+      // Point the native core's save directory at the ROM's folder
+      final romSaveDir = _getRomSaveDir(rom);
+      _core!.setSaveDir(romSaveDir);
 
       if (!_core!.loadROM(rom.path)) {
         _errorMessage = 'Failed to load ROM: ${rom.name}';
@@ -242,7 +335,9 @@ class EmulatorService extends ChangeNotifier {
     _state = EmulatorState.running;
     _frameStopwatch = Stopwatch()..start();
     _frameCount = 0;
+    _playTimeStopwatch.start();
     _startFrameLoop();
+    _startAutoSaveTimer();
     notifyListeners();
   }
 
@@ -253,6 +348,8 @@ class EmulatorService extends ChangeNotifier {
     _state = EmulatorState.paused;
     _frameTimer?.cancel();
     _frameTimer = null;
+    _playTimeStopwatch.stop();
+    _stopAutoSaveTimer();
     
     // Auto-save SRAM when pausing
     await saveSram();
@@ -429,18 +526,20 @@ class EmulatorService extends ChangeNotifier {
     return _core?.getVideoBuffer();
   }
 
-  /// Get the save state file path for a slot
+  /// Get the save state file path for a slot — stored next to the ROM
   String? getStatePath(int slot) {
-    if (_saveDir == null || _currentRom == null) return null;
-    final romName = p.basename(_currentRom!.path);
-    return p.join(_saveDir!, '$romName.ss$slot');
+    if (_currentRom == null) return null;
+    final saveDir = _getRomSaveDir(_currentRom!);
+    final romName = p.basenameWithoutExtension(_currentRom!.path);
+    return p.join(saveDir, '$romName.ss$slot');
   }
 
-  /// Get the screenshot file path for a save state slot
+  /// Get the screenshot file path for a save state slot — stored next to the ROM
   String? getStateScreenshotPath(int slot) {
-    if (_saveDir == null || _currentRom == null) return null;
-    final romName = p.basename(_currentRom!.path);
-    return p.join(_saveDir!, '$romName.ss$slot.png');
+    if (_currentRom == null) return null;
+    final saveDir = _getRomSaveDir(_currentRom!);
+    final romName = p.basenameWithoutExtension(_currentRom!.path);
+    return p.join(saveDir, '$romName.ss$slot.png');
   }
 
   /// Save state to slot (also captures a screenshot thumbnail)
@@ -508,6 +607,50 @@ class EmulatorService extends ChangeNotifier {
     }
   }
 
+  /// Capture the current frame as a PNG and save it next to the ROM.
+  /// Returns the saved file path on success, null on failure.
+  Future<String?> captureScreenshot() async {
+    if (_currentRom == null) return null;
+
+    final pixels = getVideoBufferRaw();
+    if (pixels == null) return null;
+
+    final w = screenWidth;
+    final h = screenHeight;
+
+    try {
+      final pixelsCopy = Uint8List.fromList(pixels);
+
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        pixelsCopy, w, h, ui.PixelFormat.rgba8888,
+        (image) => completer.complete(image),
+      );
+      final image = await completer.future;
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+
+      if (byteData == null) return null;
+
+      final saveDir = _getRomSaveDir(_currentRom!);
+      final romName = p.basenameWithoutExtension(_currentRom!.path);
+      final ts = DateTime.now();
+      final stamp = '${ts.year}${ts.month.toString().padLeft(2, '0')}'
+          '${ts.day.toString().padLeft(2, '0')}_'
+          '${ts.hour.toString().padLeft(2, '0')}'
+          '${ts.minute.toString().padLeft(2, '0')}'
+          '${ts.second.toString().padLeft(2, '0')}';
+      final filePath = p.join(saveDir, '${romName}_$stamp.png');
+
+      await File(filePath).writeAsBytes(byteData.buffer.asUint8List());
+      debugPrint('Screenshot saved to $filePath');
+      return filePath;
+    } catch (e) {
+      debugPrint('Error capturing screenshot: $e');
+      return null;
+    }
+  }
+
   /// Update settings — applies audio/palette changes to the native core immediately.
   /// Only notifies listeners if settings actually changed.
   void updateSettings(EmulatorSettings newSettings) {
@@ -537,6 +680,12 @@ class EmulatorService extends ChangeNotifier {
     if (oldSettings.enableTurbo && !newSettings.enableTurbo && _speedMultiplier > 1.0) {
       _speedMultiplier = 1.0;
       notifyListeners();
+    }
+
+    // Restart auto-save timer if interval changed while running
+    if (oldSettings.autoSaveInterval != newSettings.autoSaveInterval &&
+        _state == EmulatorState.running) {
+      _startAutoSaveTimer();
     }
   }
 
@@ -569,10 +718,35 @@ class EmulatorService extends ChangeNotifier {
     setColorPalette(paletteIndex, colors);
   }
 
+  /// Start the periodic auto-save timer based on settings.
+  /// Does nothing if autoSaveInterval is 0 (disabled).
+  void _startAutoSaveTimer() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+
+    final interval = _settings.autoSaveInterval;
+    if (interval <= 0) return;
+
+    _autoSaveTimer = Timer.periodic(Duration(seconds: interval), (_) {
+      if (_state == EmulatorState.running) {
+        saveSram();
+        debugPrint('Auto-save SRAM (every ${interval}s)');
+      }
+    });
+  }
+
+  /// Stop the auto-save timer.
+  void _stopAutoSaveTimer() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+  }
+
   /// Stop and unload current ROM
   Future<void> stop() async {
     _frameTimer?.cancel();
     _frameTimer = null;
+    _playTimeStopwatch.stop();
+    _stopAutoSaveTimer();
     
     // Save SRAM before stopping
     await saveSram();
@@ -584,6 +758,9 @@ class EmulatorService extends ChangeNotifier {
       _core?.dispose();
       _core = null;
     }
+    // Reset play time tracking for next session
+    _playTimeStopwatch.reset();
+    _flushedPlayTimeSeconds = 0;
     _currentRom = null;
     _state = EmulatorState.uninitialized;
     _frameCount = 0;
@@ -594,6 +771,7 @@ class EmulatorService extends ChangeNotifier {
   @override
   void dispose() {
     _frameTimer?.cancel();
+    _autoSaveTimer?.cancel();
     _stub?.dispose();
     _core?.dispose();
     super.dispose();
