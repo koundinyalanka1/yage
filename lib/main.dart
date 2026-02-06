@@ -6,9 +6,13 @@ import 'providers/app_providers.dart';
 import 'screens/home_screen.dart';
 import 'services/settings_service.dart';
 import 'utils/theme.dart';
+import 'utils/tv_detector.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Detect Android TV before building the UI
+  await TvDetector.initialize();
   
   // Allow all orientations
   SystemChrome.setPreferredOrientations([

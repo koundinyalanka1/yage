@@ -8,8 +8,10 @@ import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
 import '../services/artwork_service.dart';
 import '../services/save_backup_service.dart';
+import '../utils/tv_detector.dart';
 import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
+import '../widgets/tv_focusable.dart';
 import '../utils/theme.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
@@ -661,21 +663,38 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildGameList(List<GameRom> games) {
     if (_isGridView) {
-      return GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.75,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: games.length,
-        itemBuilder: (context, index) {
-          final game = games[index];
-          return GameCard(
-            game: game,
-            onTap: () => _launchGame(game),
-            onLongPress: () => _showGameOptions(game),
+      // Adaptive column count: more columns on TV / large screens
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          int crossAxisCount = 2;
+          if (TvDetector.isTV || constraints.maxWidth > 900) {
+            crossAxisCount = 5;
+          } else if (constraints.maxWidth > 600) {
+            crossAxisCount = 3;
+          }
+
+          return GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: 0.75,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: games.length,
+            itemBuilder: (context, index) {
+              final game = games[index];
+              return TvFocusable(
+                autofocus: TvDetector.isTV && index == 0,
+                onTap: () => _launchGame(game),
+                onLongPress: () => _showGameOptions(game),
+                child: GameCard(
+                  game: game,
+                  onTap: () => _launchGame(game),
+                  onLongPress: () => _showGameOptions(game),
+                ),
+              );
+            },
           );
         },
       );
@@ -687,10 +706,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       separatorBuilder: (context, index) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
         final game = games[index];
-        return GameListTile(
-          game: game,
+        return TvFocusable(
+          autofocus: TvDetector.isTV && index == 0,
+          borderRadius: BorderRadius.circular(12),
           onTap: () => _launchGame(game),
           onLongPress: () => _showGameOptions(game),
+          child: GameListTile(
+            game: game,
+            onTap: () => _launchGame(game),
+            onLongPress: () => _showGameOptions(game),
+          ),
         );
       },
     );

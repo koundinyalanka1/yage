@@ -12,8 +12,10 @@ import '../services/emulator_service.dart';
 import '../services/game_library_service.dart';
 import '../services/settings_service.dart';
 import '../services/gamepad_input.dart';
+import '../utils/tv_detector.dart';
 import '../widgets/game_display.dart';
 import '../widgets/game_frame_overlay.dart';
+import '../widgets/tv_focusable.dart';
 import '../widgets/virtual_gamepad.dart';
 import '../utils/theme.dart';
 
@@ -47,6 +49,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // On Android TV, hide virtual controls by default
+    if (TvDetector.isTV) {
+      _showControls = false;
+    }
     
     // Keep screen awake while playing
     WakelockPlus.enable();
@@ -54,13 +61,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Hide system UI for immersive gaming
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     
-    // Allow all orientations for mobile gaming
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // On TV, lock to landscape; on mobile allow all orientations
+    if (TvDetector.isTV) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
     
     // Start emulation
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -136,9 +150,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   /// Handle physical key events from Focus widget
+  /// Keys that toggle the pause menu from the gamepad
+  static final _menuToggleKeys = {
+    LogicalKeyboardKey.gameButtonMode,
+    LogicalKeyboardKey.gameButtonThumbLeft,
+    LogicalKeyboardKey.f1,
+  };
+
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     final settings = context.read<SettingsService>().settings;
     if (!settings.enableExternalGamepad) return KeyEventResult.ignored;
+
+    // ── Menu toggle: Mode / L3 / F1 toggle the pause menu ──
+    if (event is KeyDownEvent && _menuToggleKeys.contains(event.logicalKey)) {
+      _toggleMenu();
+      return KeyEventResult.handled;
+    }
+
+    // ── While the pause menu is shown, let it handle its own focus/D-pad ──
     if (_showMenu || _editingLayout) return KeyEventResult.ignored;
 
     final wasDetected = _gamepadMapper.controllerDetected;
@@ -957,7 +986,9 @@ class _InGameMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return FocusTraversalGroup(
+      policy: OrderedTraversalPolicy(),
+      child: GestureDetector(
       onTap: onResume,
       child: Container(
         color: Colors.black.withAlpha(138),
@@ -1015,6 +1046,7 @@ class _InGameMenu extends StatelessWidget {
                       label: 'Resume',
                       onTap: onResume,
                       isPrimary: true,
+                      autofocus: true,
                     ),
                     const SizedBox(height: 10),
                     
@@ -1097,6 +1129,7 @@ class _InGameMenu extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -1350,6 +1383,7 @@ class _MenuActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isPrimary;
   final bool isDestructive;
+  final bool autofocus;
 
   const _MenuActionButton({
     required this.icon,
@@ -1357,6 +1391,7 @@ class _MenuActionButton extends StatelessWidget {
     required this.onTap,
     this.isPrimary = false,
     this.isDestructive = false,
+    this.autofocus = false,
   });
 
   @override
@@ -1373,35 +1408,33 @@ class _MenuActionButton extends StatelessWidget {
             ? YageColors.error 
             : YageColors.textSecondary;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(12),
-            border: isPrimary 
-                ? null 
-                : Border.all(color: YageColors.surfaceLight, width: 1),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: fgColor, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: fgColor,
-                ),
+    return TvFocusable(
+      onTap: onTap,
+      autofocus: autofocus,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: isPrimary 
+              ? null 
+              : Border.all(color: YageColors.surfaceLight, width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: fgColor, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: fgColor,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

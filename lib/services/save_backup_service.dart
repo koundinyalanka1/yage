@@ -68,12 +68,10 @@ class SaveBackupService {
   /// Share the ZIP via the system share sheet (Google Drive, email, etc.).
   static Future<void> shareZip(String zipPath) async {
     try {
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(zipPath)],
-          subject: 'RetroPal Save Backup',
-          text: 'RetroPal save data backup',
-        ),
+      await Share.shareXFiles(
+        [XFile(zipPath)],
+        subject: 'RetroPal Save Backup',
+        text: 'RetroPal save data backup',
       );
     } catch (e) {
       debugPrint('Error sharing ZIP: $e');
