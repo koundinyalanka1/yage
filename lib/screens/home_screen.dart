@@ -919,97 +919,106 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
                 const SizedBox(height: 16),
                 
-                ListTile(
-                  leading: const Icon(Icons.play_arrow),
-                  title: const Text('Play'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _launchGame(game);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(
-                    game.isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: game.isFavorite ? YageColors.accentAlt : null,
-                  ),
-                  title: Text(
-                    game.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
-                  ),
-                  onTap: () {
-                    library.toggleFavorite(game);
-                    Navigator.pop(context);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.download),
-                  title: const Text('Download Cover Art'),
-                  subtitle: const Text('Auto-fetch from database'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _downloadCoverArt(game);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.image),
-                  title: const Text('Set Cover Art'),
-                  subtitle: const Text('Choose from gallery'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _selectCoverArt(game);
-                  },
-                ),
-                if (game.coverPath != null)
-                  ListTile(
-                    leading: const Icon(Icons.hide_image_outlined),
-                    title: const Text('Remove Cover Art'),
-                    onTap: () {
-                      library.removeCoverArt(game);
-                      Navigator.pop(context);
-                    },
-                  ),
-                ListTile(
-                  leading: const Icon(Icons.archive_outlined),
-                  title: const Text('Export Save Data'),
-                  subtitle: Text(
-                    'Backup .sav & save states to ZIP',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: YageColors.textMuted,
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.play_arrow),
+                          title: const Text('Play'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _launchGame(game);
+                          },
+                        ),
+                        ListTile(
+                          leading: Icon(
+                            game.isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: game.isFavorite ? YageColors.accentAlt : null,
+                          ),
+                          title: Text(
+                            game.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+                          ),
+                          onTap: () {
+                            library.toggleFavorite(game);
+                            Navigator.pop(context);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.download),
+                          title: const Text('Download Cover Art'),
+                          subtitle: const Text('Auto-fetch from database'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _downloadCoverArt(game);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.image),
+                          title: const Text('Set Cover Art'),
+                          subtitle: const Text('Choose from gallery'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectCoverArt(game);
+                          },
+                        ),
+                        if (game.coverPath != null)
+                          ListTile(
+                            leading: const Icon(Icons.hide_image_outlined),
+                            title: const Text('Remove Cover Art'),
+                            onTap: () {
+                              library.removeCoverArt(game);
+                              Navigator.pop(context);
+                            },
+                          ),
+                        ListTile(
+                          leading: const Icon(Icons.archive_outlined),
+                          title: const Text('Export Save Data'),
+                          subtitle: Text(
+                            'Backup .sav & save states to ZIP',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: YageColors.textMuted,
+                            ),
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _exportGameSaves(game);
+                          },
+                        ),
+                        ListTile(
+                          leading: Icon(Icons.delete_sweep, color: YageColors.warning),
+                          title: Text(
+                            'Delete Save Data',
+                            style: TextStyle(color: YageColors.warning),
+                          ),
+                          subtitle: Text(
+                            'Remove .sav, save states & screenshots',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: YageColors.textMuted,
+                            ),
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _confirmDeleteSaveData(game);
+                          },
+                        ),
+                        ListTile(
+                          leading: Icon(Icons.delete_outline, color: YageColors.error),
+                          title: Text(
+                            'Remove from Library',
+                            style: TextStyle(color: YageColors.error),
+                          ),
+                          onTap: () {
+                            library.removeRom(game);
+                            Navigator.pop(context);
+                          },
+                        ),
+                      ],
                     ),
                   ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _exportGameSaves(game);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(Icons.delete_sweep, color: YageColors.warning),
-                  title: Text(
-                    'Delete Save Data',
-                    style: TextStyle(color: YageColors.warning),
-                  ),
-                  subtitle: Text(
-                    'Remove .sav, save states & screenshots',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: YageColors.textMuted,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _confirmDeleteSaveData(game);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(Icons.delete_outline, color: YageColors.error),
-                  title: Text(
-                    'Remove from Library',
-                    style: TextStyle(color: YageColors.error),
-                  ),
-                  onTap: () {
-                    library.removeRom(game);
-                    Navigator.pop(context);
-                  },
                 ),
               ],
             ),
