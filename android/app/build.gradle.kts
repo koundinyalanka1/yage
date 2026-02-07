@@ -26,8 +26,24 @@ android {
         versionName = flutter.versionName
         
         ndk {
-            // arm64-v8a covers all modern Android devices (2016+)
-            abiFilters += listOf("arm64-v8a")
+            // Support phones (arm64), older phones (armv7), and TV boxes (x86_64)
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+        }
+
+        // Build libyage_core.so from source for all ABIs automatically
+        externalNativeBuild {
+            cmake {
+                cppFlags("")
+                arguments("-DANDROID_STL=none")
+            }
+        }
+    }
+
+    // Point to the native CMakeLists.txt
+    externalNativeBuild {
+        cmake {
+            path = file("../../native/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
