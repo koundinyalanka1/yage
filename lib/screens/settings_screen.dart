@@ -37,85 +37,15 @@ class SettingsScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _SectionHeader(title: 'Theme'),
-              _ThemePicker(
-                selectedThemeId: settings.selectedTheme,
-                onChanged: settingsService.setAppTheme,
-              ),
-
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'Audio'),
+              // ── Quick Settings (always visible, most-used controls) ──
+              _SectionHeader(title: 'Quick Settings'),
               _SettingsCard(
                 children: [
-                  _SwitchTile(
-                    icon: Icons.volume_up,
-                    title: 'Enable Sound',
-                    subtitle: 'Play game audio',
-                    value: settings.enableSound,
-                    onChanged: (_) => settingsService.toggleSound(),
-                  ),
-                  if (settings.enableSound) ...[
-                    const Divider(height: 1),
-                    _SliderTile(
-                      icon: Icons.volume_down,
-                      title: 'Volume',
-                      value: settings.volume,
-                      onChanged: settingsService.setVolume,
-                    ),
-                  ],
-                ],
-              ),
-              
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'Display'),
-              _SettingsCard(
-                children: [
-                  _SwitchTile(
-                    icon: Icons.speed,
-                    title: 'Show FPS',
-                    subtitle: 'Display frame rate counter',
-                    value: settings.showFps,
-                    onChanged: (_) => settingsService.toggleShowFps(),
-                  ),
-                  const Divider(height: 1),
-                  _SwitchTile(
-                    icon: Icons.aspect_ratio,
-                    title: 'Maintain Aspect Ratio',
-                    subtitle: 'Keep original game proportions',
-                    value: settings.maintainAspectRatio,
-                    onChanged: (_) => settingsService.toggleAspectRatio(),
-                  ),
-                  const Divider(height: 1),
-                  _SwitchTile(
-                    icon: Icons.blur_on,
-                    title: 'Bilinear Filtering',
-                    subtitle: 'Smooth pixel scaling',
-                    value: settings.enableFiltering,
-                    onChanged: (_) => settingsService.toggleFiltering(),
-                  ),
-                  const Divider(height: 1),
-                  _PaletteTile(
-                    selectedIndex: settings.selectedColorPalette,
-                    onChanged: settingsService.setColorPalette,
-                  ),
-                  const Divider(height: 1),
-                  _GameFrameTile(
-                    selected: settings.gameFrame,
-                    onChanged: settingsService.setGameFrame,
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'Controls'),
-              _SettingsCard(
-                children: [
-                  _SwitchTile(
-                    icon: Icons.vibration,
-                    title: 'Haptic Feedback',
-                    subtitle: 'Vibrate on button press',
-                    value: settings.enableVibration,
-                    onChanged: (_) => settingsService.toggleVibration(),
+                  _SliderTile(
+                    icon: Icons.volume_down,
+                    title: 'Volume',
+                    value: settings.volume,
+                    onChanged: settingsService.setVolume,
                   ),
                   const Divider(height: 1),
                   _SliderTile(
@@ -126,150 +56,287 @@ class SettingsScreen extends StatelessWidget {
                     max: 1.0,
                     onChanged: settingsService.setGamepadOpacity,
                   ),
-                  const Divider(height: 1),
-                  _SliderTile(
-                    icon: Icons.zoom_in,
-                    title: 'Gamepad Scale',
-                    value: settings.gamepadScale,
-                    min: 0.5,
-                    max: 2.0,
-                    onChanged: settingsService.setGamepadScale,
-                  ),
-                  const Divider(height: 1),
-                  _SwitchTile(
-                    icon: Icons.sports_esports,
-                    title: 'External Controller',
-                    subtitle: 'Bluetooth / USB gamepad & keyboard',
-                    value: settings.enableExternalGamepad,
-                    onChanged: (_) => settingsService.toggleExternalGamepad(),
-                  ),
-                  const Divider(height: 1),
-                  _GamepadSkinTile(
-                    selected: settings.gamepadSkin,
-                    onChanged: settingsService.setGamepadSkin,
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'Emulation'),
-              _SettingsCard(
-                children: [
-                  _SwitchTile(
-                    icon: Icons.fast_forward,
-                    title: 'Turbo Mode',
-                    subtitle: 'Fast forward emulation',
-                    value: settings.enableTurbo,
-                    onChanged: (_) => settingsService.toggleTurbo(),
-                  ),
-                  if (settings.enableTurbo) ...[
-                    const Divider(height: 1),
-                    _SliderTile(
-                      icon: Icons.speed,
-                      title: 'Turbo Speed',
-                      value: settings.turboSpeed,
-                      min: 1.5,
-                      max: 8.0,
-                      divisions: 13,
-                      labelSuffix: 'x',
-                      onChanged: settingsService.setTurboSpeed,
-                    ),
-                  ],
-                  const Divider(height: 1),
-                  _SwitchTile(
-                    icon: Icons.fast_rewind,
-                    title: 'Rewind',
-                    subtitle: 'Hold button to step backward in time',
-                    value: settings.enableRewind,
-                    onChanged: (_) => settingsService.toggleRewind(),
-                  ),
-                  if (settings.enableRewind) ...[
-                    const Divider(height: 1),
-                    _SliderTile(
-                      icon: Icons.timelapse,
-                      title: 'Rewind Buffer',
-                      value: settings.rewindBufferSeconds.toDouble(),
-                      min: 1.0,
-                      max: 10.0,
-                      divisions: 9,
-                      labelSuffix: 's',
-                      onChanged: (v) =>
-                          settingsService.setRewindBufferSeconds(v.round()),
-                    ),
-                  ],
-                ],
-              ),
-              
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'Library'),
-              _SettingsCard(
-                children: [
-                  _ActionTile(
-                    icon: Icons.folder,
-                    title: 'Manage ROM Folders',
-                    onTap: () => _showRomFolders(context),
-                  ),
-                  const Divider(height: 1),
-                  _ActionTile(
-                    icon: Icons.refresh,
-                    title: 'Refresh Library',
-                    onTap: () {
-                      context.read<GameLibraryService>().refresh();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Refreshing library...')),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'Backup & Restore'),
-              _SettingsCard(
-                children: [
-                  _ActionTile(
-                    icon: Icons.upload_file,
-                    title: 'Export All Saves to ZIP',
-                    onTap: () => _exportAllSaves(context),
-                  ),
-                  const Divider(height: 1),
-                  _ActionTile(
-                    icon: Icons.download,
-                    title: 'Import Saves from ZIP',
-                    onTap: () => _importSaves(context),
-                  ),
-                  const Divider(height: 1),
-                  _ActionTile(
-                    icon: Icons.cloud_upload,
-                    title: 'Backup to Google Drive',
-                    onTap: () => _backupToDrive(context),
-                  ),
-                  const Divider(height: 1),
-                  _ActionTile(
-                    icon: Icons.cloud_download,
-                    title: 'Restore from Google Drive',
-                    onTap: () => _restoreFromDrive(context),
-                  ),
                 ],
               ),
 
-              const SizedBox(height: 24),
-              _SectionHeader(title: 'About'),
-              _SettingsCard(
-                children: [
-                  _InfoTile(
-                    icon: Icons.info_outline,
-                    title: 'RetroPal',
-                    subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
-                  ),
-                  const Divider(height: 1),
-                  _ActionTile(
-                    icon: Icons.restore,
-                    title: 'Reset to Defaults',
-                    onTap: () => _confirmReset(context),
-                    isDestructive: true,
-                  ),
-                ],
+              const SizedBox(height: 12),
+
+              // ── Theme (collapsible) ──
+              _CollapsibleSection(
+                title: 'Theme',
+                icon: Icons.color_lens,
+                initiallyExpanded: false,
+                child: _ThemePicker(
+                  selectedThemeId: settings.selectedTheme,
+                  onChanged: settingsService.setAppTheme,
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Audio (collapsible) ──
+              _CollapsibleSection(
+                title: 'Audio',
+                icon: Icons.volume_up,
+                child: _SettingsCard(
+                  children: [
+                    _SwitchTile(
+                      icon: Icons.volume_up,
+                      title: 'Enable Sound',
+                      subtitle: 'Play game audio',
+                      value: settings.enableSound,
+                      onChanged: (_) => settingsService.toggleSound(),
+                    ),
+                    if (settings.enableSound) ...[
+                      const Divider(height: 1),
+                      _SliderTile(
+                        icon: Icons.volume_down,
+                        title: 'Volume',
+                        value: settings.volume,
+                        onChanged: settingsService.setVolume,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Display (collapsible) ──
+              _CollapsibleSection(
+                title: 'Display',
+                icon: Icons.display_settings,
+                child: _SettingsCard(
+                  children: [
+                    _SwitchTile(
+                      icon: Icons.speed,
+                      title: 'Show FPS',
+                      subtitle: 'Display frame rate counter',
+                      value: settings.showFps,
+                      onChanged: (_) => settingsService.toggleShowFps(),
+                    ),
+                    const Divider(height: 1),
+                    _SwitchTile(
+                      icon: Icons.aspect_ratio,
+                      title: 'Maintain Aspect Ratio',
+                      subtitle: 'Keep original game proportions',
+                      value: settings.maintainAspectRatio,
+                      onChanged: (_) => settingsService.toggleAspectRatio(),
+                    ),
+                    const Divider(height: 1),
+                    _SwitchTile(
+                      icon: Icons.blur_on,
+                      title: 'Smooth Scaling',
+                      subtitle: 'ON = smooth, modern look · OFF = crisp, pixelated retro look',
+                      value: settings.enableFiltering,
+                      onChanged: (_) => settingsService.toggleFiltering(),
+                    ),
+                    const Divider(height: 1),
+                    _PaletteTile(
+                      selectedIndex: settings.selectedColorPalette,
+                      onChanged: settingsService.setColorPalette,
+                    ),
+                    const Divider(height: 1),
+                    _GameFrameTile(
+                      selected: settings.gameFrame,
+                      onChanged: settingsService.setGameFrame,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Controls (collapsible) ──
+              _CollapsibleSection(
+                title: 'Controls',
+                icon: Icons.sports_esports,
+                child: _SettingsCard(
+                  children: [
+                    _SwitchTile(
+                      icon: Icons.vibration,
+                      title: 'Haptic Feedback',
+                      subtitle: 'Vibrate on button press',
+                      value: settings.enableVibration,
+                      onChanged: (_) => settingsService.toggleVibration(),
+                    ),
+                    const Divider(height: 1),
+                    _SliderTile(
+                      icon: Icons.opacity,
+                      title: 'Gamepad Opacity',
+                      value: settings.gamepadOpacity,
+                      min: 0.1,
+                      max: 1.0,
+                      onChanged: settingsService.setGamepadOpacity,
+                    ),
+                    const Divider(height: 1),
+                    _SliderTile(
+                      icon: Icons.zoom_in,
+                      title: 'Gamepad Scale',
+                      value: settings.gamepadScale,
+                      min: 0.5,
+                      max: 2.0,
+                      onChanged: settingsService.setGamepadScale,
+                    ),
+                    const Divider(height: 1),
+                    _SwitchTile(
+                      icon: Icons.sports_esports,
+                      title: 'External Controller',
+                      subtitle: 'Bluetooth / USB gamepad & keyboard',
+                      value: settings.enableExternalGamepad,
+                      onChanged: (_) => settingsService.toggleExternalGamepad(),
+                    ),
+                    const Divider(height: 1),
+                    _GamepadSkinTile(
+                      selected: settings.gamepadSkin,
+                      onChanged: settingsService.setGamepadSkin,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Emulation (collapsible) ──
+              _CollapsibleSection(
+                title: 'Emulation',
+                icon: Icons.memory,
+                child: _SettingsCard(
+                  children: [
+                    _SwitchTile(
+                      icon: Icons.fast_forward,
+                      title: 'Turbo Mode',
+                      subtitle: 'Fast forward emulation',
+                      value: settings.enableTurbo,
+                      onChanged: (_) => settingsService.toggleTurbo(),
+                    ),
+                    if (settings.enableTurbo) ...[
+                      const Divider(height: 1),
+                      _SliderTile(
+                        icon: Icons.speed,
+                        title: 'Turbo Speed',
+                        value: settings.turboSpeed,
+                        min: 1.5,
+                        max: 8.0,
+                        divisions: 13,
+                        labelSuffix: 'x',
+                        onChanged: settingsService.setTurboSpeed,
+                      ),
+                    ],
+                    const Divider(height: 1),
+                    _SwitchTile(
+                      icon: Icons.fast_rewind,
+                      title: 'Rewind',
+                      subtitle: 'Hold button to step backward in time',
+                      value: settings.enableRewind,
+                      onChanged: (_) => settingsService.toggleRewind(),
+                    ),
+                    if (settings.enableRewind) ...[
+                      const Divider(height: 1),
+                      _SliderTile(
+                        icon: Icons.timelapse,
+                        title: 'Rewind Buffer',
+                        value: settings.rewindBufferSeconds.toDouble(),
+                        min: 1.0,
+                        max: 10.0,
+                        divisions: 9,
+                        labelSuffix: 's',
+                        onChanged: (v) =>
+                            settingsService.setRewindBufferSeconds(v.round()),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Library (collapsible) ──
+              _CollapsibleSection(
+                title: 'Library',
+                icon: Icons.library_books,
+                initiallyExpanded: false,
+                child: _SettingsCard(
+                  children: [
+                    _ActionTile(
+                      icon: Icons.folder,
+                      title: 'Manage ROM Folders',
+                      onTap: () => _showRomFolders(context),
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.refresh,
+                      title: 'Refresh Library',
+                      onTap: () {
+                        context.read<GameLibraryService>().refresh();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Refreshing library...')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── Backup & Restore (collapsible) ──
+              _CollapsibleSection(
+                title: 'Backup & Restore',
+                icon: Icons.backup,
+                initiallyExpanded: false,
+                child: _SettingsCard(
+                  children: [
+                    _ActionTile(
+                      icon: Icons.upload_file,
+                      title: 'Export All Saves to ZIP',
+                      onTap: () => _exportAllSaves(context),
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.download,
+                      title: 'Import Saves from ZIP',
+                      onTap: () => _importSaves(context),
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.cloud_upload,
+                      title: 'Backup to Google Drive',
+                      onTap: () => _backupToDrive(context),
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.cloud_download,
+                      title: 'Restore from Google Drive',
+                      onTap: () => _restoreFromDrive(context),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── About (collapsible) ──
+              _CollapsibleSection(
+                title: 'About',
+                icon: Icons.info_outline,
+                initiallyExpanded: false,
+                child: _SettingsCard(
+                  children: [
+                    _InfoTile(
+                      icon: Icons.info_outline,
+                      title: 'RetroPal',
+                      subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.restore,
+                      title: 'Reset to Defaults',
+                      onTap: () => _confirmReset(context),
+                      isDestructive: true,
+                    ),
+                  ],
+                ),
               ),
               
               const SizedBox(height: 32),
@@ -505,6 +572,61 @@ class SettingsScreen extends StatelessWidget {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _DriveRestoreDialog(games: library.games),
+    );
+  }
+}
+
+/// Collapsible accordion section for grouping related settings.
+class _CollapsibleSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final bool initiallyExpanded;
+  final Widget child;
+
+  const _CollapsibleSection({
+    required this.title,
+    required this.icon,
+    this.initiallyExpanded = false,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: YageColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: YageColors.surfaceLight,
+          width: 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Remove the default divider line that ExpansionTile adds
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          childrenPadding: EdgeInsets.zero,
+          leading: Icon(icon, color: YageColors.accent, size: 22),
+          title: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: YageColors.primary,
+              letterSpacing: 1.5,
+            ),
+          ),
+          iconColor: YageColors.textMuted,
+          collapsedIconColor: YageColors.textMuted,
+          children: [
+            Divider(height: 1, color: YageColors.surfaceLight),
+            child,
+          ],
+        ),
+      ),
     );
   }
 }

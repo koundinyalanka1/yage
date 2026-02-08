@@ -341,11 +341,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Show the shortcuts help dialog if the user hasn't seen it before.
+  /// Show the shortcuts help dialog once on the second game launch.
+  /// On the first launch the user should just enjoy the game; the dialog
+  /// is always available from the in-game menu anyway.
   Future<void> _maybeShowShortcutsHelp() async {
     final settingsService = context.read<SettingsService>();
+    await settingsService.incrementGameLaunchCount();
     final alreadyShown = await settingsService.isShortcutsHelpShown();
-    if (!alreadyShown && mounted) {
+    if (alreadyShown) return;
+
+    final launchCount = await settingsService.getGameLaunchCount();
+    if (launchCount >= 2 && mounted) {
       // Pause briefly so the game loads visually before the overlay appears
       await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
@@ -372,11 +378,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Dedicated save-state slot for auto-save on exit (outside user slots 0-5).
+  static const int _autoExitSlot = 9;
+
   void _exitGame() {
     final emulator = context.read<EmulatorService>();
     _flushPlayTime();
     emulator.stop();
     Navigator.of(context).pop();
+  }
+
+  /// Save state to the dedicated auto slot, then exit.
+  Future<void> _saveAndExit() async {
+    final emulator = context.read<EmulatorService>();
+    await emulator.saveState(_autoExitSlot);
+    _exitGame();
   }
 
   Future<bool> _showExitDialog() async {
@@ -388,7 +404,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       emulator.pause();
     }
     
-    final shouldExit = await showDialog<bool>(
+    // 'save' = save & exit, true = exit without save state, false = cancel
+    final result = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
@@ -408,21 +425,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
         ),
         content: Text(
-          'Your progress will be saved automatically.',
+          'Your battery save data will be preserved.\nCreate a save state for exact progress.',
           style: TextStyle(
             color: YageColors.textSecondary,
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(context).pop('cancel'),
             child: Text(
               'Cancel',
               style: TextStyle(color: YageColors.textMuted),
             ),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(context).pop('exit'),
             style: TextButton.styleFrom(
               backgroundColor: YageColors.error.withAlpha(51),
             ),
@@ -434,11 +451,27 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('save'),
+            style: TextButton.styleFrom(
+              backgroundColor: YageColors.primary.withAlpha(51),
+            ),
+            child: Text(
+              'Save & Exit',
+              style: TextStyle(
+                color: YageColors.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );
     
-    if (shouldExit == true) {
+    if (result == 'save') {
+      await _saveAndExit();
+      return true;
+    } else if (result == 'exit') {
       _exitGame();
       return true;
     } else {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/theme.dart';
 import 'tv_focusable.dart';
@@ -80,6 +81,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   /// Roots we cannot go above (so Back goes "exit" instead of "up").
   static const _rootPaths = {'/', '/storage', '/mnt'};
 
+  static const _lastDirKey = 'tv_file_browser_last_dir';
+
   @override
   void initState() {
     super.initState();
@@ -118,11 +121,18 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
       return;
     }
 
-    final startPath = _storageRoots.firstWhere(
-      (p) => Directory(p).existsSync(),
-      orElse: () => '/',
-    );
-    _currentDir = Directory(startPath);
+    // Restore the last browsed directory if it still exists
+    final prefs = await SharedPreferences.getInstance();
+    final lastDir = prefs.getString(_lastDirKey);
+    if (lastDir != null && Directory(lastDir).existsSync()) {
+      _currentDir = Directory(lastDir);
+    } else {
+      final startPath = _storageRoots.firstWhere(
+        (p) => Directory(p).existsSync(),
+        orElse: () => '/',
+      );
+      _currentDir = Directory(startPath);
+    }
     _loadDirectory();
   }
 
@@ -191,6 +201,10 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     _selected.clear();
     _currentDir = dir;
     _loadDirectory();
+    // Remember the last browsed directory for next session
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(_lastDirKey, dir.path);
+    });
   }
 
   bool get _isAtRoot =>
@@ -765,9 +779,32 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   }
 
   String _entitySubtitle(FileSystemEntity entity) {
-    if (entity is Directory) return _dirItemCount(entity);
-    if (entity is File) return _formatSize(entity);
-    return '';
+    final parts = <String>[];
+    if (entity is Directory) {
+      parts.add(_dirItemCount(entity));
+    } else if (entity is File) {
+      parts.add(_formatSize(entity));
+    }
+    final dateStr = _formatModified(entity);
+    if (dateStr.isNotEmpty) parts.add(dateStr);
+    return parts.where((s) => s.isNotEmpty).join(' · ');
+  }
+
+  String _formatModified(FileSystemEntity entity) {
+    try {
+      final modified = entity.statSync().modified;
+      final now = DateTime.now();
+      final diff = now.difference(modified);
+
+      if (diff.inMinutes < 1) return 'just now';
+      if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+      if (diff.inDays < 1) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+
+      return '${modified.year}-${modified.month.toString().padLeft(2, '0')}-${modified.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
   }
 
   IconData _romIcon(String name) {

@@ -15,6 +15,7 @@ import '../models/gamepad_skin.dart';
 class SettingsService extends ChangeNotifier {
   static const String _settingsKey = 'emulator_settings';
   static const String _shortcutsShownKey = 'shortcuts_help_shown';
+  static const String _gameLaunchCountKey = 'game_launch_count';
   static const Duration _saveDebounceDuration = Duration(milliseconds: 500);
   
   EmulatorSettings _settings = const EmulatorSettings();
@@ -240,6 +241,16 @@ class SettingsService extends ChangeNotifier {
     await update((s) => s.copyWith(rewindBufferSeconds: seconds.clamp(1, 10)));
   }
 
+  /// Set the sort option for the game library (stored as enum name string)
+  Future<void> setSortOption(String sortOption) async {
+    await update((s) => s.copyWith(sortOption: sortOption));
+  }
+
+  /// Toggle between grid and list view on the home screen
+  Future<void> setGridView(bool isGridView) async {
+    await update((s) => s.copyWith(isGridView: isGridView));
+  }
+
   // ── One-time flags (stored outside the main settings blob) ──────────
 
   /// Whether the shortcuts help dialog has already been shown once.
@@ -252,6 +263,19 @@ class SettingsService extends ChangeNotifier {
   Future<void> markShortcutsHelpShown() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_shortcutsShownKey, true);
+  }
+
+  /// Get how many times a game has been launched.
+  Future<int> getGameLaunchCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_gameLaunchCountKey) ?? 0;
+  }
+
+  /// Increment the game launch counter.
+  Future<void> incrementGameLaunchCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final count = prefs.getInt(_gameLaunchCountKey) ?? 0;
+    await prefs.setInt(_gameLaunchCountKey, count + 1);
   }
 }
 

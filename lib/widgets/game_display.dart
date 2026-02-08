@@ -69,6 +69,30 @@ class _GameDisplayState extends State<GameDisplay> {
   int _pendingHeight = 0;
   bool _decoding = false;
 
+  // ── Double-buffer pool to avoid per-frame Uint8List allocations ──
+  Uint8List? _bufferA;
+  Uint8List? _bufferB;
+  bool _useBufferA = true;
+
+  /// Return a pre-allocated buffer of the given [size], creating or resizing
+  /// only when necessary.  Alternates between two buffers so the one handed
+  /// to `decodeImageFromPixels` is never overwritten while still in use.
+  Uint8List _acquireBuffer(int size) {
+    if (_useBufferA) {
+      if (_bufferA == null || _bufferA!.length != size) {
+        _bufferA = Uint8List(size);
+      }
+      _useBufferA = false;
+      return _bufferA!;
+    } else {
+      if (_bufferB == null || _bufferB!.length != size) {
+        _bufferB = Uint8List(size);
+      }
+      _useBufferA = true;
+      return _bufferB!;
+    }
+  }
+
   void _onFrame(Uint8List pixels, int width, int height) {
     if (_isDisposed) return;
 
@@ -91,8 +115,10 @@ class _GameDisplayState extends State<GameDisplay> {
     final height = _pendingHeight;
     _pendingPixels = null;
 
-    // Make a copy since native buffer may be overwritten before decode completes
-    final pixelsCopy = Uint8List.fromList(pixels);
+    // Copy into a pre-allocated buffer (avoids GC pressure from per-frame
+    // Uint8List.fromList allocations at 60 fps).
+    final pixelsCopy = _acquireBuffer(pixels.length);
+    pixelsCopy.setAll(0, pixels);
 
     // Create image from pixel data
     // Use targetWidth/targetHeight to let the GPU pre-scale to a larger

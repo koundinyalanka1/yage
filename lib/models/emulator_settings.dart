@@ -32,6 +32,8 @@ class EmulatorSettings {
   final String selectedTheme; // theme id string
   final bool enableRewind; // hold-to-rewind feature
   final int rewindBufferSeconds; // seconds of rewind history (1-10)
+  final String sortOption; // persisted sort choice for the game library
+  final bool isGridView; // grid vs list view on the home screen
 
   const EmulatorSettings({
     this.volume = 0.8,
@@ -60,6 +62,8 @@ class EmulatorSettings {
     this.selectedTheme = 'neon_night',
     this.enableRewind = false,
     this.rewindBufferSeconds = 3,
+    this.sortOption = 'nameAsc',
+    this.isGridView = true,
   });
 
   EmulatorSettings copyWith({
@@ -89,6 +93,8 @@ class EmulatorSettings {
     String? selectedTheme,
     bool? enableRewind,
     int? rewindBufferSeconds,
+    String? sortOption,
+    bool? isGridView,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -117,6 +123,8 @@ class EmulatorSettings {
       selectedTheme: selectedTheme ?? this.selectedTheme,
       enableRewind: enableRewind ?? this.enableRewind,
       rewindBufferSeconds: rewindBufferSeconds ?? this.rewindBufferSeconds,
+      sortOption: sortOption ?? this.sortOption,
+      isGridView: isGridView ?? this.isGridView,
     );
   }
 
@@ -148,6 +156,8 @@ class EmulatorSettings {
       'selectedTheme': selectedTheme,
       'enableRewind': enableRewind,
       'rewindBufferSeconds': rewindBufferSeconds,
+      'sortOption': sortOption,
+      'isGridView': isGridView,
     };
   }
 
@@ -187,6 +197,8 @@ class EmulatorSettings {
       selectedTheme: json['selectedTheme'] as String? ?? 'neon_night',
       enableRewind: json['enableRewind'] as bool? ?? false,
       rewindBufferSeconds: json['rewindBufferSeconds'] as int? ?? 3,
+      sortOption: json['sortOption'] as String? ?? 'nameAsc',
+      isGridView: json['isGridView'] as bool? ?? true,
     );
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +16,7 @@ import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
 import '../widgets/tv_file_browser.dart';
 import '../widgets/tv_focusable.dart';
+import '../services/settings_service.dart';
 import '../utils/theme.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
@@ -47,15 +50,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   late TabController _tabController;
   GamePlatform? _selectedPlatform;
   String _searchQuery = '';
-  bool _isGridView = true;
-  GameSortOption _sortOption = GameSortOption.nameAsc;
+  late bool _isGridView;
+  late GameSortOption _sortOption;
   final _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addObserver(this);
+
+    // Restore persisted view preferences
+    final settings = context.read<SettingsService>().settings;
+    _isGridView = settings.isGridView;
+    _sortOption = GameSortOption.values.firstWhere(
+      (o) => o.name == settings.sortOption,
+      orElse: () => GameSortOption.nameAsc,
+    );
 
     // Check if the app was opened via a file intent
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkIncomingFile());
@@ -65,8 +77,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   /// Focus node for the game list area so we can programmatically refocus it.
   final FocusNode _gameListFocusNode = FocusNode();
 
+  /// Debounced search update — waits 300ms after the last keystroke.
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _searchQuery = value);
+    });
+  }
+
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
@@ -219,6 +240,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       // Auto-download artwork for newly added games
       if (addedGames.isNotEmpty && mounted) {
         _autoDownloadArtwork(addedGames, library);
+        // Switch to "All Games" tab so the user sees the newly added ROM
+        _tabController.animateTo(0);
       }
     }
   }
@@ -253,6 +276,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (dirPath != null && mounted) {
       final library = context.read<GameLibraryService>();
       await library.addRomDirectory(dirPath);
+      // Switch to "All Games" tab so the user sees the newly added ROMs
+      if (mounted) _tabController.animateTo(0);
     }
   }
 
@@ -377,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               height: 40,
               child: TextField(
                 controller: _searchController,
-                onChanged: (value) => setState(() => _searchQuery = value),
+                onChanged: _onSearchChanged,
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Search...',
@@ -387,6 +412,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ? IconButton(
                           icon: Icon(Icons.clear, color: YageColors.textMuted, size: 18),
                           onPressed: () {
+                            _searchDebounce?.cancel();
                             _searchController.clear();
                             setState(() => _searchQuery = '');
                           },
@@ -431,7 +457,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             color: YageColors.surface,
-            onSelected: (value) => setState(() => _sortOption = value),
+            onSelected: (value) {
+              setState(() => _sortOption = value);
+              context.read<SettingsService>().setSortOption(value.name);
+            },
             itemBuilder: (context) => GameSortOption.values.map((opt) {
               final isSelected = _sortOption == opt;
               return PopupMenuItem(
@@ -466,7 +495,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               color: YageColors.textSecondary,
               size: 20,
             ),
-            onPressed: () => setState(() => _isGridView = !_isGridView),
+            onPressed: () {
+              setState(() => _isGridView = !_isGridView);
+              context.read<SettingsService>().setGridView(_isGridView);
+            },
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
@@ -640,7 +672,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             icon: Icon(Icons.swap_vert, color: YageColors.textSecondary),
             tooltip: 'Sort by',
             color: YageColors.surface,
-            onSelected: (value) => setState(() => _sortOption = value),
+            onSelected: (value) {
+              setState(() => _sortOption = value);
+              context.read<SettingsService>().setSortOption(value.name);
+            },
             itemBuilder: (context) => GameSortOption.values.map((opt) {
               final isSelected = _sortOption == opt;
               return PopupMenuItem(
@@ -674,7 +709,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               _isGridView ? Icons.view_list : Icons.grid_view,
               color: YageColors.textSecondary,
             ),
-            onPressed: () => setState(() => _isGridView = !_isGridView),
+            onPressed: () {
+              setState(() => _isGridView = !_isGridView);
+              context.read<SettingsService>().setGridView(_isGridView);
+            },
           ),
           
           // On TV: direct focusable buttons (popup menus are hard with D-pad)
@@ -770,7 +808,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(
         controller: _searchController,
-        onChanged: (value) => setState(() => _searchQuery = value),
+        onChanged: _onSearchChanged,
         decoration: InputDecoration(
           hintText: 'Search games...',
           prefixIcon: Icon(Icons.search, color: YageColors.textMuted),
@@ -778,6 +816,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ? IconButton(
                   icon: Icon(Icons.clear, color: YageColors.textMuted),
                   onPressed: () {
+                    _searchDebounce?.cancel();
                     _searchController.clear();
                     setState(() => _searchQuery = '');
                   },
@@ -807,25 +846,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         color: YageColors.surface,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: TabBar(
-        controller: _tabController,
-        indicator: BoxDecoration(
-          color: YageColors.primary,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicatorPadding: const EdgeInsets.all(4),
-        labelColor: YageColors.textPrimary,
-        unselectedLabelColor: YageColors.textMuted,
-        labelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-        tabs: const [
-          Tab(text: 'All Games'),
-          Tab(text: 'Recent'),
-          Tab(text: 'Favorites'),
-        ],
+      child: Consumer<GameLibraryService>(
+        builder: (context, library, _) {
+          final allCount = library.games.length;
+          final recentCount = library.recentlyPlayed.length;
+          final favCount = library.favorites.length;
+          return TabBar(
+            controller: _tabController,
+            indicator: BoxDecoration(
+              color: YageColors.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
+            indicatorPadding: const EdgeInsets.all(4),
+            labelColor: YageColors.textPrimary,
+            unselectedLabelColor: YageColors.textMuted,
+            labelStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+            tabs: [
+              Tab(text: 'All Games ($allCount)'),
+              Tab(text: 'Recent ($recentCount)'),
+              Tab(text: 'Favorites ($favCount)'),
+            ],
+          );
+        },
       ),
     );
   }
@@ -851,7 +897,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           return _buildEmptyState();
         }
 
-        return _buildGameList(games);
+        return Column(
+          children: [
+            if (_searchQuery.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${games.length} result${games.length == 1 ? '' : 's'} for \'$_searchQuery\'',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: YageColors.textMuted,
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(child: _buildGameList(games)),
+          ],
+        );
       },
     );
   }
