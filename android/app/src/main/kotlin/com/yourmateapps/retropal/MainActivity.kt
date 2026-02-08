@@ -7,8 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.Settings
+import android.provider.DocumentsContract
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -19,7 +18,18 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.yourmateapps.retropal/device"
     private var pendingFilePath: String? = null
+
+    // SAF folder import callback
+    private var importRomsResultHandler: ((List<String>?) -> Unit)? = null
+
+    // Legacy storage permission callback (Android ≤ 12 TV browser)
     private var permissionResultHandler: ((Boolean) -> Unit)? = null
+
+    companion object {
+        private const val SAF_IMPORT_FOLDER_CODE = 2001
+        private const val STORAGE_PERMISSION_CODE = 1001
+        private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb")
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -33,24 +43,43 @@ class MainActivity : FlutterActivity() {
                         result.success(isTV)
                     }
                     "getOpenFilePath" -> {
-                        // Return any file path from an incoming VIEW intent
                         val path = pendingFilePath
                         pendingFilePath = null
                         result.success(path)
                     }
+
+                    // ── SAF-based folder import ──
+                    // Opens the system folder picker, recursively scans for ROM files,
+                    // copies them to internal storage, returns list of internal paths.
+                    "importRomsFromFolder" -> {
+                        importRomsResultHandler = { paths ->
+                            result.success(paths)
+                        }
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                        startActivityForResult(intent, SAF_IMPORT_FOLDER_CODE)
+                    }
+
+                    // ── Internal ROM storage directory ──
+                    "getInternalRomsDir" -> {
+                        val romsDir = File(filesDir, "roms")
+                        if (!romsDir.exists()) romsDir.mkdirs()
+                        result.success(romsDir.absolutePath)
+                    }
+
+                    // ── Legacy: basic READ_EXTERNAL_STORAGE for TV browser (Android ≤ 12) ──
+                    "hasStoragePermission" -> {
+                        result.success(hasBasicReadPermission())
+                    }
                     "requestStoragePermission" -> {
-                        requestStoragePermission { granted ->
+                        requestBasicReadPermission { granted ->
                             result.success(granted)
                         }
                     }
-                    "hasStoragePermission" -> {
-                        result.success(hasStoragePermission())
-                    }
+
                     else -> result.notImplemented()
                 }
             }
 
-        // Handle intent that launched/resumed the activity
         handleIntent(intent)
     }
 
@@ -71,22 +100,18 @@ class MainActivity : FlutterActivity() {
 
     /**
      * Resolve a content:// or file:// URI to an actual filesystem path.
-     * For content:// URIs, copies the file to app cache so the native
-     * emulator core can read it directly.
+     * For content:// URIs, copies the file to the internal ROMs directory
+     * so the native emulator core can read it directly.
      */
     private fun resolveUriToPath(uri: Uri): String? {
-        // file:// scheme — direct path
-        if (uri.scheme == "file") {
-            return uri.path
-        }
+        if (uri.scheme == "file") return uri.path
 
-        // content:// scheme — need to copy to cache
         if (uri.scheme == "content") {
             try {
                 val fileName = getFileName(uri) ?: "rom_${System.currentTimeMillis()}"
-                val cacheDir = File(cacheDir, "opened_roms")
-                cacheDir.mkdirs()
-                val destFile = File(cacheDir, fileName)
+                val romsDir = File(filesDir, "roms")
+                romsDir.mkdirs()
+                val destFile = File(romsDir, fileName)
 
                 contentResolver.openInputStream(uri)?.use { input ->
                     destFile.outputStream().use { output ->
@@ -112,11 +137,99 @@ class MainActivity : FlutterActivity() {
         return name
     }
 
-    // ── Storage permission handling ──
+    // ══════════════════════════════════════════════════════════════
+    //  SAF folder scanning + import
+    // ══════════════════════════════════════════════════════════════
 
-    private fun hasStoragePermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
+    /**
+     * Recursively scan a SAF document tree for ROM files and copy them
+     * to the app's internal ROM directory.
+     */
+    private fun importRomsFromTree(treeUri: Uri): List<String> {
+        val romsDir = File(filesDir, "roms")
+        if (!romsDir.exists()) romsDir.mkdirs()
+
+        // Collect all ROM file URIs + names
+        val romFiles = mutableListOf<Pair<Uri, String>>() // (fileUri, displayName)
+        val docId = DocumentsContract.getTreeDocumentId(treeUri)
+        scanTreeRecursive(treeUri, docId, romFiles)
+
+        // Copy each ROM file to internal storage
+        val importedPaths = mutableListOf<String>()
+        for ((fileUri, name) in romFiles) {
+            try {
+                val destFile = File(romsDir, name)
+                contentResolver.openInputStream(fileUri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                importedPaths.add(destFile.absolutePath)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        return importedPaths
+    }
+
+    /**
+     * Recursively enumerate children of a SAF document tree node,
+     * collecting ROM files that match [ROM_EXTENSIONS].
+     */
+    private fun scanTreeRecursive(
+        treeUri: Uri,
+        parentDocId: String,
+        results: MutableList<Pair<Uri, String>>
+    ) {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+
+        try {
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null, null, null
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+
+                while (cursor.moveToNext()) {
+                    val docId = cursor.getString(idCol)
+                    val name = cursor.getString(nameCol) ?: continue
+                    val mime = cursor.getString(mimeCol)
+
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        // Recurse into sub-directories
+                        scanTreeRecursive(treeUri, docId, results)
+                    } else {
+                        // Check file extension
+                        val ext = name.substringAfterLast('.', "").lowercase()
+                        if (ext in ROM_EXTENSIONS) {
+                            val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            results.add(Pair(fileUri, name))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Some directories may not be accessible — skip them
+            e.printStackTrace()
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Legacy basic storage permission (TV browser, Android ≤ 12)
+    // ══════════════════════════════════════════════════════════════
+
+    private fun hasBasicReadPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+: READ_EXTERNAL_STORAGE has no effect
+            false
         } else {
             ContextCompat.checkSelfPermission(
                 this, android.Manifest.permission.READ_EXTERNAL_STORAGE
@@ -124,60 +237,29 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun requestStoragePermission(callback: (Boolean) -> Unit) {
-        if (hasStoragePermission()) {
+    private fun requestBasicReadPermission(callback: (Boolean) -> Unit) {
+        if (hasBasicReadPermission()) {
             callback(true)
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: request MANAGE_EXTERNAL_STORAGE via Settings
-            permissionResultHandler = callback
-            try {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                // Verify the intent can be resolved before launching
-                if (intent.resolveActivity(packageManager) != null) {
-                    startActivityForResult(intent, STORAGE_PERMISSION_CODE)
-                } else {
-                    throw Exception("No activity for app-specific intent")
-                }
-            } catch (_: Exception) {
-                // Fallback: try the general all-files-access settings
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    if (intent.resolveActivity(packageManager) != null) {
-                        startActivityForResult(intent, STORAGE_PERMISSION_CODE)
-                    } else {
-                        throw Exception("No activity for general intent")
-                    }
-                } catch (_: Exception) {
-                    // Last resort: open the app's own settings page
-                    try {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.parse("package:$packageName")
-                        }
-                        startActivityForResult(intent, STORAGE_PERMISSION_CODE)
-                    } catch (_: Exception) {
-                        permissionResultHandler = null
-                        callback(false)
-                    }
-                }
-            }
-        } else {
-            // Android 10 and below
-            permissionResultHandler = callback
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(
-                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
-                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ),
-                STORAGE_PERMISSION_CODE
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+: can't request READ_EXTERNAL_STORAGE
+            callback(false)
+            return
         }
+
+        permissionResultHandler = callback
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE),
+            STORAGE_PERMISSION_CODE
+        )
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Activity result handling
+    // ══════════════════════════════════════════════════════════════
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -195,15 +277,30 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == STORAGE_PERMISSION_CODE) {
-            // Check if permission was granted after returning from Settings
-            val granted = hasStoragePermission()
-            permissionResultHandler?.invoke(granted)
-            permissionResultHandler = null
-        }
-    }
 
-    companion object {
-        private const val STORAGE_PERMISSION_CODE = 1001
+        if (requestCode == SAF_IMPORT_FOLDER_CODE) {
+            if (resultCode == RESULT_OK && data?.data != null) {
+                val treeUri = data.data!!
+
+                // Persist read permission so folder can be re-scanned later
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+
+                // Scan + copy in background thread to avoid blocking UI
+                Thread {
+                    val importedPaths = importRomsFromTree(treeUri)
+                    runOnUiThread {
+                        importRomsResultHandler?.invoke(importedPaths)
+                        importRomsResultHandler = null
+                    }
+                }.start()
+            } else {
+                importRomsResultHandler?.invoke(null)
+                importRomsResultHandler = null
+            }
+        }
     }
 }

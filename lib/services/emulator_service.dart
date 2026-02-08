@@ -171,11 +171,6 @@ class EmulatorService extends ChangeNotifier {
   }
 
   Future<String> _getSaveDirectory() async {
-    // Prefer shared external storage so saves survive app uninstall/reinstall.
-    // Fallback to app-internal if external storage is not available.
-    final externalDir = await _getSharedSaveDirectory();
-    if (externalDir != null) return externalDir;
-
     final appDir = await getApplicationSupportDirectory();
     final saveDir = Directory(p.join(appDir.path, 'saves'));
     if (!saveDir.existsSync()) {
@@ -184,48 +179,10 @@ class EmulatorService extends ChangeNotifier {
     return saveDir.path;
   }
 
-  /// Shared storage path that persists across uninstall/reinstall.
-  /// Uses /storage/emulated/0/RetroPal/saves/ on Android.
-  Future<String?> _getSharedSaveDirectory() async {
-    const candidates = [
-      '/storage/emulated/0/RetroPal/saves',
-      '/sdcard/RetroPal/saves',
-    ];
-    for (final path in candidates) {
-      try {
-        final dir = Directory(path);
-        if (!dir.existsSync()) {
-          dir.createSync(recursive: true);
-        }
-        // Verify writable
-        final test = File(p.join(path, '.write_test'));
-        test.writeAsStringSync('');
-        test.deleteSync();
-        return path;
-      } catch (_) {
-        continue;
-      }
-    }
-    return null;
-  }
-
   /// Get the directory where save files are stored for a ROM.
-  /// Priority order:
-  ///   1. Same directory as the ROM file (most intuitive, survives reinstall)
-  ///   2. Shared external storage (/storage/emulated/0/RetroPal/saves/)
-  ///   3. App-internal saves directory (last resort)
+  /// Uses the app-internal saves directory.
   String _getRomSaveDir(GameRom rom) {
-    final romDir = p.dirname(rom.path);
-    // Quick writability check: try creating a temp file
-    try {
-      final testFile = File(p.join(romDir, '.retropal_write_test'));
-      testFile.writeAsStringSync('');
-      testFile.deleteSync();
-      return romDir;
-    } catch (_) {
-      // ROM directory not writable — fall back to shared or app-internal
-      return _saveDir ?? romDir;
-    }
+    return _saveDir ?? p.dirname(rom.path);
   }
 
   /// Get the .sav file path for a ROM (battery/SRAM save) — stored next to the ROM
@@ -261,28 +218,10 @@ class EmulatorService extends ChangeNotifier {
   /// All directories where save files might live, in priority order.
   List<String> _allSaveDirectories(GameRom rom) {
     final dirs = <String>{};
-    // 1. Next to the ROM
-    dirs.add(p.dirname(rom.path));
-    // 2. Shared external (/storage/emulated/0/RetroPal/saves/)
+    // 1. App-internal saves directory
     if (_saveDir != null) dirs.add(_saveDir!);
-    // 3. Common shared locations (in case _saveDir changed)
-    for (final candidate in [
-      '/storage/emulated/0/RetroPal/saves',
-      '/sdcard/RetroPal/saves',
-    ]) {
-      if (Directory(candidate).existsSync()) dirs.add(candidate);
-    }
-    // 4. App-internal (from older installs)
-    try {
-      // getApplicationSupportDirectory is async; check the sync path directly
-      final appSupportBase = Platform.isAndroid
-          ? '/data/data/com.yourmateapps.retropal/files'
-          : null;
-      if (appSupportBase != null) {
-        final oldDir = p.join(appSupportBase, 'saves');
-        if (Directory(oldDir).existsSync()) dirs.add(oldDir);
-      }
-    } catch (_) {}
+    // 2. Next to the ROM (for ROMs in internal storage)
+    dirs.add(p.dirname(rom.path));
     return dirs.toList();
   }
 

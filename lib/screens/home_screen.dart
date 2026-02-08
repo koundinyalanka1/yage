@@ -211,11 +211,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Future<void> _addRomFile() async {
     List<String>? paths;
 
-    if (TvDetector.isTV) {
-      // TV: use built-in file browser (no system picker available)
-      paths = await TvFileBrowser.pickFiles(context);
-    } else {
-      // Phone/tablet: use system file picker
+    // Try system file picker (SAF) — works on both phone and TV
+    try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
         allowMultiple: true,
@@ -224,6 +221,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           .where((f) => f.path != null)
           .map((f) => f.path!)
           .toList();
+    } catch (_) {
+      paths = null;
+    }
+
+    // On TV, fall back to built-in browser if system picker returned nothing
+    if ((paths == null || paths.isEmpty) && TvDetector.isTV && mounted) {
+      paths = await TvFileBrowser.pickFiles(context);
     }
 
     if (paths != null && paths.isNotEmpty && mounted) {
@@ -231,7 +235,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       final addedGames = <GameRom>[];
       
       for (final path in paths) {
-        final game = await library.addRom(path);
+        // Import via internal copy so the file persists
+        final game = await library.importRom(path);
         if (game != null) {
           addedGames.add(game);
         }
@@ -264,20 +269,51 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _addRomFolder() async {
-    String? dirPath;
+    final library = context.read<GameLibraryService>();
+    List<String>? importedPaths;
 
-    if (TvDetector.isTV) {
-      // TV: use built-in folder browser
-      dirPath = await TvFileBrowser.pickDirectory(context);
-    } else {
-      dirPath = await FilePicker.platform.getDirectoryPath();
+    // Use native SAF folder picker → scan → copy ROMs to internal storage
+    try {
+      final result = await _deviceChannel.invokeMethod<List<dynamic>>('importRomsFromFolder');
+      importedPaths = result?.cast<String>();
+    } catch (_) {
+      importedPaths = null;
     }
 
-    if (dirPath != null && mounted) {
-      final library = context.read<GameLibraryService>();
-      await library.addRomDirectory(dirPath);
-      // Switch to "All Games" tab so the user sees the newly added ROMs
-      if (mounted) _tabController.animateTo(0);
+    // On TV, fall back to built-in folder browser if SAF unavailable
+    if (importedPaths == null && TvDetector.isTV && mounted) {
+      final dirPath = await TvFileBrowser.pickDirectory(context);
+      if (dirPath != null) {
+        await library.addRomDirectory(dirPath);
+        if (mounted) _tabController.animateTo(0);
+        return;
+      }
+    }
+
+    if (importedPaths != null && importedPaths.isNotEmpty && mounted) {
+      final addedGames = <GameRom>[];
+      for (final path in importedPaths) {
+        final game = await library.addRom(path);
+        if (game != null) addedGames.add(game);
+      }
+
+      if (addedGames.isNotEmpty && mounted) {
+        _autoDownloadArtwork(addedGames, library);
+        _tabController.animateTo(0);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Imported ${addedGames.length} ROM${addedGames.length == 1 ? '' : 's'}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No new ROM files found in selected folder'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 

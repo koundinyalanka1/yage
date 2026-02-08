@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/game_rom.dart';
@@ -13,16 +14,14 @@ import 'artwork_service.dart';
 class GameLibraryService extends ChangeNotifier {
   static const String _gamesKey = 'game_library';
   static const String _romDirsKey = 'rom_directories';
-  /// Shared-storage backup path so the library survives uninstall/reinstall.
-  static const _backupPaths = [
-    '/storage/emulated/0/RetroPal/library_backup.json',
-    '/sdcard/RetroPal/library_backup.json',
-  ];
-  
+
   List<GameRom> _games = [];
   List<String> _romDirectories = [];
   bool _isLoading = false;
   String? _error;
+
+  /// Cached path to the internal ROM storage directory.
+  String? _internalRomsDir;
 
   List<GameRom> get games => _games;
   List<String> get romDirectories => _romDirectories;
@@ -45,44 +44,36 @@ class GameLibraryService extends ChangeNotifier {
     return played.take(10).toList();
   }
 
-  /// Initialize and load saved library.
-  /// First tries SharedPreferences; if empty (e.g. after reinstall),
-  /// falls back to the shared-storage backup.
+  // ──────────── Internal ROM storage ────────────
+
+  /// Returns the path to the app-internal ROMs directory, creating it if needed.
+  Future<String> getInternalRomsDir() async {
+    if (_internalRomsDir != null) return _internalRomsDir!;
+    final appDir = await getApplicationSupportDirectory();
+    final romsDir = Directory(p.join(appDir.path, 'roms'));
+    if (!romsDir.existsSync()) romsDir.createSync(recursive: true);
+    _internalRomsDir = romsDir.path;
+    return _internalRomsDir!;
+  }
+
+  // ──────────── Initialize ────────────
+
+  /// Initialize and load saved library from SharedPreferences.
   Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      
-      // Load ROM directories
+
+      // Load ROM directories (legacy — kept for backwards compat)
       final dirsJson = prefs.getStringList(_romDirsKey);
       if (dirsJson != null) {
         _romDirectories = dirsJson;
       }
 
       // Load saved games from SharedPreferences
-      String? gamesJson = prefs.getString(_gamesKey);
-
-      // If nothing in prefs (fresh install / reinstall), try shared-storage backup
-      if (gamesJson == null || gamesJson.isEmpty) {
-        gamesJson = _readBackup();
-        if (gamesJson != null) {
-          debugPrint('Restored game library from shared-storage backup');
-          // Also recover rom directories from backup
-          try {
-            final backup = jsonDecode(gamesJson) as Map<String, dynamic>;
-            if (backup.containsKey('romDirectories')) {
-              _romDirectories = List<String>.from(backup['romDirectories']);
-            }
-            if (backup.containsKey('games')) {
-              gamesJson = jsonEncode(backup['games']);
-            }
-          } catch (_) {
-            // Backup might be just the games list (old format)
-          }
-        }
-      }
+      final gamesJson = prefs.getString(_gamesKey);
 
       if (gamesJson != null && gamesJson.isNotEmpty) {
         final List<dynamic> gamesList = jsonDecode(gamesJson);
@@ -95,9 +86,6 @@ class GameLibraryService extends ChangeNotifier {
       _isLoading = false;
       _error = null;
       notifyListeners();
-
-      // Write backup in background so it's ready for next reinstall
-      _writeBackup();
     } catch (e) {
       _error = 'Failed to load library: $e';
       _isLoading = false;
@@ -105,62 +93,48 @@ class GameLibraryService extends ChangeNotifier {
     }
   }
 
-  /// Save library to storage (SharedPreferences + shared-storage backup).
+  /// Save library to SharedPreferences.
   Future<void> _saveLibrary() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final gamesJson = jsonEncode(_games.map((g) => g.toJson()).toList());
       await prefs.setString(_gamesKey, gamesJson);
       await prefs.setStringList(_romDirsKey, _romDirectories);
-
-      // Also write to shared storage so data survives uninstall/reinstall
-      _writeBackup();
     } catch (e) {
       _error = 'Failed to save library: $e';
       notifyListeners();
     }
   }
 
-  // ──────────── Shared-storage backup helpers ────────────
+  // ──────────── ROM import (SAF-friendly) ────────────
 
-  /// Write a JSON backup to shared storage (best-effort, non-blocking).
-  void _writeBackup() {
+  /// Import a ROM by copying it to internal storage first, then adding to library.
+  ///
+  /// Use this when the source file might be in a cache or SAF-provided location
+  /// that could be cleaned up. The ROM is copied to the app's permanent internal
+  /// roms directory.
+  Future<GameRom?> importRom(String sourcePath) async {
+    final romsDir = await getInternalRomsDir();
+    final fileName = p.basename(sourcePath);
+    final destPath = p.join(romsDir, fileName);
+
+    // If already in internal storage, just add directly
+    if (sourcePath.startsWith(romsDir)) {
+      return addRom(sourcePath);
+    }
+
+    // Copy to internal storage
     try {
-      final backup = jsonEncode({
-        'games': _games.map((g) => g.toJson()).toList(),
-        'romDirectories': _romDirectories,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-      for (final path in _backupPaths) {
-        try {
-          final file = File(path);
-          final dir = file.parent;
-          if (!dir.existsSync()) dir.createSync(recursive: true);
-          file.writeAsStringSync(backup);
-          return; // success — no need to try more paths
-        } catch (_) {
-          continue;
-        }
-      }
+      await File(sourcePath).copy(destPath);
     } catch (e) {
-      debugPrint('Could not write library backup: $e');
+      debugPrint('Error copying ROM to internal storage: $e');
+      return null;
     }
+
+    return addRom(destPath);
   }
 
-  /// Try reading a backup from shared storage. Returns the JSON or null.
-  String? _readBackup() {
-    for (final path in _backupPaths) {
-      try {
-        final file = File(path);
-        if (file.existsSync()) {
-          return file.readAsStringSync();
-        }
-      } catch (_) {
-        continue;
-      }
-    }
-    return null;
-  }
+  // ──────────── ROM management ────────────
 
   /// Add a single ROM file - returns the added game or null
   Future<GameRom?> addRom(String path) async {
@@ -176,7 +150,7 @@ class GameLibraryService extends ChangeNotifier {
     return game;
   }
 
-  /// Add a ROM directory to scan
+  /// Add a ROM directory to scan (legacy — works only when filesystem is accessible)
   Future<void> addRomDirectory(String path) async {
     if (_romDirectories.contains(path)) return;
 
@@ -185,7 +159,7 @@ class GameLibraryService extends ChangeNotifier {
     await _saveLibrary();
   }
 
-  /// Scan a directory for ROM files
+  /// Scan a directory for ROM files (requires filesystem read access)
   Future<void> scanDirectory(String path) async {
     _isLoading = true;
     notifyListeners();
@@ -366,4 +340,3 @@ class GameLibraryService extends ChangeNotifier {
     return found;
   }
 }
-

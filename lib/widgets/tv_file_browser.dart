@@ -600,7 +600,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                   color: YageColors.textMuted.withAlpha(100)),
               const SizedBox(height: 16),
               Text(
-                'File Access Required',
+                'File Browsing Unavailable',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -609,10 +609,9 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
               ),
               const SizedBox(height: 8),
               Text(
-                'RetroPal needs "All files access" permission to browse '
-                'your storage for ROM files.\n\n'
-                'Go to:  Settings → Apps → RetroPal → Permissions '
-                '→ Files and media → Allow management of all files',
+                'On newer Android versions, file browsing is not available.\n\n'
+                'Use the "Add ROMs" or "Add Folder" buttons on the home '
+                'screen to import your game files using the system file picker.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -637,7 +636,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                       ),
                       onPressed: _retryPermission,
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Grant Permission'),
+                      label: const Text('Retry'),
                     ),
                   ),
                   const SizedBox(width: 12),
