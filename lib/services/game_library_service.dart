@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/game_rom.dart';
 import '../core/mgba_bindings.dart';
-import 'artwork_service.dart';
+
 
 /// Service for managing the game library
 class GameLibraryService extends ChangeNotifier {
@@ -306,37 +306,4 @@ class GameLibraryService extends ChangeNotifier {
     return _games.where((g) => g.name.toLowerCase().contains(lowerQuery)).toList();
   }
 
-  /// Fetch artwork for a single game
-  Future<bool> fetchArtwork(GameRom game) async {
-    final coverPath = await ArtworkService.fetchArtwork(game);
-    if (coverPath != null) {
-      await setCoverArt(game, coverPath);
-      return true;
-    }
-    return false;
-  }
-
-  /// Fetch artwork for all games without covers
-  Future<int> fetchAllArtwork({
-    void Function(int completed, int total)? onProgress,
-  }) async {
-    final gamesNeedingArt = _games.where((g) => 
-      g.coverPath == null || !File(g.coverPath!).existsSync()
-    ).toList();
-
-    if (gamesNeedingArt.isEmpty) return 0;
-
-    int found = 0;
-    for (int i = 0; i < gamesNeedingArt.length; i++) {
-      final game = gamesNeedingArt[i];
-      final success = await fetchArtwork(game);
-      if (success) found++;
-      onProgress?.call(i + 1, gamesNeedingArt.length);
-      
-      // Small delay to avoid rate limiting
-      await Future.delayed(const Duration(milliseconds: 300));
-    }
-
-    return found;
-  }
 }

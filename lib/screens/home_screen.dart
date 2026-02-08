@@ -9,7 +9,7 @@ import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
 import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
-import '../services/artwork_service.dart';
+
 import '../services/save_backup_service.dart';
 import '../utils/tv_detector.dart';
 import '../widgets/game_card.dart';
@@ -242,31 +242,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
       }
       
-      // Auto-download artwork for newly added games
       if (addedGames.isNotEmpty && mounted) {
-        _autoDownloadArtwork(addedGames, library);
         // Switch to "All Games" tab so the user sees the newly added ROM
         _tabController.animateTo(0);
       }
     }
   }
   
-  /// Auto-download artwork for games in background
-  Future<void> _autoDownloadArtwork(List<GameRom> games, GameLibraryService library) async {
-    for (final game in games) {
-      if (game.coverPath == null) {
-        try {
-          final artworkPath = await ArtworkService.fetchArtwork(game);
-          if (artworkPath != null && mounted) {
-            await library.setCoverArt(game, artworkPath);
-          }
-        } catch (e) {
-          // Silently fail - artwork is optional
-          debugPrint('Auto-download artwork failed for ${game.name}: $e');
-        }
-      }
-    }
-  }
 
   Future<void> _addRomFolder() async {
     final library = context.read<GameLibraryService>();
@@ -298,7 +280,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
 
       if (addedGames.isNotEmpty && mounted) {
-        _autoDownloadArtwork(addedGames, library);
         _tabController.animateTo(0);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -565,17 +546,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
             TvFocusable(
               borderRadius: BorderRadius.circular(8),
-              onTap: _downloadAllArtwork,
-              child: IconButton(
-                icon: Icon(Icons.download, color: YageColors.textSecondary, size: 20),
-                tooltip: 'Download All Artwork',
-                onPressed: _downloadAllArtwork,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              ),
-            ),
-            TvFocusable(
-              borderRadius: BorderRadius.circular(8),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               ),
@@ -602,9 +572,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             color: YageColors.surface,
             onSelected: (value) {
               switch (value) {
-                case 'download_artwork':
-                  _downloadAllArtwork();
-                  break;
                 case 'settings':
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -613,15 +580,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'download_artwork',
-                child: ListTile(
-                  leading: Icon(Icons.download, size: 20),
-                  title: Text('Download All Artwork'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              ),
               const PopupMenuItem(
                 value: 'settings',
                 child: ListTile(
@@ -773,15 +731,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
             TvFocusable(
               borderRadius: BorderRadius.circular(8),
-              onTap: _downloadAllArtwork,
-              child: IconButton(
-                icon: Icon(Icons.download, color: YageColors.textSecondary),
-                tooltip: 'Download All Artwork',
-                onPressed: _downloadAllArtwork,
-              ),
-            ),
-            TvFocusable(
-              borderRadius: BorderRadius.circular(8),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               ),
@@ -803,9 +752,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             color: YageColors.surface,
             onSelected: (value) {
               switch (value) {
-                case 'download_artwork':
-                  _downloadAllArtwork();
-                  break;
                 case 'settings':
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -814,15 +760,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'download_artwork',
-                child: ListTile(
-                  leading: Icon(Icons.download, size: 20),
-                  title: Text('Download All Artwork'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              ),
               const PopupMenuItem(
                 value: 'settings',
                 child: ListTile(
@@ -1158,67 +1095,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  Future<void> _downloadCoverArt(GameRom game) async {
-    final library = context.read<GameLibraryService>();
-    
-    // Show loading indicator
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: 16),
-            Text('Searching for artwork...'),
-          ],
-        ),
-        duration: Duration(seconds: 10),
-      ),
-    );
-    
-    final success = await library.fetchArtwork(game);
-    
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(success ? 'Cover art downloaded!' : 'No artwork found'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _downloadAllArtwork() async {
-    final library = context.read<GameLibraryService>();
-    
-    // Count games needing artwork
-    final needsArt = library.games.where((g) => g.coverPath == null).length;
-    if (needsArt == 0) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('All games already have cover art!'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    
-    // Show progress dialog
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _ArtworkDownloadDialog(
-        library: library,
-        totalGames: needsArt,
-      ),
-    );
-  }
 
   void _showGameOptions(GameRom game) {
     final library = context.read<GameLibraryService>();
@@ -1287,15 +1163,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           onTap: () {
                             library.toggleFavorite(game);
                             Navigator.pop(context);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.download),
-                          title: const Text('Download Cover Art'),
-                          subtitle: const Text('Auto-fetch from database'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _downloadCoverArt(game);
                           },
                         ),
                         ListTile(
@@ -1577,106 +1444,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
       }
     }
-  }
-}
-
-/// Dialog showing artwork download progress
-class _ArtworkDownloadDialog extends StatefulWidget {
-  final GameLibraryService library;
-  final int totalGames;
-
-  const _ArtworkDownloadDialog({
-    required this.library,
-    required this.totalGames,
-  });
-
-  @override
-  State<_ArtworkDownloadDialog> createState() => _ArtworkDownloadDialogState();
-}
-
-class _ArtworkDownloadDialogState extends State<_ArtworkDownloadDialog> {
-  int _completed = 0;
-  int _found = 0;
-  bool _isDownloading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _startDownload();
-  }
-
-  Future<void> _startDownload() async {
-    final found = await widget.library.fetchAllArtwork(
-      onProgress: (completed, total) {
-        if (mounted) {
-          setState(() {
-            _completed = completed;
-          });
-        }
-      },
-    );
-
-    if (mounted) {
-      setState(() {
-        _found = found;
-        _isDownloading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: YageColors.surface,
-      title: Text(
-        _isDownloading ? 'Downloading Artwork' : 'Download Complete',
-        style: TextStyle(color: YageColors.textPrimary),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isDownloading) ...[
-            const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: widget.totalGames > 0 
-                  ? _completed / widget.totalGames 
-                  : 0,
-              backgroundColor: YageColors.backgroundLight,
-              valueColor: AlwaysStoppedAnimation(YageColors.primary),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Processing $_completed of ${widget.totalGames} games...',
-              style: TextStyle(color: YageColors.textSecondary),
-            ),
-          ] else ...[
-            Icon(
-              _found > 0 ? Icons.check_circle : Icons.info_outline,
-              size: 48,
-              color: _found > 0 ? YageColors.success : YageColors.textMuted,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _found > 0
-                  ? 'Found artwork for $_found games!'
-                  : 'No new artwork found',
-              style: TextStyle(
-                color: YageColors.textPrimary,
-                fontSize: 16,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        if (!_isDownloading)
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Done'),
-          ),
-      ],
-    );
   }
 }
 
