@@ -803,6 +803,87 @@ static int16_t input_state_callback(unsigned port, unsigned device, unsigned ind
     }
 }
 
+/*
+ * ============================================================
+ * Link Cable — Memory Map + SIO Register Access (structs/globals)
+ * ============================================================
+ *
+ * We intercept RETRO_ENVIRONMENT_SET_MEMORY_MAPS (cmd 36, with or
+ * without the EXPERIMENTAL flag) to obtain direct pointers to the
+ * emulated address space.  For GB/GBC the I/O region at 0xFF00
+ * gives us SB (0xFF01), SC (0xFF02), and IF (0xFF0F) which are
+ * the registers needed for link-cable emulation.
+ *
+ * For GBA the I/O region at 0x04000000 contains SIOCNT (0x128)
+ * and SIODATA8 (0x12A).
+ */
+
+/* ── Memory-map descriptor storage ── */
+struct yage_mem_region {
+    void*    ptr;      /* Host pointer to start of this region          */
+    uint32_t start;    /* Emulated start address                        */
+    uint32_t len;      /* Length in bytes                                */
+};
+
+#define MAX_MEM_REGIONS 32
+static struct yage_mem_region g_mem_regions[MAX_MEM_REGIONS];
+static int g_mem_region_count = 0;
+
+/* Quick look-up cache for the I/O region (set once after SET_MEMORY_MAPS) */
+static uint8_t* g_io_ptr = NULL;  /* Pointer to the I/O base             */
+static uint32_t g_io_start = 0;   /* Emulated start address of the region */
+static uint32_t g_io_len = 0;     /* Length of the I/O region              */
+
+/* libretro memory map structures (matching the libretro API) */
+struct retro_memory_descriptor_lc {
+    uint64_t    flags;
+    void*       ptr;
+    size_t      offset;
+    size_t      start;
+    size_t      select;
+    size_t      disconnect;
+    size_t      len;
+    const char* addrspace;
+};
+
+struct retro_memory_map_lc {
+    const struct retro_memory_descriptor_lc* descriptors;
+    unsigned num_descriptors;
+};
+
+/* Called from the environment callback to store the memory map. */
+static void handle_set_memory_maps(const void* data) {
+    if (!data) return;
+
+    const struct retro_memory_map_lc* mmaps = (const struct retro_memory_map_lc*)data;
+    g_mem_region_count = 0;
+    g_io_ptr = NULL;
+    g_io_start = 0;
+    g_io_len = 0;
+
+    for (unsigned i = 0; i < mmaps->num_descriptors && g_mem_region_count < MAX_MEM_REGIONS; i++) {
+        const struct retro_memory_descriptor_lc* d = &mmaps->descriptors[i];
+        if (!d->ptr || d->len == 0) continue;
+
+        struct yage_mem_region* r = &g_mem_regions[g_mem_region_count++];
+        r->ptr   = d->ptr;
+        r->start = (uint32_t)d->start;
+        r->len   = (uint32_t)d->len;
+
+        /* Identify the I/O region for quick access.
+         * GB/GBC:  I/O starts at 0xFF00
+         * GBA:     I/O starts at 0x04000000 */
+        if (d->start == 0xFF00 || d->start == 0x04000000) {
+            g_io_ptr   = (uint8_t*)d->ptr;
+            g_io_start = (uint32_t)d->start;
+            g_io_len   = (uint32_t)d->len;
+            LOGI("Link cable: I/O region found at 0x%08X, len=%u, ptr=%p",
+                 g_io_start, g_io_len, g_io_ptr);
+        }
+    }
+    LOGI("Link cable: stored %d memory regions", g_mem_region_count);
+}
+
 static bool environment_callback(unsigned cmd, void* data) {
     switch (cmd) {
         case 10: /* RETRO_ENVIRONMENT_SET_PIXEL_FORMAT */
@@ -1408,87 +1489,6 @@ int yage_core_rewind_pop(YageCore* core) {
 int yage_core_rewind_count(YageCore* core) {
     (void)core;
     return g_rewind_count;
-}
-
-/*
- * ============================================================
- * Link Cable — Memory Map + SIO Register Access
- * ============================================================
- *
- * We intercept RETRO_ENVIRONMENT_SET_MEMORY_MAPS (cmd 36, with or
- * without the EXPERIMENTAL flag) to obtain direct pointers to the
- * emulated address space.  For GB/GBC the I/O region at 0xFF00
- * gives us SB (0xFF01), SC (0xFF02), and IF (0xFF0F) which are
- * the registers needed for link-cable emulation.
- *
- * For GBA the I/O region at 0x04000000 contains SIOCNT (0x128)
- * and SIODATA8 (0x12A).
- */
-
-/* ── Memory-map descriptor storage ── */
-struct yage_mem_region {
-    void*    ptr;      /* Host pointer to start of this region          */
-    uint32_t start;    /* Emulated start address                        */
-    uint32_t len;      /* Length in bytes                                */
-};
-
-#define MAX_MEM_REGIONS 32
-static struct yage_mem_region g_mem_regions[MAX_MEM_REGIONS];
-static int g_mem_region_count = 0;
-
-/* Quick look-up cache for the I/O region (set once after SET_MEMORY_MAPS) */
-static uint8_t* g_io_ptr = NULL;  /* Pointer to the I/O base             */
-static uint32_t g_io_start = 0;   /* Emulated start address of the region */
-static uint32_t g_io_len = 0;     /* Length of the I/O region              */
-
-/* libretro memory map structures (matching the libretro API) */
-struct retro_memory_descriptor_lc {
-    uint64_t    flags;
-    void*       ptr;
-    size_t      offset;
-    size_t      start;
-    size_t      select;
-    size_t      disconnect;
-    size_t      len;
-    const char* addrspace;
-};
-
-struct retro_memory_map_lc {
-    const struct retro_memory_descriptor_lc* descriptors;
-    unsigned num_descriptors;
-};
-
-/* Called from the environment callback to store the memory map. */
-static void handle_set_memory_maps(const void* data) {
-    if (!data) return;
-
-    const struct retro_memory_map_lc* mmaps = (const struct retro_memory_map_lc*)data;
-    g_mem_region_count = 0;
-    g_io_ptr = NULL;
-    g_io_start = 0;
-    g_io_len = 0;
-
-    for (unsigned i = 0; i < mmaps->num_descriptors && g_mem_region_count < MAX_MEM_REGIONS; i++) {
-        const struct retro_memory_descriptor_lc* d = &mmaps->descriptors[i];
-        if (!d->ptr || d->len == 0) continue;
-
-        struct yage_mem_region* r = &g_mem_regions[g_mem_region_count++];
-        r->ptr   = d->ptr;
-        r->start = (uint32_t)d->start;
-        r->len   = (uint32_t)d->len;
-
-        /* Identify the I/O region for quick access.
-         * GB/GBC:  I/O starts at 0xFF00
-         * GBA:     I/O starts at 0x04000000 */
-        if (d->start == 0xFF00 || d->start == 0x04000000) {
-            g_io_ptr   = (uint8_t*)d->ptr;
-            g_io_start = (uint32_t)d->start;
-            g_io_len   = (uint32_t)d->len;
-            LOGI("Link cable: I/O region found at 0x%08X, len=%u, ptr=%p",
-                 g_io_start, g_io_len, g_io_ptr);
-        }
-    }
-    LOGI("Link cable: stored %d memory regions", g_mem_region_count);
 }
 
 /* Resolve an emulated address to a host pointer using the stored map. */
