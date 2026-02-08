@@ -1,28 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android TV banner: 320×180 dp -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Dark background -->
+    <!-- Background color #6A3DE8 -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#1A1A2E"/>
-            <corners android:radius="4dp"/>
+            <solid android:color="@color/launch_background"/>
         </shape>
     </item>
-    <!-- Accent gradient overlay (bottom) -->
-    <item>
-        <shape android:shape="rectangle">
-            <gradient
-                android:type="linear"
-                android:startColor="#0000F5D4"
-                android:endColor="#4000F5D4"
-                android:angle="270"/>
-            <corners android:radius="4dp"/>
-        </shape>
-    </item>
-    <!-- App icon in center -->
+    
+    <!-- Using the source 512x512 image for better quality on TV -->
     <item
         android:gravity="center"
-        android:width="72dp"
-        android:height="72dp"
-        android:drawable="@mipmap/ic_launcher"/>
+        android:width="120dp"
+        android:height="120dp"
+        android:drawable="@drawable/tv_icon_source"/>
 </layer-list>
