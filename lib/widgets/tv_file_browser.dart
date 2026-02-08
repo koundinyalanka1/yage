@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../utils/theme.dart';
 import 'tv_focusable.dart';
+
+const _deviceChannel = MethodChannel('com.yourmateapps.retropal/device');
 
 /// A built-in file/folder browser for Android TV where no system file picker
 /// is available.  Navigates the filesystem with D-pad and selects files/folders.
@@ -63,6 +66,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   final Set<String> _selected = {};
   bool _loading = true;
   String? _error;
+  bool _permissionDenied = false;
+  final _listKey = GlobalKey();
 
   // Common Android storage roots to start from
   static const _storageRoots = [
@@ -72,10 +77,47 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     '/mnt',
   ];
 
+  /// Roots we cannot go above (so Back goes "exit" instead of "up").
+  static const _rootPaths = {'/', '/storage', '/mnt'};
+
   @override
   void initState() {
     super.initState();
-    // Start at /storage/emulated/0 if it exists, else /storage
+    _initWithPermission();
+  }
+
+  Future<void> _initWithPermission() async {
+    // Check if we already have storage permission
+    bool hasPermission = true;
+    try {
+      hasPermission =
+          await _deviceChannel.invokeMethod<bool>('hasStoragePermission') ??
+              true;
+    } catch (_) {
+      // Not on Android or channel unavailable — assume permission is OK
+    }
+
+    if (!hasPermission) {
+      // Try requesting it
+      try {
+        hasPermission =
+            await _deviceChannel.invokeMethod<bool>('requestStoragePermission') ??
+                false;
+      } catch (_) {
+        hasPermission = false;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (!hasPermission) {
+      setState(() {
+        _loading = false;
+        _permissionDenied = true;
+      });
+      return;
+    }
+
     final startPath = _storageRoots.firstWhere(
       (p) => Directory(p).existsSync(),
       orElse: () => '/',
@@ -83,6 +125,17 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     _currentDir = Directory(startPath);
     _loadDirectory();
   }
+
+  /// Re-check permission (e.g. after the user granted it in Settings).
+  Future<void> _retryPermission() async {
+    setState(() {
+      _loading = true;
+      _permissionDenied = false;
+    });
+    await _initWithPermission();
+  }
+
+  // ───────────────────────── directory loading ─────────────────────────
 
   Future<void> _loadDirectory() async {
     setState(() {
@@ -93,36 +146,37 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     try {
       final entities = <FileSystemEntity>[];
       await for (final entity in _currentDir.list()) {
-        // Skip hidden files/dirs
         final name = p.basename(entity.path);
         if (name.startsWith('.')) continue;
 
         if (entity is Directory) {
           entities.add(entity);
         } else if (entity is File && widget.mode == TvBrowseMode.files) {
-          // Filter by extension if provided
           if (widget.extensions.isEmpty ||
-              widget.extensions.contains(p.extension(entity.path).toLowerCase())) {
+              widget.extensions.contains(
+                  p.extension(entity.path).toLowerCase())) {
             entities.add(entity);
           }
         }
       }
 
-      // Sort: directories first, then alphabetical
       entities.sort((a, b) {
         final aIsDir = a is Directory;
         final bIsDir = b is Directory;
         if (aIsDir && !bIsDir) return -1;
         if (!aIsDir && bIsDir) return 1;
-        return p.basename(a.path).toLowerCase().compareTo(
-              p.basename(b.path).toLowerCase());
+        return p.basename(a.path)
+            .toLowerCase()
+            .compareTo(p.basename(b.path).toLowerCase());
       });
 
+      if (!mounted) return;
       setState(() {
         _entries = entities;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _entries = [];
         _loading = false;
@@ -131,15 +185,29 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     }
   }
 
+  // ───────────────────────── navigation ─────────────────────────
+
   void _navigateTo(Directory dir) {
+    _selected.clear();
     _currentDir = dir;
     _loadDirectory();
   }
 
+  bool get _isAtRoot =>
+      _rootPaths.contains(_currentDir.path) ||
+      _currentDir.parent.path == _currentDir.path;
+
   void _goUp() {
-    final parent = _currentDir.parent;
-    if (parent.path != _currentDir.path) {
-      _navigateTo(parent);
+    if (_isAtRoot) return;
+    _navigateTo(_currentDir.parent);
+  }
+
+  /// B / Back handler: go up if possible, otherwise exit the browser.
+  void _goBackOrExit() {
+    if (_isAtRoot) {
+      Navigator.of(context).pop(null);
+    } else {
+      _goUp();
     }
   }
 
@@ -166,224 +234,540 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     }
   }
 
+  void _selectAll() {
+    setState(() {
+      final files =
+          _entries.whereType<File>().map((f) => f.path).toSet();
+      if (_selected.containsAll(files)) {
+        _selected.removeAll(files);
+      } else {
+        _selected.addAll(files);
+      }
+    });
+  }
+
+  // ───────────────────────── global key handler ─────────────────────────
+
+  /// Handles gamepad Start → confirm, B → go up / exit at screen level.
+  KeyEventResult _onKeyEvent(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+
+    // Gamepad Start / Enter → confirm selection
+    if (key == LogicalKeyboardKey.gameButtonStart) {
+      _confirmSelection();
+      return KeyEventResult.handled;
+    }
+
+    // B / Back / Escape → go up or exit
+    if (key == LogicalKeyboardKey.goBack ||
+        key == LogicalKeyboardKey.browserBack) {
+      _goBackOrExit();
+      return KeyEventResult.handled;
+    }
+
+    // L1 → select all (file mode, multi-select)
+    if (widget.mode == TvBrowseMode.files &&
+        widget.allowMultiple &&
+        key == LogicalKeyboardKey.gameButtonLeft1) {
+      _selectAll();
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  // ───────────────────────── helpers ─────────────────────────
+
+  int get _fileCount => _entries.whereType<File>().length;
+  int get _dirCount => _entries.whereType<Directory>().length;
+
+  /// Counts immediate children inside [dir] (non-hidden).
+  String _dirItemCount(Directory dir) {
+    try {
+      final count =
+          dir.listSync().where((e) => !p.basename(e.path).startsWith('.')).length;
+      return '$count item${count == 1 ? '' : 's'}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  List<_BreadcrumbSegment> get _breadcrumbs {
+    final parts = _currentDir.path.split('/').where((s) => s.isNotEmpty).toList();
+    final segments = <_BreadcrumbSegment>[];
+    segments.add(_BreadcrumbSegment(label: '/', path: '/'));
+    var running = '';
+    for (final part in parts) {
+      running += '/$part';
+      segments.add(_BreadcrumbSegment(label: part, path: running));
+    }
+    return segments;
+  }
+
+  // ───────────────────────── build ─────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final dirName = _currentDir.path == '/'
-        ? '/'
-        : p.basename(_currentDir.path);
+    final canConfirm = widget.mode == TvBrowseMode.folder || _selected.isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: YageColors.backgroundDark,
-      appBar: AppBar(
-        title: Text(
-          widget.mode == TvBrowseMode.folder
-              ? 'Select Folder'
-              : 'Select ROMs',
+    return Focus(
+      onKeyEvent: _onKeyEvent,
+      child: Scaffold(
+        backgroundColor: YageColors.backgroundDark,
+        appBar: _buildAppBar(canConfirm),
+        body: Column(
+          children: [
+            // ── Interactive breadcrumb bar ──
+            _buildBreadcrumbBar(),
+
+            // ── Quick-nav chips ──
+            _buildQuickNavRow(),
+
+            const Divider(height: 1),
+
+            // ── Status bar: file/folder counts & select-all ──
+            if (!_loading && _error == null) _buildStatusBar(),
+
+            // ── File list ──
+            Expanded(child: _buildBody()),
+          ],
         ),
-        leading: IconButton(
+      ),
+    );
+  }
+
+  // ─────────────── app bar ───────────────
+
+  PreferredSizeWidget _buildAppBar(bool canConfirm) {
+    return AppBar(
+      backgroundColor: YageColors.backgroundMedium,
+      leading: TvFocusable(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => Navigator.of(context).pop(null),
+        child: IconButton(
           icon: const Icon(Icons.close),
+          tooltip: 'Cancel',
           onPressed: () => Navigator.of(context).pop(null),
         ),
-        actions: [
-          if (widget.mode == TvBrowseMode.folder ||
-              _selected.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: TvFocusable(
-                borderRadius: BorderRadius.circular(8),
-                onTap: _confirmSelection,
-                child: TextButton.icon(
-                  onPressed: _confirmSelection,
-                  icon: const Icon(Icons.check),
-                  label: Text(
-                    widget.mode == TvBrowseMode.folder
-                        ? 'Select This Folder'
-                        : 'Add ${_selected.length} ROM${_selected.length == 1 ? '' : 's'}',
+      ),
+      title: Text(
+        widget.mode == TvBrowseMode.folder ? 'Select Folder' : 'Select ROMs',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+      actions: [
+        // Confirm button
+        if (canConfirm)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _confirmSelection,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: YageColors.primary,
+                  foregroundColor: YageColors.textPrimary,
+                ),
+                onPressed: _confirmSelection,
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(
+                  widget.mode == TvBrowseMode.folder
+                      ? 'Select Folder'
+                      : 'Add ${_selected.length} ROM${_selected.length == 1 ? '' : 's'}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ─────────────── breadcrumb bar ───────────────
+
+  Widget _buildBreadcrumbBar() {
+    final segments = _breadcrumbs;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: YageColors.backgroundMedium.withAlpha(160),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        reverse: true, // keep the rightmost (current) segment visible
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < segments.length; i++) ...[
+              if (i > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Icon(Icons.chevron_right,
+                      size: 16, color: YageColors.textMuted),
+                ),
+              TvFocusable(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => _navigateTo(Directory(segments[i].path)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _navigateTo(Directory(segments[i].path)),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Text(
+                      segments[i].label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        color: i == segments.length - 1
+                            ? YageColors.accent
+                            : YageColors.textSecondary,
+                        fontWeight: i == segments.length - 1
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─────────────── quick nav row ───────────────
+
+  Widget _buildQuickNavRow() {
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        children: [
+          _QuickNavChip(
+            icon: Icons.phone_android,
+            label: 'Internal',
+            path: '/storage/emulated/0',
+            isCurrent: _currentDir.path.startsWith('/storage/emulated/0'),
+            onTap: () => _navigateTo(Directory('/storage/emulated/0')),
+          ),
+          _QuickNavChip(
+            icon: Icons.download,
+            label: 'Downloads',
+            path: '/storage/emulated/0/Download',
+            isCurrent:
+                _currentDir.path.startsWith('/storage/emulated/0/Download'),
+            onTap: () =>
+                _navigateTo(Directory('/storage/emulated/0/Download')),
+          ),
+          _QuickNavChip(
+            icon: Icons.storage,
+            label: 'Storage',
+            path: '/storage',
+            isCurrent: _currentDir.path == '/storage',
+            onTap: () => _navigateTo(Directory('/storage')),
+          ),
+          _QuickNavChip(
+            icon: Icons.usb,
+            label: 'USB / SD',
+            path: '/mnt',
+            isCurrent: _currentDir.path.startsWith('/mnt'),
+            onTap: () => _navigateTo(Directory('/mnt')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────── status bar (counts + select all) ───────────────
+
+  Widget _buildStatusBar() {
+    final showSelectAll =
+        widget.mode == TvBrowseMode.files && widget.allowMultiple && _fileCount > 0;
+    final allSelected = showSelectAll &&
+        _entries.whereType<File>().every((f) => _selected.contains(f.path));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: YageColors.surface.withAlpha(80),
+      child: Row(
+        children: [
+          Icon(Icons.folder, size: 14, color: YageColors.textMuted),
+          const SizedBox(width: 4),
+          Text(
+            '$_dirCount folder${_dirCount == 1 ? '' : 's'}',
+            style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+          ),
+          if (_fileCount > 0) ...[
+            const SizedBox(width: 12),
+            Icon(Icons.insert_drive_file, size: 14, color: YageColors.textMuted),
+            const SizedBox(width: 4),
+            Text(
+              '$_fileCount file${_fileCount == 1 ? '' : 's'}',
+              style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+            ),
+          ],
+          if (_selected.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: YageColors.primary.withAlpha(50),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: YageColors.primary.withAlpha(100)),
+              ),
+              child: Text(
+                '${_selected.length} selected',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: YageColors.primary,
+                ),
+              ),
+            ),
+          ],
+          const Spacer(),
+          if (showSelectAll)
+            TvFocusable(
+              borderRadius: BorderRadius.circular(6),
+              onTap: _selectAll,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: _selectAll,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        allSelected
+                            ? Icons.deselect
+                            : Icons.select_all,
+                        size: 14,
+                        color: YageColors.accent,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        allSelected ? 'Deselect all' : 'Select all',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: YageColors.accent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
         ],
       ),
-      body: Column(
-        children: [
-          // Breadcrumb / current path
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: YageColors.backgroundMedium,
-            child: Row(
-              children: [
-                Icon(Icons.folder_open, size: 18, color: YageColors.accent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _currentDir.path,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: YageColors.textSecondary,
-                      fontFamily: 'monospace',
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+    );
+  }
+
+  // ─────────────── main body (list / loading / error / empty) ───────────────
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_permissionDenied) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.folder_off, size: 64,
+                  color: YageColors.textMuted.withAlpha(100)),
+              const SizedBox(height: 16),
+              Text(
+                'File Access Required',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: YageColors.textPrimary,
                 ),
-                if (_selected.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: YageColors.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${_selected.length} selected',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: YageColors.textPrimary,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'RetroPal needs "All files access" permission to browse '
+                'your storage for ROM files.\n\n'
+                'Go to:  Settings → Apps → RetroPal → Permissions '
+                '→ Files and media → Allow management of all files',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: YageColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TvFocusable(
+                    autofocus: true,
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _retryPermission,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: YageColors.primary,
+                        foregroundColor: YageColors.textPrimary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 14),
                       ),
+                      onPressed: _retryPermission,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Grant Permission'),
                     ),
                   ),
-              ],
+                  const SizedBox(width: 12),
+                  TvFocusable(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => Navigator.of(context).pop(null),
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(null),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock, size: 48, color: YageColors.textMuted),
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(color: YageColors.textMuted)),
+            const SizedBox(height: 16),
+            TvFocusable(
+              autofocus: true,
+              borderRadius: BorderRadius.circular(8),
+              onTap: _goBackOrExit,
+              child: OutlinedButton.icon(
+                onPressed: _goBackOrExit,
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('Go back'),
+              ),
             ),
-          ),
+          ],
+        ),
+      );
+    }
 
-          // Quick-nav: storage roots
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              children: [
-                _QuickNavChip(
-                  label: 'Internal',
-                  path: '/storage/emulated/0',
-                  isCurrent: _currentDir.path.startsWith('/storage/emulated/0'),
-                  onTap: () => _navigateTo(Directory('/storage/emulated/0')),
-                ),
-                _QuickNavChip(
-                  label: 'Downloads',
-                  path: '/storage/emulated/0/Download',
-                  isCurrent: _currentDir.path.startsWith('/storage/emulated/0/Download'),
-                  onTap: () => _navigateTo(Directory('/storage/emulated/0/Download')),
-                ),
-                _QuickNavChip(
-                  label: 'Storage',
-                  path: '/storage',
-                  isCurrent: _currentDir.path == '/storage',
-                  onTap: () => _navigateTo(Directory('/storage')),
-                ),
-                _QuickNavChip(
-                  label: 'USB / SD',
-                  path: '/mnt',
-                  isCurrent: _currentDir.path.startsWith('/mnt'),
-                  onTap: () => _navigateTo(Directory('/mnt')),
-                ),
-              ],
+    if (_entries.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_open, size: 56, color: YageColors.textMuted.withAlpha(80)),
+            const SizedBox(height: 12),
+            Text(
+              widget.mode == TvBrowseMode.files
+                  ? 'No ROM files found here'
+                  : 'This folder is empty',
+              style: TextStyle(
+                fontSize: 15,
+                color: YageColors.textMuted,
+              ),
             ),
-          ),
+            const SizedBox(height: 4),
+            Text(
+              'Press Back to go up',
+              style: TextStyle(fontSize: 12, color: YageColors.textMuted.withAlpha(120)),
+            ),
+            const SizedBox(height: 16),
+            TvFocusable(
+              autofocus: true,
+              borderRadius: BorderRadius.circular(8),
+              onTap: _goBackOrExit,
+              onBack: _goBackOrExit,
+              child: OutlinedButton.icon(
+                onPressed: _goBackOrExit,
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('Go back'),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
-          const Divider(height: 1),
+    // File/folder list
+    return FocusTraversalGroup(
+      child: ListView.builder(
+        key: _listKey,
+        padding: const EdgeInsets.only(bottom: 80),
+        itemCount: _entries.length + (_isAtRoot ? 0 : 1),
+        itemBuilder: (context, index) {
+          // First item: ".." parent (only when not at root)
+          if (!_isAtRoot && index == 0) {
+            return TvFocusable(
+              autofocus: true,
+              borderRadius: BorderRadius.circular(0),
+              onTap: _goUp,
+              onBack: _goBackOrExit,
+              child: ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: YageColors.accent.withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.arrow_upward,
+                      color: YageColors.accent, size: 20),
+                ),
+                title: Text(
+                  '.. (Parent folder)',
+                  style: TextStyle(color: YageColors.textSecondary),
+                ),
+                onTap: _goUp,
+              ),
+            );
+          }
 
-          // File list
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lock, size: 48,
-                                color: YageColors.textMuted),
-                            const SizedBox(height: 12),
-                            Text(_error!,
-                                style: TextStyle(color: YageColors.textMuted)),
-                          ],
-                        ),
-                      )
-                    : FocusTraversalGroup(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 80),
-                          itemCount: _entries.length + 1, // +1 for ".." parent
-                          itemBuilder: (context, index) {
-                            // First item: go up
-                            if (index == 0) {
-                              return TvFocusable(
-                                autofocus: true,
-                                borderRadius: BorderRadius.circular(0),
-                                onTap: _goUp,
-                                child: ListTile(
-                                  leading: Icon(Icons.arrow_upward,
-                                      color: YageColors.accent),
-                                  title: Text(
-                                    '.. (Parent folder)',
-                                    style: TextStyle(
-                                      color: YageColors.textSecondary,
-                                    ),
-                                  ),
-                                  onTap: _goUp,
-                                ),
-                              );
-                            }
+          final entityIndex = _isAtRoot ? index : index - 1;
+          final entity = _entries[entityIndex];
+          final isDir = entity is Directory;
+          final name = p.basename(entity.path);
+          final isSelected = _selected.contains(entity.path);
 
-                            final entity = _entries[index - 1];
-                            final isDir = entity is Directory;
-                            final name = p.basename(entity.path);
-                            final isSelected = _selected.contains(entity.path);
-
-                            return TvFocusable(
-                              borderRadius: BorderRadius.circular(0),
-                              onTap: () => _onEntityTap(entity),
-                              child: ListTile(
-                                leading: Icon(
-                                  isDir
-                                      ? Icons.folder
-                                      : _romIcon(name),
-                                  color: isDir
-                                      ? YageColors.accent
-                                      : isSelected
-                                          ? YageColors.primary
-                                          : YageColors.textMuted,
-                                ),
-                                title: Text(
-                                  name,
-                                  style: TextStyle(
-                                    color: isSelected
-                                        ? YageColors.primary
-                                        : YageColors.textPrimary,
-                                    fontWeight: isSelected
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                                subtitle: isDir
-                                    ? null
-                                    : Text(
-                                        _formatSize(entity as File),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: YageColors.textMuted,
-                                        ),
-                                      ),
-                                trailing: isDir
-                                    ? Icon(Icons.chevron_right,
-                                        color: YageColors.textMuted)
-                                    : isSelected
-                                        ? Icon(Icons.check_circle,
-                                            color: YageColors.primary)
-                                        : Icon(Icons.radio_button_unchecked,
-                                            color: YageColors.surfaceLight),
-                                onTap: () => _onEntityTap(entity),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-          ),
-        ],
+          return TvFocusable(
+            autofocus: _isAtRoot && index == 0,
+            borderRadius: BorderRadius.circular(0),
+            onTap: () => _onEntityTap(entity),
+            onBack: _goBackOrExit,
+            child: _FileListTile(
+              name: name,
+              isDir: isDir,
+              isSelected: isSelected,
+              subtitle: _entitySubtitle(entity),
+              icon: isDir ? Icons.folder : _romIcon(name),
+              onTap: () => _onEntityTap(entity),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  String _entitySubtitle(FileSystemEntity entity) {
+    if (entity is Directory) return _dirItemCount(entity);
+    if (entity is File) return _formatSize(entity);
+    return '';
   }
 
   IconData _romIcon(String name) {
@@ -400,7 +784,9 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     try {
       final bytes = file.lengthSync();
       if (bytes < 1024) return '$bytes B';
-      if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+      if (bytes < 1024 * 1024) {
+        return '${(bytes / 1024).toStringAsFixed(1)} KB';
+      }
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     } catch (_) {
       return '';
@@ -408,13 +794,100 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  List tile for files / directories
+// ═══════════════════════════════════════════════════════════════════════
+
+class _FileListTile extends StatelessWidget {
+  final String name;
+  final bool isDir;
+  final bool isSelected;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _FileListTile({
+    required this.name,
+    required this.isDir,
+    required this.isSelected,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      color: isSelected ? YageColors.primary.withAlpha(25) : Colors.transparent,
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: isDir
+                ? YageColors.accent.withAlpha(30)
+                : isSelected
+                    ? YageColors.primary.withAlpha(40)
+                    : YageColors.surface,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: isDir
+                ? YageColors.accent
+                : isSelected
+                    ? YageColors.primary
+                    : YageColors.textMuted,
+          ),
+        ),
+        title: Text(
+          name,
+          style: TextStyle(
+            color: isSelected ? YageColors.primary : YageColors.textPrimary,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: subtitle.isNotEmpty
+            ? Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+              )
+            : null,
+        trailing: isDir
+            ? Icon(Icons.chevron_right, color: YageColors.textMuted)
+            : AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: isSelected
+                    ? Icon(Icons.check_circle,
+                        key: const ValueKey('checked'),
+                        color: YageColors.primary)
+                    : Icon(Icons.radio_button_unchecked,
+                        key: const ValueKey('unchecked'),
+                        color: YageColors.surfaceLight),
+              ),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Quick-nav chip
+// ═══════════════════════════════════════════════════════════════════════
+
 class _QuickNavChip extends StatelessWidget {
+  final IconData icon;
   final String label;
   final String path;
   final bool isCurrent;
   final VoidCallback onTap;
 
   const _QuickNavChip({
+    required this.icon,
     required this.label,
     required this.path,
     required this.isCurrent,
@@ -432,15 +905,23 @@ class _QuickNavChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: ActionChip(
+          avatar: Icon(
+            icon,
+            size: 16,
+            color: isCurrent ? YageColors.backgroundDark : YageColors.textMuted,
+          ),
           label: Text(
             label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-              color: isCurrent ? YageColors.backgroundDark : YageColors.textSecondary,
+              color: isCurrent
+                  ? YageColors.backgroundDark
+                  : YageColors.textSecondary,
             ),
           ),
-          backgroundColor: isCurrent ? YageColors.accent : YageColors.surface,
+          backgroundColor:
+              isCurrent ? YageColors.accent : YageColors.surface,
           side: BorderSide(
             color: isCurrent ? YageColors.accent : YageColors.surfaceLight,
           ),
@@ -449,4 +930,14 @@ class _QuickNavChip extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Breadcrumb segment model
+// ═══════════════════════════════════════════════════════════════════════
+
+class _BreadcrumbSegment {
+  final String label;
+  final String path;
+  const _BreadcrumbSegment({required this.label, required this.path});
 }

@@ -31,10 +31,8 @@ void main() async {
   // Detect Android TV before building the UI
   await TvDetector.initialize();
 
-  // Request storage permission early (skip on TV — no Settings UI available)
-  if (!TvDetector.isTV) {
-    await _requestStoragePermission();
-  }
+  // Request storage permission early (all platforms including TV)
+  await _requestStoragePermission();
 
   // Allow all orientations
   SystemChrome.setPreferredOrientations([
