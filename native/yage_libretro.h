@@ -131,6 +131,36 @@ YAGE_API int yage_core_load_sram(YageCore* core, const char* path);
  */
 YAGE_API int yage_core_get_platform(YageCore* core);
 
+/*
+ * Link Cable (Network Multiplayer)
+ *
+ * Access SIO (serial I/O) registers via the libretro memory map.
+ * Supported for GB/GBC (SB=0xFF01, SC=0xFF02) and GBA (SIOCNT/SIODATA).
+ */
+
+/* Check if link cable is supported for the current ROM.
+ * Returns 1 if I/O memory map is available, 0 otherwise. */
+YAGE_API int yage_core_link_is_supported(YageCore* core);
+
+/* Read a byte from an emulated memory address (via memory map).
+ * Returns the byte value (0-255) on success, -1 on failure. */
+YAGE_API int yage_core_link_read_byte(YageCore* core, uint32_t addr);
+
+/* Write a byte to an emulated memory address (via memory map).
+ * Returns 0 on success, -1 on failure. */
+YAGE_API int yage_core_link_write_byte(YageCore* core, uint32_t addr, uint8_t value);
+
+/* Get GB/GBC SIO transfer status.
+ * Returns: 0 = idle, 1 = transfer pending (master clock), -1 = error/unsupported. */
+YAGE_API int yage_core_link_get_transfer_status(YageCore* core);
+
+/* Exchange a byte during a pending SIO transfer:
+ * - Writes incoming_byte to SB (received from remote)
+ * - Clears the transfer-start flag in SC
+ * - Triggers the serial interrupt (IF bit 3)
+ * Returns the outgoing byte that was in SB before replacement, or -1 on error. */
+YAGE_API int yage_core_link_exchange_data(YageCore* core, uint8_t incoming);
+
 #ifdef __cplusplus
 }
 #endif

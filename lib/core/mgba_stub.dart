@@ -144,6 +144,13 @@ class MGBAStub {
   int rewindPop() => -1; // No states available in stub
   int rewindCount() => 0;
 
+  // Link cable stubs
+  bool get isLinkSupported => false;
+  int linkReadByte(int addr) => -1;
+  int linkWriteByte(int addr, int value) => -1;
+  int linkGetTransferStatus() => -1;
+  int linkExchangeData(int incoming) => -1;
+
   void reset() {
     _frameCount = 0;
   }

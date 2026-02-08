@@ -837,10 +837,16 @@ static bool environment_callback(unsigned cmd, void* data) {
                 *(const char**)data = ".";
             }
             return true;
+        case 36:      /* RETRO_ENVIRONMENT_SET_MEMORY_MAPS (no experimental flag) */
+        case 0x10024: /* RETRO_ENVIRONMENT_SET_MEMORY_MAPS (with experimental flag) */
+            handle_set_memory_maps(data);
+            return true;
         case 40: /* RETRO_ENVIRONMENT_GET_INPUT_BITMASKS */
             return true;
         default:
-            LOGI("Unhandled env cmd: %u", cmd);
+            if (g_log_frame_count < 5) {
+                LOGI("Unhandled env cmd: %u", cmd);
+            }
             return false;
     }
 }
@@ -1402,6 +1408,178 @@ int yage_core_rewind_pop(YageCore* core) {
 int yage_core_rewind_count(YageCore* core) {
     (void)core;
     return g_rewind_count;
+}
+
+/*
+ * ============================================================
+ * Link Cable — Memory Map + SIO Register Access
+ * ============================================================
+ *
+ * We intercept RETRO_ENVIRONMENT_SET_MEMORY_MAPS (cmd 36, with or
+ * without the EXPERIMENTAL flag) to obtain direct pointers to the
+ * emulated address space.  For GB/GBC the I/O region at 0xFF00
+ * gives us SB (0xFF01), SC (0xFF02), and IF (0xFF0F) which are
+ * the registers needed for link-cable emulation.
+ *
+ * For GBA the I/O region at 0x04000000 contains SIOCNT (0x128)
+ * and SIODATA8 (0x12A).
+ */
+
+/* ── Memory-map descriptor storage ── */
+struct yage_mem_region {
+    void*    ptr;      /* Host pointer to start of this region          */
+    uint32_t start;    /* Emulated start address                        */
+    uint32_t len;      /* Length in bytes                                */
+};
+
+#define MAX_MEM_REGIONS 32
+static struct yage_mem_region g_mem_regions[MAX_MEM_REGIONS];
+static int g_mem_region_count = 0;
+
+/* Quick look-up cache for the I/O region (set once after SET_MEMORY_MAPS) */
+static uint8_t* g_io_ptr = NULL;  /* Pointer to the I/O base             */
+static uint32_t g_io_start = 0;   /* Emulated start address of the region */
+static uint32_t g_io_len = 0;     /* Length of the I/O region              */
+
+/* libretro memory map structures (matching the libretro API) */
+struct retro_memory_descriptor_lc {
+    uint64_t    flags;
+    void*       ptr;
+    size_t      offset;
+    size_t      start;
+    size_t      select;
+    size_t      disconnect;
+    size_t      len;
+    const char* addrspace;
+};
+
+struct retro_memory_map_lc {
+    const struct retro_memory_descriptor_lc* descriptors;
+    unsigned num_descriptors;
+};
+
+/* Called from the environment callback to store the memory map. */
+static void handle_set_memory_maps(const void* data) {
+    if (!data) return;
+
+    const struct retro_memory_map_lc* mmaps = (const struct retro_memory_map_lc*)data;
+    g_mem_region_count = 0;
+    g_io_ptr = NULL;
+    g_io_start = 0;
+    g_io_len = 0;
+
+    for (unsigned i = 0; i < mmaps->num_descriptors && g_mem_region_count < MAX_MEM_REGIONS; i++) {
+        const struct retro_memory_descriptor_lc* d = &mmaps->descriptors[i];
+        if (!d->ptr || d->len == 0) continue;
+
+        struct yage_mem_region* r = &g_mem_regions[g_mem_region_count++];
+        r->ptr   = d->ptr;
+        r->start = (uint32_t)d->start;
+        r->len   = (uint32_t)d->len;
+
+        /* Identify the I/O region for quick access.
+         * GB/GBC:  I/O starts at 0xFF00
+         * GBA:     I/O starts at 0x04000000 */
+        if (d->start == 0xFF00 || d->start == 0x04000000) {
+            g_io_ptr   = (uint8_t*)d->ptr;
+            g_io_start = (uint32_t)d->start;
+            g_io_len   = (uint32_t)d->len;
+            LOGI("Link cable: I/O region found at 0x%08X, len=%u, ptr=%p",
+                 g_io_start, g_io_len, g_io_ptr);
+        }
+    }
+    LOGI("Link cable: stored %d memory regions", g_mem_region_count);
+}
+
+/* Resolve an emulated address to a host pointer using the stored map. */
+static uint8_t* resolve_address(uint32_t addr) {
+    /* Fast path: check the cached I/O region first */
+    if (g_io_ptr && addr >= g_io_start && addr < g_io_start + g_io_len) {
+        return g_io_ptr + (addr - g_io_start);
+    }
+    /* Slow path: scan all stored regions */
+    for (int i = 0; i < g_mem_region_count; i++) {
+        struct yage_mem_region* r = &g_mem_regions[i];
+        if (addr >= r->start && addr < r->start + r->len) {
+            return (uint8_t*)r->ptr + (addr - r->start);
+        }
+    }
+    return NULL;
+}
+
+/* ── GB/GBC SIO register addresses ── */
+#define GB_REG_SB 0xFF01   /* Serial transfer data                      */
+#define GB_REG_SC 0xFF02   /* Serial transfer control                   */
+#define GB_REG_IF 0xFF0F   /* Interrupt flag                            */
+
+/* SC bit masks */
+#define SC_TRANSFER_START 0x80   /* Bit 7: transfer active / requested  */
+#define SC_CLOCK_INTERNAL 0x01   /* Bit 0: 1 = internal clock (master)  */
+
+/* IF bit for serial interrupt */
+#define IF_SERIAL 0x08   /* Bit 3 */
+
+/* ── Public API implementations ── */
+
+int yage_core_link_is_supported(YageCore* core) {
+    (void)core;
+    return g_io_ptr != NULL ? 1 : 0;
+}
+
+int yage_core_link_read_byte(YageCore* core, uint32_t addr) {
+    (void)core;
+    uint8_t* p = resolve_address(addr);
+    if (!p) return -1;
+    return (int)*p;
+}
+
+int yage_core_link_write_byte(YageCore* core, uint32_t addr, uint8_t value) {
+    (void)core;
+    uint8_t* p = resolve_address(addr);
+    if (!p) return -1;
+    *p = value;
+    return 0;
+}
+
+int yage_core_link_get_transfer_status(YageCore* core) {
+    (void)core;
+    if (!g_io_ptr) return -1;
+
+    /* Only GB/GBC SIO is supported for now */
+    if (g_io_start != 0xFF00) return -1;
+
+    uint8_t* sc = resolve_address(GB_REG_SC);
+    if (!sc) return -1;
+
+    if (*sc & SC_TRANSFER_START) {
+        /* Transfer requested — check if master (internal clock) */
+        return (*sc & SC_CLOCK_INTERNAL) ? 1 : 0;
+    }
+    return 0; /* idle */
+}
+
+int yage_core_link_exchange_data(YageCore* core, uint8_t incoming) {
+    (void)core;
+    if (!g_io_ptr || g_io_start != 0xFF00) return -1;
+
+    uint8_t* sb = resolve_address(GB_REG_SB);
+    uint8_t* sc = resolve_address(GB_REG_SC);
+    uint8_t* if_reg = resolve_address(GB_REG_IF);
+    if (!sb || !sc || !if_reg) return -1;
+
+    /* Capture outgoing byte before overwriting */
+    int outgoing = (int)*sb;
+
+    /* Write incoming data from the remote player */
+    *sb = incoming;
+
+    /* Clear the transfer-start flag (transfer complete) */
+    *sc &= ~SC_TRANSFER_START;
+
+    /* Trigger serial interrupt so the game knows the transfer finished */
+    *if_reg |= IF_SERIAL;
+
+    return outgoing;
 }
 
 /* Case-insensitive string compare for cross-platform */

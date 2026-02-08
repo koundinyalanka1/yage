@@ -52,7 +52,7 @@ class EmulatorSettings {
     this.selectedColorPalette = 0,
     this.enableFiltering = true,
     this.maintainAspectRatio = true,
-    this.autoSaveInterval = 60,
+    this.autoSaveInterval = 0,
     this.gamepadLayoutPortrait = GamepadLayout.defaultPortrait,
     this.gamepadLayoutLandscape = GamepadLayout.defaultLandscape,
     this.useJoystick = false,
@@ -179,7 +179,7 @@ class EmulatorSettings {
       selectedColorPalette: json['selectedColorPalette'] as int? ?? 0,
       enableFiltering: json['enableFiltering'] as bool? ?? true,
       maintainAspectRatio: json['maintainAspectRatio'] as bool? ?? true,
-      autoSaveInterval: json['autoSaveInterval'] as int? ?? 60,
+      autoSaveInterval: json['autoSaveInterval'] as int? ?? 0,
       gamepadLayoutPortrait: json['gamepadLayoutPortrait'] != null
           ? GamepadLayout.fromJson(json['gamepadLayoutPortrait'] as Map<String, dynamic>)
           : GamepadLayout.defaultPortrait,

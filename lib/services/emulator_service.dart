@@ -11,6 +11,7 @@ import '../core/mgba_bindings.dart';
 import '../core/mgba_stub.dart';
 import '../models/game_rom.dart';
 import '../models/emulator_settings.dart';
+import 'link_cable_service.dart';
 
 /// State of the emulator
 enum EmulatorState {
@@ -59,6 +60,19 @@ class EmulatorService extends ChangeNotifier {
   final Stopwatch _playTimeStopwatch = Stopwatch();
   int _flushedPlayTimeSeconds = 0;
   
+  // Link cable service (set externally via setter)
+  LinkCableService? _linkCable;
+
+  /// Attach a link cable service for network multiplayer.
+  set linkCable(LinkCableService? service) => _linkCable = service;
+  LinkCableService? get linkCable => _linkCable;
+
+  /// Whether the native core supports link cable I/O register access.
+  bool get isLinkSupported {
+    if (_useStub) return _stub?.isLinkSupported ?? false;
+    return _core?.isLinkSupported ?? false;
+  }
+
   // Rewind state
   bool _isRewinding = false;
   int _rewindCaptureCounter = 0;
@@ -530,6 +544,9 @@ class EmulatorService extends ChangeNotifier {
           _core!.rewindPush();
         }
       }
+
+      // ── Link Cable SIO polling ──
+      _pollLinkCable();
     }
 
     _updateFps();
@@ -645,6 +662,38 @@ class EmulatorService extends ChangeNotifier {
     final pixels = _core!.getVideoBuffer();
     if (pixels != null && onFrame != null) {
       onFrame!(pixels, _core!.width, _core!.height);
+    }
+  }
+
+  // ── Link Cable ──
+
+  /// Poll the SIO registers and exchange data with the link cable peer.
+  /// Called once per frame when a [LinkCableService] is connected.
+  void _pollLinkCable() {
+    final lc = _linkCable;
+    if (lc == null || lc.state != LinkCableState.connected) return;
+    if (_useStub || _core == null) return;
+
+    // If the peer sent us a byte and a transfer is pending, inject it
+    if (lc.hasIncomingData) {
+      final status = _core!.linkGetTransferStatus();
+      if (status >= 0) {
+        // Exchange: write incoming byte, get outgoing byte, complete transfer
+        final incoming = lc.consumeIncomingData();
+        if (incoming >= 0) {
+          _core!.linkExchangeData(incoming);
+        }
+      }
+    }
+
+    // If a transfer is pending on our side (master clock), send it out
+    final status = _core!.linkGetTransferStatus();
+    if (status == 1 && !lc.isAwaitingReply) {
+      // Read the outgoing byte from SB
+      final outgoing = _core!.linkReadByte(0xFF01); // GB_REG_SB
+      if (outgoing >= 0) {
+        lc.sendSioData(outgoing);
+      }
     }
   }
 

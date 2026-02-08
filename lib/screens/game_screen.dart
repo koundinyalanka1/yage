@@ -11,6 +11,7 @@ import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
 import '../services/emulator_service.dart';
 import '../services/game_library_service.dart';
+import '../services/link_cable_service.dart';
 import '../services/settings_service.dart';
 import '../services/gamepad_input.dart';
 import '../utils/tv_detector.dart';
@@ -86,6 +87,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Start emulation, then show shortcuts help on first launch
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final emulator = context.read<EmulatorService>();
+      // Wire link cable service to emulator
+      emulator.linkCable = context.read<LinkCableService>();
       emulator.start();
       _maybeShowShortcutsHelp();
     });
@@ -96,6 +99,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     try {
       WidgetsBinding.instance.removeObserver(this);
       _focusNode.dispose();
+
+      // Disconnect link cable when leaving the game screen
+      try {
+        final lc = context.read<LinkCableService>();
+        lc.disconnect();
+        context.read<EmulatorService>().linkCable = null;
+      } catch (_) {}
 
       // Allow screen to sleep again
       WakelockPlus.disable();
@@ -378,21 +388,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
-  /// Dedicated save-state slot for auto-save on exit (outside user slots 0-5).
-  static const int _autoExitSlot = 9;
-
   void _exitGame() {
     final emulator = context.read<EmulatorService>();
     _flushPlayTime();
     emulator.stop();
     Navigator.of(context).pop();
-  }
-
-  /// Save state to the dedicated auto slot, then exit.
-  Future<void> _saveAndExit() async {
-    final emulator = context.read<EmulatorService>();
-    await emulator.saveState(_autoExitSlot);
-    _exitGame();
   }
 
   Future<bool> _showExitDialog() async {
@@ -404,8 +404,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       emulator.pause();
     }
     
-    // 'save' = save & exit, true = exit without save state, false = cancel
-    final result = await showDialog<String>(
+    final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
@@ -425,21 +424,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
         ),
         content: Text(
-          'Your battery save data will be preserved.\nCreate a save state for exact progress.',
+          'Your battery save data will be preserved.',
           style: TextStyle(
             color: YageColors.textSecondary,
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop('cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
             child: Text(
               'Cancel',
               style: TextStyle(color: YageColors.textMuted),
             ),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop('exit'),
+            onPressed: () => Navigator.of(context).pop(true),
             style: TextButton.styleFrom(
               backgroundColor: YageColors.error.withAlpha(51),
             ),
@@ -451,27 +450,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop('save'),
-            style: TextButton.styleFrom(
-              backgroundColor: YageColors.primary.withAlpha(51),
-            ),
-            child: Text(
-              'Save & Exit',
-              style: TextStyle(
-                color: YageColors.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
         ],
       ),
     );
     
-    if (result == 'save') {
-      await _saveAndExit();
-      return true;
-    } else if (result == 'exit') {
+    if (result == true) {
       _exitGame();
       return true;
     } else {
@@ -481,6 +464,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
       return false;
     }
+  }
+
+  void _showLinkCableDialog() {
+    final emulator = context.read<EmulatorService>();
+    final linkCable = context.read<LinkCableService>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => _LinkCableDialog(
+        game: widget.game,
+        linkCable: linkCable,
+        isSupported: emulator.isLinkSupported,
+      ),
+    );
   }
 
   void _toggleOrientation() {
@@ -560,6 +558,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       ? MediaQuery.of(context).size.width * 0.12 + 52  // left of rotate btn
                       : 56,  // 8 (rotate btn right) + 44 (rotate btn width) + 4 (gap)
                   child: FpsOverlay(fps: emulator.currentFps),
+                ),
+              
+              // Link cable connection indicator
+              if (context.watch<LinkCableService>().state == LinkCableState.connected)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 4,
+                  right: _isLandscape 
+                      ? MediaQuery.of(context).size.width * 0.12 + 100
+                      : 104,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withAlpha(160),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cable, size: 12, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text(
+                          'LINKED',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               
               // Demo mode indicator
@@ -726,6 +755,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   onShowShortcuts: () {
                     _toggleMenu(); // close menu first
                     _showShortcutsHelp();
+                  },
+                  onLinkCable: () {
+                    _showLinkCableDialog();
                   },
                 ),
             ],
@@ -1186,6 +1218,7 @@ class _InGameMenu extends StatelessWidget {
   final VoidCallback onToggleJoystick;
   final VoidCallback onScreenshot;
   final VoidCallback onShowShortcuts;
+  final VoidCallback onLinkCable;
 
   const _InGameMenu({
     required this.game,
@@ -1204,6 +1237,7 @@ class _InGameMenu extends StatelessWidget {
     required this.onToggleJoystick,
     required this.onScreenshot,
     required this.onShowShortcuts,
+    required this.onLinkCable,
   });
 
   @override
@@ -1332,6 +1366,13 @@ class _InGameMenu extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     
+                    _MenuActionButton(
+                      icon: Icons.cable,
+                      label: 'Link Cable',
+                      onTap: onLinkCable,
+                    ),
+                    const SizedBox(height: 10),
+
                     _MenuActionButton(
                       icon: Icons.keyboard,
                       label: 'Shortcuts',
@@ -2177,6 +2218,431 @@ class _InputTypeSelector extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Link Cable Dialog
+// ═══════════════════════════════════════════════════════════════
+
+class _LinkCableDialog extends StatefulWidget {
+  final GameRom game;
+  final LinkCableService linkCable;
+  final bool isSupported;
+
+  const _LinkCableDialog({
+    required this.game,
+    required this.linkCable,
+    required this.isSupported,
+  });
+
+  @override
+  State<_LinkCableDialog> createState() => _LinkCableDialogState();
+}
+
+class _LinkCableDialogState extends State<_LinkCableDialog> {
+  final TextEditingController _ipController = TextEditingController();
+  List<String> _localIPs = [];
+  bool _isBusy = false;
+  String? _statusMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.linkCable.addListener(_onLinkStateChanged);
+    _loadLocalIPs();
+  }
+
+  @override
+  void dispose() {
+    widget.linkCable.removeListener(_onLinkStateChanged);
+    _ipController.dispose();
+    super.dispose();
+  }
+
+  void _onLinkStateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadLocalIPs() async {
+    final ips = await widget.linkCable.getLocalIPs();
+    if (mounted) {
+      setState(() => _localIPs = ips);
+    }
+  }
+
+  Future<void> _host() async {
+    setState(() {
+      _isBusy = true;
+      _statusMessage = 'Starting server...';
+    });
+
+    final hash = await LinkCableService.computeRomHash(widget.game.path);
+    final ok = await widget.linkCable.host(romHash: hash);
+
+    if (mounted) {
+      setState(() {
+        _isBusy = false;
+        _statusMessage = ok ? 'Waiting for player 2...' : widget.linkCable.error;
+      });
+    }
+  }
+
+  Future<void> _join() async {
+    final ip = _ipController.text.trim();
+    if (ip.isEmpty) {
+      setState(() => _statusMessage = 'Enter the host\'s IP address');
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _statusMessage = 'Connecting to $ip...';
+    });
+
+    final hash = await LinkCableService.computeRomHash(widget.game.path);
+    final ok = await widget.linkCable.join(hostAddress: ip, romHash: hash);
+
+    if (mounted) {
+      setState(() {
+        _isBusy = false;
+        _statusMessage = ok ? null : widget.linkCable.error;
+      });
+    }
+  }
+
+  Future<void> _disconnect() async {
+    await widget.linkCable.disconnect();
+    if (mounted) {
+      setState(() => _statusMessage = 'Disconnected');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.linkCable.state;
+    final isConnected = state == LinkCableState.connected;
+
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: YageColors.primary.withAlpha(77),
+          width: 2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      title: Row(
+        children: [
+          Icon(Icons.cable, color: YageColors.accent, size: 22),
+          const SizedBox(width: 10),
+          Text(
+            'Link Cable',
+            style: TextStyle(
+              color: YageColors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+          const Spacer(),
+          if (isConnected)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.green.withAlpha(40),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8, height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${widget.linkCable.latencyMs}ms',
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status / error message
+            if (_statusMessage != null || widget.linkCable.error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  widget.linkCable.error ?? _statusMessage ?? '',
+                  style: TextStyle(
+                    color: widget.linkCable.error != null
+                        ? YageColors.error
+                        : YageColors.accent,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+
+            if (isConnected) ...[
+              _buildConnectedView(),
+            ] else if (state == LinkCableState.hosting) ...[
+              _buildHostingView(),
+            ] else if (state == LinkCableState.joining) ...[
+              _buildJoiningView(),
+            ] else ...[
+              _buildDisconnectedView(),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        if (isConnected || state == LinkCableState.hosting)
+          TextButton(
+            onPressed: _isBusy ? null : _disconnect,
+            child: Text(
+              'Disconnect',
+              style: TextStyle(color: YageColors.error),
+            ),
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            isConnected ? 'Done' : 'Close',
+            style: TextStyle(color: YageColors.textMuted),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDisconnectedView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Connect two devices over Wi-Fi to trade, battle, or play '
+          'multiplayer games using the virtual link cable.',
+          style: TextStyle(
+            color: YageColors.textSecondary,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Host button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isBusy ? null : _host,
+            icon: const Icon(Icons.wifi_tethering, size: 18),
+            label: const Text('Host Game'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: YageColors.primary,
+              foregroundColor: YageColors.textPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // OR divider
+        Row(
+          children: [
+            Expanded(child: Divider(color: YageColors.surfaceLight)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text('OR',
+                style: TextStyle(color: YageColors.textMuted, fontSize: 12),
+              ),
+            ),
+            Expanded(child: Divider(color: YageColors.surfaceLight)),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Join section
+        TextField(
+          controller: _ipController,
+          style: TextStyle(color: YageColors.textPrimary),
+          decoration: InputDecoration(
+            hintText: 'Host IP address (e.g. 192.168.1.5)',
+            hintStyle: TextStyle(color: YageColors.textMuted, fontSize: 13),
+            filled: true,
+            fillColor: YageColors.backgroundLight,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14, vertical: 12,
+            ),
+          ),
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isBusy ? null : _join,
+            icon: const Icon(Icons.link, size: 18),
+            label: const Text('Join Game'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: YageColors.accent,
+              foregroundColor: YageColors.textPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildHostingView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your IP Address:',
+          style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        for (final ip in _localIPs)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: YageColors.backgroundLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                '$ip : ${LinkCableService.defaultPort}',
+                style: TextStyle(
+                  color: YageColors.accent,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ),
+        if (_localIPs.isEmpty)
+          Text(
+            'Unable to detect IP address',
+            style: TextStyle(color: YageColors.error, fontSize: 13),
+          ),
+        const SizedBox(height: 12),
+        Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2, color: YageColors.accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Waiting for player 2 to join...',
+                style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildJoiningView() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: Column(
+          children: [
+            SizedBox(
+              width: 24, height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5, color: YageColors.accent,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Connecting...',
+              style: TextStyle(color: YageColors.textSecondary, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectedView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.green.withAlpha(20),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.green.withAlpha(60)),
+          ),
+          child: Column(
+            children: [
+              const Icon(Icons.link, color: Colors.green, size: 32),
+              const SizedBox(height: 8),
+              Text(
+                'Link Cable Connected',
+                style: TextStyle(
+                  color: Colors.green.shade300,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Connected to ${widget.linkCable.peerAddress}',
+                style: TextStyle(color: YageColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Resume the game to use link cable features like trading and battling.',
+          style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }

@@ -103,6 +103,22 @@ typedef MgbaCoreRewindPop = int Function(NativeCore core);
 typedef MgbaCoreRewindCountNative = Int32 Function(NativeCore core);
 typedef MgbaCoreRewindCount = int Function(NativeCore core);
 
+// Link cable functions
+typedef MgbaCoreLinkIsSupportedNative = Int32 Function(NativeCore core);
+typedef MgbaCoreLinkIsSupported = int Function(NativeCore core);
+
+typedef MgbaCoreLinkReadByteNative = Int32 Function(NativeCore core, Uint32 addr);
+typedef MgbaCoreLinkReadByte = int Function(NativeCore core, int addr);
+
+typedef MgbaCoreLinkWriteByteNative = Int32 Function(NativeCore core, Uint32 addr, Uint8 value);
+typedef MgbaCoreLinkWriteByte = int Function(NativeCore core, int addr, int value);
+
+typedef MgbaCoreLinkGetTransferStatusNative = Int32 Function(NativeCore core);
+typedef MgbaCoreLinkGetTransferStatus = int Function(NativeCore core);
+
+typedef MgbaCoreLinkExchangeDataNative = Int32 Function(NativeCore core, Uint8 incoming);
+typedef MgbaCoreLinkExchangeData = int Function(NativeCore core, int incoming);
+
 /// Game Boy key codes matching mGBA's input format
 class GBAKey {
   static const int a = 1 << 0;
@@ -160,6 +176,15 @@ class MGBABindings {
   late final MgbaCoreRewindPush coreRewindPush;
   late final MgbaCoreRewindPop coreRewindPop;
   late final MgbaCoreRewindCount coreRewindCount;
+
+  // Link cable (optional — loaded separately so older native libs still work)
+  MgbaCoreLinkIsSupported? coreLinkIsSupported;
+  MgbaCoreLinkReadByte? coreLinkReadByte;
+  MgbaCoreLinkWriteByte? coreLinkWriteByte;
+  MgbaCoreLinkGetTransferStatus? coreLinkGetTransferStatus;
+  MgbaCoreLinkExchangeData? coreLinkExchangeData;
+  bool _linkLoaded = false;
+  bool get isLinkLoaded => _linkLoaded;
 
   bool get isLoaded => _isLoaded;
 
@@ -325,6 +350,32 @@ class MGBABindings {
 
       _isLoaded = true;
       debugPrint('YAGE core library loaded successfully (all ${30} symbols bound)');
+
+      // ── Optional: try to load link cable symbols ──
+      // These may not exist in older builds of the native library.
+      try {
+        coreLinkIsSupported = lib
+            .lookup<NativeFunction<MgbaCoreLinkIsSupportedNative>>('yage_core_link_is_supported')
+            .asFunction<MgbaCoreLinkIsSupported>();
+        coreLinkReadByte = lib
+            .lookup<NativeFunction<MgbaCoreLinkReadByteNative>>('yage_core_link_read_byte')
+            .asFunction<MgbaCoreLinkReadByte>();
+        coreLinkWriteByte = lib
+            .lookup<NativeFunction<MgbaCoreLinkWriteByteNative>>('yage_core_link_write_byte')
+            .asFunction<MgbaCoreLinkWriteByte>();
+        coreLinkGetTransferStatus = lib
+            .lookup<NativeFunction<MgbaCoreLinkGetTransferStatusNative>>('yage_core_link_get_transfer_status')
+            .asFunction<MgbaCoreLinkGetTransferStatus>();
+        coreLinkExchangeData = lib
+            .lookup<NativeFunction<MgbaCoreLinkExchangeDataNative>>('yage_core_link_exchange_data')
+            .asFunction<MgbaCoreLinkExchangeData>();
+        _linkLoaded = true;
+        debugPrint('Link cable symbols loaded successfully');
+      } catch (e) {
+        debugPrint('Link cable symbols not available (native lib rebuild needed): $e');
+        _linkLoaded = false;
+      }
+
       return true;
     } catch (e) {
       debugPrint('Failed to load YAGE core library: $e');
@@ -597,6 +648,40 @@ class MGBACore {
   int rewindCount() {
     if (_corePtr == null) return 0;
     return _bindings.coreRewindCount(_corePtr as Pointer<Void>);
+  }
+
+  // ── Link Cable ──
+
+  /// Check if link cable I/O registers are accessible.
+  bool get isLinkSupported {
+    if (_corePtr == null || !_bindings.isLinkLoaded) return false;
+    return _bindings.coreLinkIsSupported!(_corePtr as Pointer<Void>) == 1;
+  }
+
+  /// Read a byte from an emulated memory address.
+  int linkReadByte(int addr) {
+    if (_corePtr == null || _bindings.coreLinkReadByte == null) return -1;
+    return _bindings.coreLinkReadByte!(_corePtr as Pointer<Void>, addr);
+  }
+
+  /// Write a byte to an emulated memory address.
+  /// Returns 0 on success, -1 on failure.
+  int linkWriteByte(int addr, int value) {
+    if (_corePtr == null || _bindings.coreLinkWriteByte == null) return -1;
+    return _bindings.coreLinkWriteByte!(_corePtr as Pointer<Void>, addr, value);
+  }
+
+  /// Get SIO transfer status: 0=idle, 1=pending (master), -1=error.
+  int linkGetTransferStatus() {
+    if (_corePtr == null || _bindings.coreLinkGetTransferStatus == null) return -1;
+    return _bindings.coreLinkGetTransferStatus!(_corePtr as Pointer<Void>);
+  }
+
+  /// Exchange a byte during a pending SIO transfer.
+  /// Returns the outgoing byte, or -1 on error.
+  int linkExchangeData(int incoming) {
+    if (_corePtr == null || _bindings.coreLinkExchangeData == null) return -1;
+    return _bindings.coreLinkExchangeData!(_corePtr as Pointer<Void>, incoming);
   }
 
   /// Stop and clean up
