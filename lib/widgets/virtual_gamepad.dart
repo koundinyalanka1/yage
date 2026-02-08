@@ -44,11 +44,17 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
   int _currentKeys = 0;
   GamepadButton? _selectedButton;
   late GamepadLayout _editingLayout;
+  late GamepadSkinData _resolvedSkin;
+
+  /// Cooldown guard so rapid touch events don't spam the haptic engine.
+  final Stopwatch _hapticCooldown = Stopwatch();
+  static const Duration _hapticMinInterval = Duration(milliseconds: 60);
 
   @override
   void initState() {
     super.initState();
     _editingLayout = widget.layout;
+    _resolvedSkin = GamepadSkinData.resolve(widget.skin);
   }
 
   @override
@@ -56,6 +62,9 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.layout != widget.layout) {
       _editingLayout = widget.layout;
+    }
+    if (oldWidget.skin != widget.skin) {
+      _resolvedSkin = GamepadSkinData.resolve(widget.skin);
     }
   }
 
@@ -71,7 +80,12 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       widget.onKeysChanged(_currentKeys);
       
       if (pressed && widget.enableVibration) {
-        HapticFeedback.lightImpact();
+        if (!_hapticCooldown.isRunning ||
+            _hapticCooldown.elapsed >= _hapticMinInterval) {
+          HapticFeedback.lightImpact();
+          _hapticCooldown.reset();
+          _hapticCooldown.start();
+        }
       }
     }
   }
@@ -129,14 +143,61 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     widget.onLayoutChanged?.call(_editingLayout);
   }
 
+  /// Minimum touch target in logical pixels (per Material Design guidelines).
+  static const double _minTouchTarget = 36.0;
+
+  /// Per-button-type scale limits.
+  /// D-pad / joystick can be larger; small utility buttons have a tighter range.
+  static (double min, double max) _sizeRange(GamepadButton button) {
+    return switch (button) {
+      GamepadButton.dpad          => (0.70, 2.50),
+      GamepadButton.aButton       => (0.70, 2.00),
+      GamepadButton.bButton       => (0.70, 2.00),
+      GamepadButton.lButton       => (0.80, 2.00),
+      GamepadButton.rButton       => (0.80, 2.00),
+      GamepadButton.startButton   => (0.80, 1.80),
+      GamepadButton.selectButton  => (0.80, 1.80),
+    };
+  }
+
   void _onButtonResize(GamepadButton button, double scaleDelta) {
     if (!widget.editMode) return;
     
     setState(() {
       _selectedButton = button;
       final currentLayout = _getButtonLayout(button);
-      final newSize = (currentLayout.size + scaleDelta).clamp(0.5, 2.0);
+      final (minScale, maxScale) = _sizeRange(button);
+      final newSize = (currentLayout.size + scaleDelta).clamp(minScale, maxScale);
       
+      // Enforce a minimum pixel size so the button stays tappable.
+      // Compute the smallest dimension at the candidate scale and reject
+      // the resize if it would drop below the touch-target threshold.
+      final gameRect = widget.gameRect;
+      final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+      final baseSize = isPortrait ? gameRect.width * 0.28 : gameRect.width * 0.20;
+      final buttonBase = isPortrait ? gameRect.width * 0.17 : gameRect.width * 0.12;
+
+      final double smallestDim;
+      switch (button) {
+        case GamepadButton.dpad:
+          smallestDim = baseSize * newSize * widget.scale;
+        case GamepadButton.aButton:
+        case GamepadButton.bButton:
+          smallestDim = buttonBase * newSize * widget.scale;
+        case GamepadButton.lButton:
+        case GamepadButton.rButton:
+          // Height is the smallest dimension for shoulder buttons
+          smallestDim = baseSize * 0.30 * newSize * widget.scale;
+        case GamepadButton.startButton:
+        case GamepadButton.selectButton:
+          smallestDim = baseSize * 0.12 * newSize * widget.scale;
+      }
+
+      if (smallestDim < _minTouchTarget && scaleDelta < 0) {
+        // Would shrink below minimum tappable size — ignore
+        return;
+      }
+
       _editingLayout = _updateButtonLayout(
         button,
         currentLayout.copyWith(size: newSize),
@@ -208,8 +269,35 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               : gameRect.width * 0.12;
           final portraitBoost = isPortrait ? 1.1 : 1.0;
 
-          // Resolve skin once per build
-          final skin = GamepadSkinData.resolve(widget.skin);
+          // Use cached skin data (resolved in initState / didUpdateWidget)
+          final skin = _resolvedSkin;
+
+          // Pre-compute child sizes for each button so the clamp logic can
+          // keep the entire widget on screen, not just its top-left corner.
+          final dpadScale = layout.dpad.size * widget.scale * portraitBoost;
+          final dpadSize = Size(baseSize * dpadScale, baseSize * dpadScale);
+
+          final aSize = buttonBase * layout.aButton.size * widget.scale;
+          final bSize = buttonBase * layout.bButton.size * widget.scale;
+
+          final lScale = layout.lButton.size * widget.scale;
+          final lSize = Size(baseSize * 0.55 * lScale, baseSize * 0.30 * lScale);
+
+          final rScale = layout.rButton.size * widget.scale;
+          final rSize = Size(baseSize * 0.55 * rScale, baseSize * 0.30 * rScale);
+
+          final startScale = layout.startButton.size * widget.scale;
+          // SmallButton uses padding; approximate outer size
+          final startSize = Size(
+            baseSize * 0.20 * startScale + baseSize * 0.20 * startScale,
+            baseSize * 0.12 * startScale + baseSize * 0.12 * startScale,
+          );
+
+          final selectScale = layout.selectButton.size * widget.scale;
+          final selectSize = Size(
+            baseSize * 0.20 * selectScale + baseSize * 0.20 * selectScale,
+            baseSize * 0.12 * selectScale + baseSize * 0.12 * selectScale,
+          );
 
           return Stack(
             children: [
@@ -218,6 +306,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.dpad,
                 screenSize: screenSize,
                 button: GamepadButton.dpad,
+                childSize: dpadSize,
                 child: widget.useJoystick
                     ? _Joystick(
                         onDirectionChanged: (up, down, left, right) {
@@ -226,7 +315,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                           _updateKey(GBAKey.left, left);
                           _updateKey(GBAKey.right, right);
                         },
-                        scale: layout.dpad.size * widget.scale * portraitBoost,
+                        scale: dpadScale,
                         baseSize: baseSize,
                         editMode: widget.editMode,
                         skin: skin,
@@ -238,7 +327,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                     _updateKey(GBAKey.left, left);
                     _updateKey(GBAKey.right, right);
                   },
-                  scale: layout.dpad.size * widget.scale * portraitBoost,
+                  scale: dpadScale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
                   skin: skin,
@@ -250,11 +339,12 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.aButton,
                 screenSize: screenSize,
                 button: GamepadButton.aButton,
+                childSize: Size(aSize, aSize),
                 child: _CircleButton(
                   label: 'A',
                   color: YageColors.accentAlt,
                   onChanged: (pressed) => _updateKey(GBAKey.a, pressed),
-                  size: buttonBase * layout.aButton.size * widget.scale,
+                  size: aSize,
                   editMode: widget.editMode,
                   skin: skin,
                 ),
@@ -265,11 +355,12 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.bButton,
                 screenSize: screenSize,
                 button: GamepadButton.bButton,
+                childSize: Size(bSize, bSize),
                 child: _CircleButton(
                   label: 'B',
                   color: YageColors.accentYellow,
                   onChanged: (pressed) => _updateKey(GBAKey.b, pressed),
-                  size: buttonBase * layout.bButton.size * widget.scale,
+                  size: bSize,
                   editMode: widget.editMode,
                   skin: skin,
                 ),
@@ -280,10 +371,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.lButton,
                 screenSize: screenSize,
                 button: GamepadButton.lButton,
+                childSize: lSize,
                 child: _ShoulderButton(
                   label: 'L',
                   onChanged: (pressed) => _updateKey(GBAKey.l, pressed),
-                  scale: layout.lButton.size * widget.scale,
+                  scale: lScale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
                   skin: skin,
@@ -295,10 +387,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.rButton,
                 screenSize: screenSize,
                 button: GamepadButton.rButton,
+                childSize: rSize,
                 child: _ShoulderButton(
                   label: 'R',
                   onChanged: (pressed) => _updateKey(GBAKey.r, pressed),
-                  scale: layout.rButton.size * widget.scale,
+                  scale: rScale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
                   skin: skin,
@@ -310,10 +403,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.startButton,
                 screenSize: screenSize,
                 button: GamepadButton.startButton,
+                childSize: startSize,
                 child: _SmallButton(
                   label: 'START',
                   onChanged: (pressed) => _updateKey(GBAKey.start, pressed),
-                  scale: layout.startButton.size * widget.scale,
+                  scale: startScale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
                   skin: skin,
@@ -325,10 +419,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 layout: layout.selectButton,
                 screenSize: screenSize,
                 button: GamepadButton.selectButton,
+                childSize: selectSize,
                 child: _SmallButton(
                   label: 'SELECT',
                   onChanged: (pressed) => _updateKey(GBAKey.select, pressed),
-                  scale: layout.selectButton.size * widget.scale,
+                  scale: selectScale,
                   baseSize: baseSize,
                   editMode: widget.editMode,
                   skin: skin,
@@ -345,6 +440,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     required ButtonLayout layout,
     required Size screenSize,
     required GamepadButton button,
+    required Size childSize,
     required Widget child,
   }) {
     final isSelected = widget.editMode && _selectedButton == button;
@@ -424,10 +520,17 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     }
 
     // ================= SAFE CLAMP =================
-    // Ensure buttons stay on screen (1% margin for safety)
+    // Ensure the ENTIRE button stays on screen by accounting for its size.
+    // minMargin is a small safety buffer from the screen edges.
     final double minMargin = screenSize.width * 0.01;
-    final double clampedX = x.clamp(minMargin, screenSize.width - minMargin);
-    final double clampedY = y.clamp(minMargin, screenSize.height - minMargin);
+    final double clampedX = x.clamp(
+      minMargin,
+      math.max(minMargin, screenSize.width - childSize.width - minMargin),
+    );
+    final double clampedY = y.clamp(
+      minMargin,
+      math.max(minMargin, screenSize.height - childSize.height - minMargin),
+    );
 
     return Positioned(
       left: clampedX,

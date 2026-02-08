@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,12 +8,19 @@ import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
 import '../models/gamepad_skin.dart';
 
-/// Service for managing app and emulator settings
+/// Service for managing app and emulator settings.
+///
+/// Uses debounced auto-save so that rapid changes (e.g. dragging a slider)
+/// are batched into a single write, while still persisting promptly.
 class SettingsService extends ChangeNotifier {
   static const String _settingsKey = 'emulator_settings';
+  static const String _shortcutsShownKey = 'shortcuts_help_shown';
+  static const Duration _saveDebounceDuration = Duration(milliseconds: 500);
   
   EmulatorSettings _settings = const EmulatorSettings();
   bool _isLoaded = false;
+  Timer? _saveDebounceTimer;
+  bool _hasPendingSave = false;
 
   EmulatorSettings get settings => _settings;
   bool get isLoaded => _isLoaded;
@@ -36,8 +45,11 @@ class SettingsService extends ChangeNotifier {
     }
   }
 
-  /// Save settings to storage
+  /// Persist current settings to storage immediately.
   Future<void> save() async {
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = null;
+    _hasPendingSave = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_settingsKey, _settings.toJsonString());
@@ -46,11 +58,36 @@ class SettingsService extends ChangeNotifier {
     }
   }
 
-  /// Update a single setting
+  /// Schedule a debounced save.  If another change arrives within the debounce
+  /// window the timer resets, batching rapid-fire updates into one write.
+  void _scheduleSave() {
+    _hasPendingSave = true;
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = Timer(_saveDebounceDuration, () {
+      save();
+    });
+  }
+
+  /// Update a single setting.
+  ///
+  /// Listeners are notified immediately so the UI reflects the change at once,
+  /// while the actual disk write is debounced to avoid excessive I/O.
   Future<void> update(EmulatorSettings Function(EmulatorSettings) updater) async {
     _settings = updater(_settings);
     notifyListeners();
-    await save();
+    _scheduleSave();
+  }
+
+  /// Flush any pending save and release resources.
+  @override
+  void dispose() {
+    if (_hasPendingSave) {
+      // Fire-and-forget: best-effort flush before the service is torn down.
+      save();
+    }
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = null;
+    super.dispose();
   }
 
   /// Update volume
@@ -201,6 +238,20 @@ class SettingsService extends ChangeNotifier {
   /// Set rewind buffer duration in seconds
   Future<void> setRewindBufferSeconds(int seconds) async {
     await update((s) => s.copyWith(rewindBufferSeconds: seconds.clamp(1, 10)));
+  }
+
+  // ── One-time flags (stored outside the main settings blob) ──────────
+
+  /// Whether the shortcuts help dialog has already been shown once.
+  Future<bool> isShortcutsHelpShown() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_shortcutsShownKey) ?? false;
+  }
+
+  /// Mark the shortcuts help dialog as shown so it won't auto-appear again.
+  Future<void> markShortcutsHelpShown() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_shortcutsShownKey, true);
   }
 }
 

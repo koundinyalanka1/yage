@@ -61,12 +61,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkIncomingFile());
   }
 
+  final FocusNode _keyFocusNode = FocusNode();
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
+    _keyFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Gamepad L1 / R1 bumpers and keyboard Page Up / Page Down switch tabs.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.gameButtonLeftBumper ||
+        key == LogicalKeyboardKey.pageUp) {
+      final newIndex = (_tabController.index - 1).clamp(0, _tabController.length - 1);
+      if (newIndex != _tabController.index) {
+        _tabController.animateTo(newIndex);
+      }
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.gameButtonRightBumper ||
+        key == LogicalKeyboardKey.pageDown) {
+      final newIndex = (_tabController.index + 1).clamp(0, _tabController.length - 1);
+      if (newIndex != _tabController.index) {
+        _tabController.animateTo(newIndex);
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -242,7 +269,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     
-    return Scaffold(
+    return Focus(
+      focusNode: _keyFocusNode,
+      onKeyEvent: _onKeyEvent,
+      child: Scaffold(
       body: SafeArea(
         child: FocusTraversalGroup(
           policy: OrderedTraversalPolicy(),
@@ -284,6 +314,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ),
       floatingActionButton: _buildFAB(),
+    ),
     );
   }
   

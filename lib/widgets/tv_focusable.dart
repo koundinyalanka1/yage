@@ -53,6 +53,18 @@ class _TvFocusableState extends State<TvFocusable>
     LogicalKeyboardKey.gameButtonB,
   };
 
+  /// Keys that trigger the long-press / context-menu action on TV.
+  /// Uses the keyboard context-menu key and gamepad Select (View/Back
+  /// button).  Note: gameButtonX is intentionally excluded — it is
+  /// mapped to GBA B in the gamepad mapper and would conflict in-game.
+  /// gameButtonSelect is safe here because TvFocusable widgets are only
+  /// focused outside gameplay (home screen, menus) where GBA Select is
+  /// not needed.
+  static final _contextKeys = {
+    LogicalKeyboardKey.gameButtonSelect,
+    LogicalKeyboardKey.contextMenu,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +90,10 @@ class _TvFocusableState extends State<TvFocusable>
 
     if (_selectKeys.contains(event.logicalKey)) {
       widget.onTap?.call();
+      return KeyEventResult.handled;
+    }
+    if (_contextKeys.contains(event.logicalKey) && widget.onLongPress != null) {
+      widget.onLongPress!();
       return KeyEventResult.handled;
     }
     if (_backKeys.contains(event.logicalKey) && widget.onBack != null) {

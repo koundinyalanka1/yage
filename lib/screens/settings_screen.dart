@@ -14,6 +14,7 @@ import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
 import '../services/save_backup_service.dart';
 import '../utils/theme.dart';
+import '../widgets/tv_focusable.dart';
 
 /// Settings screen
 class SettingsScreen extends StatelessWidget {
@@ -780,8 +781,9 @@ class _PaletteTile extends StatelessWidget {
               itemBuilder: (context, index) {
                 final palette = GBColorPalette.palettes[index];
                 final isSelected = index == selectedIndex;
-                return GestureDetector(
+                return TvFocusable(
                   onTap: () => onChanged(index),
+                  borderRadius: BorderRadius.circular(12),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     width: 72,
@@ -907,8 +909,9 @@ class _ThemePicker extends StatelessWidget {
             final isSelected = theme.id == selectedThemeId;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: GestureDetector(
+              child: TvFocusable(
                 onTap: () => onChanged(theme.id),
+                borderRadius: BorderRadius.circular(12),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1047,8 +1050,9 @@ class _GamepadSkinTile extends StatelessWidget {
             children: GamepadSkinType.values.map((skin) {
               final isSelected = skin == selected;
               final skinData = GamepadSkinData.resolve(skin);
-              return GestureDetector(
+              return TvFocusable(
                 onTap: () => onChanged(skin),
+                borderRadius: BorderRadius.circular(12),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(
@@ -1185,8 +1189,9 @@ class _GameFrameTile extends StatelessWidget {
             runSpacing: 8,
             children: GameFrameType.values.map((frame) {
               final isSelected = frame == selected;
-              return GestureDetector(
+              return TvFocusable(
                 onTap: () => onChanged(frame),
+                borderRadius: BorderRadius.circular(12),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(

@@ -163,7 +163,12 @@ class MGBABindings {
 
   bool get isLoaded => _isLoaded;
 
-  /// Load the mGBA dynamic library
+  /// Load the mGBA dynamic library.
+  ///
+  /// All function symbols are resolved into local variables first. Only if
+  /// every single lookup succeeds are the instance fields assigned and
+  /// [_isLoaded] set to `true`. This prevents a partial-bind scenario where
+  /// some `late` fields are initialised but others are not.
   bool load() {
     if (_isLoaded) return true;
 
@@ -193,132 +198,138 @@ class MGBABindings {
         throw UnsupportedError('Unsupported platform');
       }
 
-      _lib = DynamicLibrary.open(libraryPath);
-      _bindFunctions();
+      final lib = DynamicLibrary.open(libraryPath);
+
+      // ── Resolve ALL symbols into locals first ──
+      // If any lookup throws, none of the instance fields are modified,
+      // keeping the object in a clean unloaded state.
+      final bindCoreCreate = lib
+          .lookup<NativeFunction<MgbaCoreCreateNative>>('yage_core_create')
+          .asFunction<MgbaCoreCreate>();
+      final bindCoreInit = lib
+          .lookup<NativeFunction<MgbaCoreInitNative>>('yage_core_init')
+          .asFunction<MgbaCoreInit>();
+      final bindCoreDestroy = lib
+          .lookup<NativeFunction<MgbaCoreDestroyNative>>('yage_core_destroy')
+          .asFunction<MgbaCoreDestroy>();
+      final bindCoreLoadROM = lib
+          .lookup<NativeFunction<MgbaCoreLoadROMNative>>('yage_core_load_rom')
+          .asFunction<MgbaCoreLoadROM>();
+      final bindCoreLoadBIOS = lib
+          .lookup<NativeFunction<MgbaCoreLoadBIOSNative>>('yage_core_load_bios')
+          .asFunction<MgbaCoreLoadBIOS>();
+      final bindCoreReset = lib
+          .lookup<NativeFunction<MgbaCoreResetNative>>('yage_core_reset')
+          .asFunction<MgbaCoreReset>();
+      final bindCoreRunFrame = lib
+          .lookup<NativeFunction<MgbaCoreRunFrameNative>>('yage_core_run_frame')
+          .asFunction<MgbaCoreRunFrame>();
+      final bindCoreSetKeys = lib
+          .lookup<NativeFunction<MgbaCoreSetKeysNative>>('yage_core_set_keys')
+          .asFunction<MgbaCoreSetKeys>();
+      final bindCoreGetVideoBuffer = lib
+          .lookup<NativeFunction<MgbaCoreGetVideoBufferNative>>('yage_core_get_video_buffer')
+          .asFunction<MgbaCoreGetVideoBuffer>();
+      final bindCoreGetAudioBuffer = lib
+          .lookup<NativeFunction<MgbaCoreGetAudioBufferNative>>('yage_core_get_audio_buffer')
+          .asFunction<MgbaCoreGetAudioBuffer>();
+      final bindCoreGetAudioSamples = lib
+          .lookup<NativeFunction<MgbaCoreGetAudioSamplesNative>>('yage_core_get_audio_samples')
+          .asFunction<MgbaCoreGetAudioSamples>();
+      final bindCoreSaveState = lib
+          .lookup<NativeFunction<MgbaCoreSaveStateNative>>('yage_core_save_state')
+          .asFunction<MgbaCoreSaveState>();
+      final bindCoreLoadState = lib
+          .lookup<NativeFunction<MgbaCoreLoadStateNative>>('yage_core_load_state')
+          .asFunction<MgbaCoreLoadState>();
+      final bindCoreGetWidth = lib
+          .lookup<NativeFunction<MgbaCoreGetWidthNative>>('yage_core_get_width')
+          .asFunction<MgbaCoreGetWidth>();
+      final bindCoreGetHeight = lib
+          .lookup<NativeFunction<MgbaCoreGetHeightNative>>('yage_core_get_height')
+          .asFunction<MgbaCoreGetHeight>();
+      final bindCoreGetPlatform = lib
+          .lookup<NativeFunction<MgbaCoreGetPlatformNative>>('yage_core_get_platform')
+          .asFunction<MgbaCoreGetPlatform>();
+      final bindCoreSetSaveDir = lib
+          .lookup<NativeFunction<MgbaCoreSetSaveDirNative>>('yage_core_set_save_dir')
+          .asFunction<MgbaCoreSetSaveDir>();
+      final bindCoreGetSramSize = lib
+          .lookup<NativeFunction<MgbaCoreGetSramSizeNative>>('yage_core_get_sram_size')
+          .asFunction<MgbaCoreGetSramSize>();
+      final bindCoreGetSramData = lib
+          .lookup<NativeFunction<MgbaCoreGetSramDataNative>>('yage_core_get_sram_data')
+          .asFunction<MgbaCoreGetSramData>();
+      final bindCoreSaveSram = lib
+          .lookup<NativeFunction<MgbaCoreSaveSramNative>>('yage_core_save_sram')
+          .asFunction<MgbaCoreSaveSram>();
+      final bindCoreLoadSram = lib
+          .lookup<NativeFunction<MgbaCoreLoadSramNative>>('yage_core_load_sram')
+          .asFunction<MgbaCoreLoadSram>();
+      final bindCoreSetVolume = lib
+          .lookup<NativeFunction<MgbaCoreSetVolumeNative>>('yage_core_set_volume')
+          .asFunction<MgbaCoreSetVolume>();
+      final bindCoreSetAudioEnabled = lib
+          .lookup<NativeFunction<MgbaCoreSetAudioEnabledNative>>('yage_core_set_audio_enabled')
+          .asFunction<MgbaCoreSetAudioEnabled>();
+      final bindCoreSetColorPalette = lib
+          .lookup<NativeFunction<MgbaCoreSetColorPaletteNative>>('yage_core_set_color_palette')
+          .asFunction<MgbaCoreSetColorPalette>();
+      final bindCoreRewindInit = lib
+          .lookup<NativeFunction<MgbaCoreRewindInitNative>>('yage_core_rewind_init')
+          .asFunction<MgbaCoreRewindInit>();
+      final bindCoreRewindDeinit = lib
+          .lookup<NativeFunction<MgbaCoreRewindDeinitNative>>('yage_core_rewind_deinit')
+          .asFunction<MgbaCoreRewindDeinit>();
+      final bindCoreRewindPush = lib
+          .lookup<NativeFunction<MgbaCoreRewindPushNative>>('yage_core_rewind_push')
+          .asFunction<MgbaCoreRewindPush>();
+      final bindCoreRewindPop = lib
+          .lookup<NativeFunction<MgbaCoreRewindPopNative>>('yage_core_rewind_pop')
+          .asFunction<MgbaCoreRewindPop>();
+      final bindCoreRewindCount = lib
+          .lookup<NativeFunction<MgbaCoreRewindCountNative>>('yage_core_rewind_count')
+          .asFunction<MgbaCoreRewindCount>();
+
+      // ── All lookups succeeded — commit to instance fields atomically ──
+      _lib = lib;
+      coreCreate = bindCoreCreate;
+      coreInit = bindCoreInit;
+      coreDestroy = bindCoreDestroy;
+      coreLoadROM = bindCoreLoadROM;
+      coreLoadBIOS = bindCoreLoadBIOS;
+      coreReset = bindCoreReset;
+      coreRunFrame = bindCoreRunFrame;
+      coreSetKeys = bindCoreSetKeys;
+      coreGetVideoBuffer = bindCoreGetVideoBuffer;
+      coreGetAudioBuffer = bindCoreGetAudioBuffer;
+      coreGetAudioSamples = bindCoreGetAudioSamples;
+      coreSaveState = bindCoreSaveState;
+      coreLoadState = bindCoreLoadState;
+      coreGetWidth = bindCoreGetWidth;
+      coreGetHeight = bindCoreGetHeight;
+      coreGetPlatform = bindCoreGetPlatform;
+      coreSetSaveDir = bindCoreSetSaveDir;
+      coreGetSramSize = bindCoreGetSramSize;
+      coreGetSramData = bindCoreGetSramData;
+      coreSaveSram = bindCoreSaveSram;
+      coreLoadSram = bindCoreLoadSram;
+      coreSetVolume = bindCoreSetVolume;
+      coreSetAudioEnabled = bindCoreSetAudioEnabled;
+      coreSetColorPalette = bindCoreSetColorPalette;
+      coreRewindInit = bindCoreRewindInit;
+      coreRewindDeinit = bindCoreRewindDeinit;
+      coreRewindPush = bindCoreRewindPush;
+      coreRewindPop = bindCoreRewindPop;
+      coreRewindCount = bindCoreRewindCount;
+
       _isLoaded = true;
+      debugPrint('YAGE core library loaded successfully (all ${30} symbols bound)');
       return true;
     } catch (e) {
       debugPrint('Failed to load YAGE core library: $e');
       return false;
     }
-  }
-
-  void _bindFunctions() {
-    coreCreate = _lib
-        .lookup<NativeFunction<MgbaCoreCreateNative>>('yage_core_create')
-        .asFunction();
-    
-    coreInit = _lib
-        .lookup<NativeFunction<MgbaCoreInitNative>>('yage_core_init')
-        .asFunction();
-
-    coreDestroy = _lib
-        .lookup<NativeFunction<MgbaCoreDestroyNative>>('yage_core_destroy')
-        .asFunction();
-
-    coreLoadROM = _lib
-        .lookup<NativeFunction<MgbaCoreLoadROMNative>>('yage_core_load_rom')
-        .asFunction();
-
-    coreLoadBIOS = _lib
-        .lookup<NativeFunction<MgbaCoreLoadBIOSNative>>('yage_core_load_bios')
-        .asFunction();
-
-    coreReset = _lib
-        .lookup<NativeFunction<MgbaCoreResetNative>>('yage_core_reset')
-        .asFunction();
-
-    coreRunFrame = _lib
-        .lookup<NativeFunction<MgbaCoreRunFrameNative>>('yage_core_run_frame')
-        .asFunction();
-
-    coreSetKeys = _lib
-        .lookup<NativeFunction<MgbaCoreSetKeysNative>>('yage_core_set_keys')
-        .asFunction();
-
-    coreGetVideoBuffer = _lib
-        .lookup<NativeFunction<MgbaCoreGetVideoBufferNative>>('yage_core_get_video_buffer')
-        .asFunction();
-
-    coreGetAudioBuffer = _lib
-        .lookup<NativeFunction<MgbaCoreGetAudioBufferNative>>('yage_core_get_audio_buffer')
-        .asFunction();
-
-    coreGetAudioSamples = _lib
-        .lookup<NativeFunction<MgbaCoreGetAudioSamplesNative>>('yage_core_get_audio_samples')
-        .asFunction();
-
-    coreSaveState = _lib
-        .lookup<NativeFunction<MgbaCoreSaveStateNative>>('yage_core_save_state')
-        .asFunction();
-
-    coreLoadState = _lib
-        .lookup<NativeFunction<MgbaCoreLoadStateNative>>('yage_core_load_state')
-        .asFunction();
-
-    coreGetWidth = _lib
-        .lookup<NativeFunction<MgbaCoreGetWidthNative>>('yage_core_get_width')
-        .asFunction();
-
-    coreGetHeight = _lib
-        .lookup<NativeFunction<MgbaCoreGetHeightNative>>('yage_core_get_height')
-        .asFunction();
-
-    coreGetPlatform = _lib
-        .lookup<NativeFunction<MgbaCoreGetPlatformNative>>('yage_core_get_platform')
-        .asFunction();
-
-    coreSetSaveDir = _lib
-        .lookup<NativeFunction<MgbaCoreSetSaveDirNative>>('yage_core_set_save_dir')
-        .asFunction();
-
-    coreGetSramSize = _lib
-        .lookup<NativeFunction<MgbaCoreGetSramSizeNative>>('yage_core_get_sram_size')
-        .asFunction();
-
-    coreGetSramData = _lib
-        .lookup<NativeFunction<MgbaCoreGetSramDataNative>>('yage_core_get_sram_data')
-        .asFunction();
-
-    coreSaveSram = _lib
-        .lookup<NativeFunction<MgbaCoreSaveSramNative>>('yage_core_save_sram')
-        .asFunction();
-
-    coreLoadSram = _lib
-        .lookup<NativeFunction<MgbaCoreLoadSramNative>>('yage_core_load_sram')
-        .asFunction();
-
-    coreSetVolume = _lib
-        .lookup<NativeFunction<MgbaCoreSetVolumeNative>>('yage_core_set_volume')
-        .asFunction();
-
-    coreSetAudioEnabled = _lib
-        .lookup<NativeFunction<MgbaCoreSetAudioEnabledNative>>('yage_core_set_audio_enabled')
-        .asFunction();
-
-    coreSetColorPalette = _lib
-        .lookup<NativeFunction<MgbaCoreSetColorPaletteNative>>('yage_core_set_color_palette')
-        .asFunction();
-
-    coreRewindInit = _lib
-        .lookup<NativeFunction<MgbaCoreRewindInitNative>>('yage_core_rewind_init')
-        .asFunction();
-
-    coreRewindDeinit = _lib
-        .lookup<NativeFunction<MgbaCoreRewindDeinitNative>>('yage_core_rewind_deinit')
-        .asFunction();
-
-    coreRewindPush = _lib
-        .lookup<NativeFunction<MgbaCoreRewindPushNative>>('yage_core_rewind_push')
-        .asFunction();
-
-    coreRewindPop = _lib
-        .lookup<NativeFunction<MgbaCoreRewindPopNative>>('yage_core_rewind_pop')
-        .asFunction();
-
-    coreRewindCount = _lib
-        .lookup<NativeFunction<MgbaCoreRewindCountNative>>('yage_core_rewind_count')
-        .asFunction();
   }
 }
 
@@ -441,19 +452,24 @@ class MGBACore {
     setKeys(_currentKeys & ~key);
   }
 
-  /// Get video buffer as RGBA pixel data
-  /// Native side now stores pixels in ABGR uint32 format which maps to
+  /// Get video buffer as RGBA pixel data.
+  /// Native side stores pixels in ABGR uint32 format which maps to
   /// R,G,B,A bytes in little-endian memory — exactly what Flutter expects
-  /// for PixelFormat.rgba8888. Zero-copy via asTypedList.
+  /// for PixelFormat.rgba8888.
+  ///
+  /// Returns a **copy** of the native buffer so the caller can safely hold
+  /// the reference across frames without risking use-after-free or data
+  /// corruption when the native side overwrites the buffer on the next frame.
   Uint8List? getVideoBuffer() {
     if (_corePtr == null) return null;
 
     final buffer = _bindings.coreGetVideoBuffer(_corePtr as Pointer<Void>);
     if (buffer == nullptr) return null;
 
-    final pixelCount = _width * _height;
-    // Direct view of native memory as bytes — no per-pixel loop needed
-    return buffer.cast<Uint8>().asTypedList(pixelCount * 4);
+    final byteCount = _width * _height * 4;
+    // Copy native memory into a Dart-owned Uint8List so the data remains
+    // valid even after the native side reuses the buffer on the next frame.
+    return Uint8List.fromList(buffer.cast<Uint8>().asTypedList(byteCount));
   }
 
   /// Get audio samples
@@ -466,10 +482,10 @@ class MGBACore {
     final buffer = _bindings.coreGetAudioBuffer(_corePtr as Pointer<Void>);
     if (buffer == nullptr) return (null, 0);
 
-    final audioData = Int16List(samples * 2); // Stereo
-    for (int i = 0; i < samples * 2; i++) {
-      audioData[i] = buffer[i];
-    }
+    // Bulk-copy native audio samples into a Dart-owned Int16List using
+    // asTypedList + Int16List.fromList instead of a manual per-element loop.
+    final sampleCount = samples * 2; // Stereo: 2 channels
+    final audioData = Int16List.fromList(buffer.asTypedList(sampleCount));
 
     return (audioData, samples);
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/mgba_bindings.dart';
 import '../utils/theme.dart';
+import 'tv_focusable.dart';
 
 /// Platform filter chips for game library
 class PlatformFilter extends StatelessWidget {
@@ -69,7 +70,10 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
+    return TvFocusable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       child: Material(
         color: Colors.transparent,
@@ -107,6 +111,7 @@ class _FilterChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

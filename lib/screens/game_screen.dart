@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
 import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
@@ -45,6 +46,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int _virtualKeys = 0;
   int _physicalKeys = 0;
 
+  // ── Hotkey combo system ──
+  // Hold Select, then press another button for shortcut actions.
+  // Releasing Select without a combo sends a normal GBA Select tap.
+  bool _hotkeyHeld = false;
+  bool _hotkeyComboUsed = false;
+
   @override
   void initState() {
     super.initState();
@@ -76,32 +83,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ]);
     }
     
-    // Start emulation
+    // Start emulation, then show shortcuts help on first launch
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final emulator = context.read<EmulatorService>();
       emulator.start();
+      _maybeShowShortcutsHelp();
     });
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _focusNode.dispose();
-    
-    // Allow screen to sleep again
-    WakelockPlus.disable();
-    
-    // Restore UI
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    
-    // Restore all orientations
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+      _focusNode.dispose();
+
+      // Allow screen to sleep again
+      WakelockPlus.disable();
+    } finally {
+      // System-level cleanup runs even if earlier dispose steps throw,
+      // so orientation / system-UI changes never leak to other screens.
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
+
     super.dispose();
   }
 
@@ -149,27 +158,120 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     _syncKeys();
   }
 
-  /// Handle physical key events from Focus widget
-  /// Keys that toggle the pause menu from the gamepad
-  static final _menuToggleKeys = {
-    LogicalKeyboardKey.gameButtonMode,
-    LogicalKeyboardKey.gameButtonThumbLeft,
-    LogicalKeyboardKey.f1,
+  // ─────────────────────────────────────────────────────────────────────
+  //  Key / gamepad input handling
+  // ─────────────────────────────────────────────────────────────────────
+
+  /// The gamepad button used as the hotkey modifier.  Hold this and press
+  /// another button to trigger a shortcut.  If released without a combo,
+  /// a normal GBA Select tap is sent so in-game Select still works.
+  static const _hotkeyModifier = LogicalKeyboardKey.gameButtonSelect;
+
+  /// Combo actions when [_hotkeyModifier] is held.
+  static final _hotkeyActions = <LogicalKeyboardKey, String>{
+    LogicalKeyboardKey.gameButtonStart:  'menu',        // Select+Start → pause menu
+    LogicalKeyboardKey.gameButtonA:      'quickSave',   // Select+A     → quick save
+    LogicalKeyboardKey.gameButtonB:      'quickLoad',   // Select+B     → quick load
+    LogicalKeyboardKey.gameButtonRight1: 'fastForward', // Select+R1    → fast forward
   };
+
+  /// Back / Escape — opens menu during gameplay, closes it when shown.
+  /// These are TV-remote / keyboard keys that never conflict with GBA.
+  static final _backKeys = {
+    LogicalKeyboardKey.escape,
+    LogicalKeyboardKey.goBack,
+  };
+
+  /// Keyboard-only shortcuts (no gamepad conflict).
+  static final _keyboardShortcuts = <LogicalKeyboardKey, String>{
+    LogicalKeyboardKey.f1:  'menu',
+    LogicalKeyboardKey.f5:  'quickSave',
+    LogicalKeyboardKey.f9:  'quickLoad',
+    LogicalKeyboardKey.tab: 'fastForward',
+  };
+
+  void _executeShortcutAction(String action) {
+    switch (action) {
+      case 'menu':
+        _toggleMenu();
+      case 'quickSave':
+        _doQuickSave();
+      case 'quickLoad':
+        _doQuickLoad();
+      case 'fastForward':
+        context.read<EmulatorService>().toggleFastForward();
+    }
+  }
+
+  /// When Select is released without triggering any combo, briefly send
+  /// a GBA Select press so the button still works for in-game menus.
+  void _simulateSelectTap() {
+    _physicalKeys |= GBAKey.select;
+    _syncKeys();
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) {
+        _physicalKeys &= ~GBAKey.select;
+        _syncKeys();
+      }
+    });
+  }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     final settings = context.read<SettingsService>().settings;
     if (!settings.enableExternalGamepad) return KeyEventResult.ignored;
 
-    // ── Menu toggle: Mode / L3 / F1 toggle the pause menu ──
-    if (event is KeyDownEvent && _menuToggleKeys.contains(event.logicalKey)) {
-      _toggleMenu();
-      return KeyEventResult.handled;
+    // ── Hotkey modifier (Select button) ──────────────────────────────
+    if (event.logicalKey == _hotkeyModifier) {
+      if (event is KeyDownEvent) {
+        _hotkeyHeld = true;
+        _hotkeyComboUsed = false;
+        return KeyEventResult.handled; // suppress GBA Select
+      }
+      if (event is KeyUpEvent) {
+        _hotkeyHeld = false;
+        if (!_hotkeyComboUsed && !_showMenu && !_editingLayout) {
+          // No combo was triggered — treat as a normal GBA Select tap
+          _simulateSelectTap();
+        }
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.handled; // suppress repeats
     }
 
-    // ── While the pause menu is shown, let it handle its own focus/D-pad ──
+    // ── Hotkey combos: Select + button ───────────────────────────────
+    if (_hotkeyHeld && event is KeyDownEvent) {
+      final action = _hotkeyActions[event.logicalKey];
+      if (action != null) {
+        _hotkeyComboUsed = true;
+        _executeShortcutAction(action);
+        return KeyEventResult.handled;
+      }
+    }
+
+    // ── Back / Escape: open menu during gameplay, close it when shown ─
+    if (event is KeyDownEvent && _backKeys.contains(event.logicalKey)) {
+      if (_showMenu) {
+        _toggleMenu();
+        return KeyEventResult.handled;
+      } else if (!_editingLayout) {
+        _toggleMenu();
+        return KeyEventResult.handled;
+      }
+    }
+
+    // ── While the pause menu is shown, let it handle its own D-pad ───
     if (_showMenu || _editingLayout) return KeyEventResult.ignored;
 
+    // ── Keyboard-only shortcuts (F1, F5, F9, Tab) ────────────────────
+    if (event is KeyDownEvent) {
+      final action = _keyboardShortcuts[event.logicalKey];
+      if (action != null) {
+        _executeShortcutAction(action);
+        return KeyEventResult.handled;
+      }
+    }
+
+    // ── Pass remaining keys to the GBA gamepad mapper ────────────────
     final wasDetected = _gamepadMapper.controllerDetected;
     final handled = _gamepadMapper.handleKeyEvent(event);
     if (handled) {
@@ -209,6 +311,65 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     } else {
       emulator.stopRewind();
     }
+  }
+
+  /// Quick-save to slot 0 and show feedback.
+  Future<void> _doQuickSave() async {
+    final emulator = context.read<EmulatorService>();
+    final success = await emulator.saveState(0);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success ? 'Quick saved (slot 1)' : 'Quick save failed'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  /// Quick-load from slot 0 and show feedback.
+  Future<void> _doQuickLoad() async {
+    final emulator = context.read<EmulatorService>();
+    final success = await emulator.loadState(0);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success ? 'Quick loaded (slot 1)' : 'Quick load failed'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  /// Show the shortcuts help dialog if the user hasn't seen it before.
+  Future<void> _maybeShowShortcutsHelp() async {
+    final settingsService = context.read<SettingsService>();
+    final alreadyShown = await settingsService.isShortcutsHelpShown();
+    if (!alreadyShown && mounted) {
+      // Pause briefly so the game loads visually before the overlay appears
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      await _showShortcutsHelp();
+      await settingsService.markShortcutsHelpShown();
+    }
+  }
+
+  /// Display the shortcuts reference dialog.
+  Future<void> _showShortcutsHelp() {
+    final emulator = context.read<EmulatorService>();
+    final wasRunning = emulator.state == EmulatorState.running;
+    if (wasRunning) emulator.pause();
+
+    return showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => const _ShortcutsHelpDialog(),
+    ).then((_) {
+      if (mounted && wasRunning && !_showMenu) {
+        emulator.start();
+        _focusNode.requestFocus();
+      }
+    });
   }
 
   void _exitGame() {
@@ -528,6 +689,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                         ),
                       );
                     }
+                  },
+                  onShowShortcuts: () {
+                    _toggleMenu(); // close menu first
+                    _showShortcutsHelp();
                   },
                 ),
             ],
@@ -987,6 +1152,7 @@ class _InGameMenu extends StatelessWidget {
   final bool useJoystick;
   final VoidCallback onToggleJoystick;
   final VoidCallback onScreenshot;
+  final VoidCallback onShowShortcuts;
 
   const _InGameMenu({
     required this.game,
@@ -1004,6 +1170,7 @@ class _InGameMenu extends StatelessWidget {
     required this.useJoystick,
     required this.onToggleJoystick,
     required this.onScreenshot,
+    required this.onShowShortcuts,
   });
 
   @override
@@ -1133,6 +1300,13 @@ class _InGameMenu extends StatelessWidget {
                     const SizedBox(height: 10),
                     
                     _MenuActionButton(
+                      icon: Icons.keyboard,
+                      label: 'Shortcuts',
+                      onTap: onShowShortcuts,
+                    ),
+                    const SizedBox(height: 10),
+
+                    _MenuActionButton(
                       icon: Icons.refresh,
                       label: 'Reset',
                       onTap: onReset,
@@ -1195,6 +1369,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
   final Map<int, bool> _hasState = {};
   final Map<int, File?> _screenshotFiles = {};
   final Map<int, DateTime?> _timestamps = {};
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -1202,26 +1377,38 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
     _loadSlotInfo();
   }
 
-  void _loadSlotInfo() {
+  Future<void> _loadSlotInfo() async {
+    final hasState = <int, bool>{};
+    final screenshotFiles = <int, File?>{};
+    final timestamps = <int, DateTime?>{};
+
     for (int i = 0; i < 6; i++) {
       final statePath = widget.emulator.getStatePath(i);
       final ssPath = widget.emulator.getStateScreenshotPath(i);
 
       if (statePath != null) {
         final stateFile = File(statePath);
-        if (stateFile.existsSync()) {
-          _hasState[i] = true;
-          _timestamps[i] = stateFile.lastModifiedSync();
+        if (await stateFile.exists()) {
+          hasState[i] = true;
+          timestamps[i] = await stateFile.lastModified();
         }
       }
 
       if (ssPath != null) {
         final ssFile = File(ssPath);
-        if (ssFile.existsSync()) {
-          _screenshotFiles[i] = ssFile;
+        if (await ssFile.exists()) {
+          screenshotFiles[i] = ssFile;
         }
       }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _hasState.addAll(hasState);
+      _screenshotFiles.addAll(screenshotFiles);
+      _timestamps.addAll(timestamps);
+      _isLoading = false;
+    });
   }
 
   @override
@@ -1256,10 +1443,21 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
       ),
       content: SizedBox(
         width: 300,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(6, (i) => _buildSlot(i)),
-        ),
+        child: _isLoading
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(6, (i) => _buildSlot(i)),
+              ),
       ),
       actions: [
         TextButton(
@@ -1281,7 +1479,11 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
+      child: TvFocusable(
+        autofocus: index == 0,
+        onTap: isDisabled ? null : () => widget.onSelect(index),
+        borderRadius: BorderRadius.circular(12),
+        child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: isDisabled ? null : () => widget.onSelect(index),
@@ -1367,6 +1569,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
               ),
             ),
           ),
+        ),
         ),
       ),
     );
@@ -1618,8 +1821,9 @@ class _SpeedSelector extends StatelessWidget {
             children: speeds.map((speed) {
               final isSelected = (currentSpeed - speed).abs() < 0.1;
               return Expanded(
-                child: GestureDetector(
+                child: TvFocusable(
                   onTap: () => onSpeedChanged(speed),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
                     margin: EdgeInsets.only(
                       right: speed != speeds.last ? 6 : 0,
@@ -1650,6 +1854,155 @@ class _SpeedSelector extends StatelessWidget {
                 ),
               );
             }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Shortcuts help dialog
+// ═══════════════════════════════════════════════════════════════════════
+
+class _ShortcutsHelpDialog extends StatelessWidget {
+  const _ShortcutsHelpDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: YageColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: YageColors.accent.withAlpha(100),
+          width: 2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      title: Row(
+        children: [
+          Icon(Icons.keyboard, color: YageColors.accent, size: 22),
+          const SizedBox(width: 10),
+          Text(
+            'Shortcuts',
+            style: TextStyle(
+              color: YageColors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 340,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sectionHeader(Icons.gamepad, 'Gamepad combos  (hold Select +)'),
+              _shortcutRow('Select + Start', 'Pause menu'),
+              _shortcutRow('Select + A', 'Quick save (slot 1)'),
+              _shortcutRow('Select + B', 'Quick load (slot 1)'),
+              _shortcutRow('Select + R1', 'Fast forward'),
+              _shortcutRow('Select (tap)', 'GBA Select button'),
+              const SizedBox(height: 14),
+              _sectionHeader(Icons.keyboard_alt_outlined, 'Keyboard'),
+              _shortcutRow('F1', 'Pause menu'),
+              _shortcutRow('F5', 'Quick save (slot 1)'),
+              _shortcutRow('F9', 'Quick load (slot 1)'),
+              _shortcutRow('Tab', 'Fast forward'),
+              _shortcutRow('Esc', 'Toggle pause menu'),
+              const SizedBox(height: 14),
+              _sectionHeader(Icons.tv, 'TV / Remote'),
+              _shortcutRow('Back', 'Pause menu'),
+              _shortcutRow('L1 / R1', 'Switch tabs (home)'),
+              const SizedBox(height: 8),
+              Divider(color: YageColors.surfaceLight),
+              const SizedBox(height: 4),
+              Text(
+                'You can always open this from the pause menu → Shortcuts.',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: YageColors.textMuted,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          autofocus: true,
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Got it',
+            style: TextStyle(
+              color: YageColors.accent,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionHeader(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: YageColors.accent.withAlpha(180), size: 16),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: YageColors.accent,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _shortcutRow(String keys, String action) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: YageColors.backgroundLight,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: YageColors.surfaceLight),
+            ),
+            child: Text(
+              keys,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'monospace',
+                color: YageColors.textPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              action,
+              style: TextStyle(
+                fontSize: 12,
+                color: YageColors.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
@@ -1697,8 +2050,9 @@ class _InputTypeSelector extends StatelessWidget {
             children: [
               // D-Pad option
               Expanded(
-                child: GestureDetector(
+                child: TvFocusable(
                   onTap: useJoystick ? onChanged : null,
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
                     margin: const EdgeInsets.only(right: 6),
                     padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1739,8 +2093,9 @@ class _InputTypeSelector extends StatelessWidget {
               ),
               // Joystick option
               Expanded(
-                child: GestureDetector(
+                child: TvFocusable(
                   onTap: !useJoystick ? onChanged : null,
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(

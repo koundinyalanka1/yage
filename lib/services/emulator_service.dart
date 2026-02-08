@@ -40,10 +40,20 @@ class EmulatorService extends ChangeNotifier {
   
   Timer? _frameTimer;
   Timer? _autoSaveTimer;
+  
+  /// Simple future-chaining mutex that serializes SRAM saves so concurrent
+  /// callers (auto-save timer, pause, stop) never write to the same file at
+  /// the same time.
+  Future<void> _sramSaveLock = Future.value();
   Stopwatch? _frameStopwatch;
   int _frameCount = 0;
   double _currentFps = 0;
   double _speedMultiplier = 1.0;
+  
+  /// Guard flag: true only while the frame loop should be actively running.
+  /// Checked at the very top of every timer tick so that already-enqueued
+  /// callbacks become no-ops the instant [pause] / [stop] flips it to false.
+  bool _frameLoopActive = false;
   
   // Play time tracking — accumulates while the emulator is running
   final Stopwatch _playTimeStopwatch = Stopwatch();
@@ -208,17 +218,29 @@ class EmulatorService extends ChangeNotifier {
     }
   }
 
-  /// Save SRAM to .sav file
-  Future<void> saveSram() async {
-    if (_useStub || _core == null || _currentRom == null) return;
-    
-    try {
-      final sramPath = _getSramPath(_currentRom!);
-      final success = _core!.saveSram(sramPath);
-      debugPrint('Saved SRAM to $sramPath: $success');
-    } catch (e) {
-      debugPrint('Error saving SRAM: $e');
-    }
+  /// Save SRAM to .sav file.
+  ///
+  /// Uses a future-chaining lock so that concurrent callers (auto-save timer,
+  /// pause, stop) are serialized — each waits for the previous write to finish
+  /// before starting its own, preventing file corruption.
+  Future<void> saveSram() {
+    final previous = _sramSaveLock;
+    final completer = Completer<void>();
+    _sramSaveLock = completer.future;
+
+    return previous.then((_) async {
+      if (_useStub || _core == null || _currentRom == null) return;
+
+      try {
+        final sramPath = _getSramPath(_currentRom!);
+        final success = _core!.saveSram(sramPath);
+        debugPrint('Saved SRAM to $sramPath: $success');
+      } catch (e) {
+        debugPrint('Error saving SRAM: $e');
+      }
+    }).whenComplete(() {
+      completer.complete();
+    });
   }
 
   /// Delete all save data for a game: SRAM (.sav), save states (.ss0-5),
@@ -346,6 +368,7 @@ class EmulatorService extends ChangeNotifier {
     if (_useStub && _stub == null) return;
 
     _state = EmulatorState.running;
+    _frameLoopActive = true;
     _frameStopwatch = Stopwatch()..start();
     _frameCount = 0;
     _playTimeStopwatch.start();
@@ -361,6 +384,9 @@ class EmulatorService extends ChangeNotifier {
     // Stop rewind if active
     if (_isRewinding) stopRewind();
 
+    // Deactivate the frame loop guard first so any already-enqueued timer
+    // callbacks become no-ops before we update the rest of the state.
+    _frameLoopActive = false;
     _state = EmulatorState.paused;
     _frameTimer?.cancel();
     _frameTimer = null;
@@ -396,37 +422,64 @@ class EmulatorService extends ChangeNotifier {
 
   void _startFrameLoop() {
     _frameTimer?.cancel();
+    _frameTimer = null;
     _lastFrameTime = DateTime.now();
     _frameAccumulator = Duration.zero;
     
-    // Use a fast timer and accumulator for precise frame pacing
-    _frameTimer = Timer.periodic(const Duration(milliseconds: 1), (_) {
-      if (_state != EmulatorState.running) return;
-      
-      final now = DateTime.now();
-      final elapsed = now.difference(_lastFrameTime);
-      _lastFrameTime = now;
-      _frameAccumulator += elapsed;
-      
-      // Run frames to catch up, but limit to avoid spiral of death
-      int framesRun = 0;
-      while (_frameAccumulator >= _targetFrameTime && framesRun < 3) {
-        _runFrame();
-        _frameAccumulator -= _targetFrameTime;
-        framesRun++;
-      }
-      
-      // If we're way behind, reset accumulator
-      if (_frameAccumulator > _targetFrameTime * 5) {
-        _frameAccumulator = Duration.zero;
-      }
-    });
+    // Adaptive frame loop: instead of a 1 ms periodic timer that fires
+    // ~1000 times/sec (with ~940 no-ops), schedule each tick to wake up
+    // right when the next frame is due. At 1× speed this means ~60
+    // callbacks/sec; at 8× turbo ~480/sec — dramatically less CPU waste.
+    _scheduleNextTick();
+  }
+  
+  /// Schedule the next frame tick using [Future.delayed] with a calculated
+  /// sleep duration, preserving the accumulator-based catch-up model.
+  void _scheduleNextTick() {
+    if (!_frameLoopActive || _state != EmulatorState.running) return;
+
+    final now = DateTime.now();
+    final elapsed = now.difference(_lastFrameTime);
+    _lastFrameTime = now;
+    _frameAccumulator += elapsed;
+
+    // Run frames to catch up, but cap at 3 to avoid spiral of death
+    int framesRun = 0;
+    while (_frameLoopActive &&
+           _frameAccumulator >= _targetFrameTime &&
+           framesRun < 3) {
+      _runFrame();
+      _frameAccumulator -= _targetFrameTime;
+      framesRun++;
+    }
+
+    // If we're way behind, reset accumulator to avoid permanent catch-up
+    if (_frameAccumulator > _targetFrameTime * 5) {
+      _frameAccumulator = Duration.zero;
+    }
+
+    // Bail if the loop was deactivated during frame execution
+    if (!_frameLoopActive) return;
+
+    // Calculate how long to sleep until the next frame is due.
+    // If the accumulator already exceeds a frame time (we're behind),
+    // schedule immediately (Duration.zero) so we catch up ASAP.
+    final remaining = _targetFrameTime - _frameAccumulator;
+    final delay = remaining > Duration.zero ? remaining : Duration.zero;
+
+    // Use a one-shot Timer so we get a concrete Timer reference we can
+    // cancel synchronously from pause()/stop().
+    _frameTimer = Timer(delay, _scheduleNextTick);
   }
   
   DateTime _lastFrameTime = DateTime.now();
   Duration _frameAccumulator = Duration.zero;
 
   void _runFrame() {
+    // Bail out immediately if the loop was deactivated between iterations
+    // (e.g. pause() or stop() called while we were mid-catch-up).
+    if (!_frameLoopActive) return;
+
     // ── Rewind mode: step backward through ring buffer ──
     if (_isRewinding && !_useStub) {
       _rewindStepCounter++;
@@ -552,15 +605,34 @@ class EmulatorService extends ChangeNotifier {
   }
 
   /// Pop one state from the rewind buffer and display it.
+  ///
+  /// Automatically stops rewinding when the buffer is exhausted or the pop
+  /// fails, preventing repeated no-op calls and potential stale-frame display.
   void _performRewindStep() {
     if (_core == null) return;
 
     final count = _core!.rewindCount();
-    if (count <= 0) return; // Buffer empty
+    if (count <= 0) {
+      // Buffer exhausted — stop rewinding so the user gets clear feedback
+      // instead of silently sitting on the last frame.
+      debugPrint('Rewind buffer empty — auto-stopping rewind');
+      stopRewind();
+      return;
+    }
 
-    if (_core!.rewindPop() != 0) return; // Pop failed
+    final popResult = _core!.rewindPop();
+    if (popResult != 0) {
+      // Pop failed (corrupt buffer, internal error, etc.) — stop rewinding
+      // to avoid rendering frames from an unknown state.
+      debugPrint('Rewind pop failed (result=$popResult) — auto-stopping rewind');
+      stopRewind();
+      return;
+    }
 
-    // Run one frame to produce video output from the restored state
+    // Pop succeeded — run one frame to produce video output from the
+    // restored state. Re-check _core since stopRewind path above may
+    // have been triggered by a concurrent pause.
+    if (_core == null || !_core!.isRunning) return;
     _core!.runFrame();
 
     final pixels = _core!.getVideoBuffer();
@@ -865,6 +937,9 @@ class EmulatorService extends ChangeNotifier {
   Future<void> stop() async {
     if (_isRewinding) stopRewind();
     
+    // Deactivate the frame loop guard first so any already-enqueued timer
+    // callbacks become no-ops before we tear down the core.
+    _frameLoopActive = false;
     _frameTimer?.cancel();
     _frameTimer = null;
     _playTimeStopwatch.stop();
