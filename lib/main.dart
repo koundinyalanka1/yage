@@ -31,8 +31,12 @@ void main() async {
   // Detect Android TV before building the UI
   await TvDetector.initialize();
 
-  // Request storage permission early (all platforms including TV)
-  await _requestStoragePermission();
+  // Request storage permission early (phones/tablets only).
+  // On TV the built-in file browser handles permissions on demand,
+  // because startActivityForResult blocks the Flutter engine on TV.
+  if (!TvDetector.isTV) {
+    await _requestStoragePermission();
+  }
 
   // Allow all orientations
   SystemChrome.setPreferredOrientations([

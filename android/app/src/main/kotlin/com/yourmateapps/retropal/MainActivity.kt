@@ -137,14 +137,32 @@ class MainActivity : FlutterActivity() {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                     data = Uri.parse("package:$packageName")
                 }
-                startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+                // Verify the intent can be resolved before launching
+                if (intent.resolveActivity(packageManager) != null) {
+                    startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+                } else {
+                    throw Exception("No activity for app-specific intent")
+                }
             } catch (_: Exception) {
-                // Fallback if the specific intent is not available
+                // Fallback: try the general all-files-access settings
                 try {
                     val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+                    if (intent.resolveActivity(packageManager) != null) {
+                        startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+                    } else {
+                        throw Exception("No activity for general intent")
+                    }
                 } catch (_: Exception) {
-                    callback(false)
+                    // Last resort: open the app's own settings page
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+                    } catch (_: Exception) {
+                        permissionResultHandler = null
+                        callback(false)
+                    }
                 }
             }
         } else {
