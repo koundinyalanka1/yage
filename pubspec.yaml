@@ -29,6 +29,16 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   ffigen: ^11.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "lib/icon/android/play_store_512.png"
+  adaptive_icon_background: "#121212"
+  adaptive_icon_foreground: "lib/icon/android/play_store_512.png"
+  # Use the same image for the TV banner if you don't have a specific 320x180 one
+  android_tv_banner: "lib/icon/android/play_store_512.png"
 
 flutter:
   uses-material-design: true
