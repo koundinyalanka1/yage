@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "288724007264",
+    "project_id": "retropal-65f12",
+    "storage_bucket": "retropal-65f12.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:288724007264:android:31b3f34de9db6dc8f28605",
+        "android_client_info": {
+          "package_name": "com.yourmateapps.retropal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBTdvgbKmLPN-P5_Aw9-RL-aFmgaOvUkDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
