@@ -334,7 +334,7 @@ class _BadgeImage extends StatelessWidget {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          placeholder: (_, __) => Container(
+          placeholder: (_, _) => Container(
             color: YageColors.backgroundLight,
             child: Center(
               child: SizedBox(
@@ -347,7 +347,7 @@ class _BadgeImage extends StatelessWidget {
               ),
             ),
           ),
-          errorWidget: (_, __, ___) => Container(
+          errorWidget: (_, _, _) => Container(
             color: YageColors.backgroundLight,
             child: Icon(
               Icons.emoji_events_outlined,

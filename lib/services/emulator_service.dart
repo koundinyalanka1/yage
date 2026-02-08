@@ -61,19 +61,11 @@ class EmulatorService extends ChangeNotifier {
   final Stopwatch _playTimeStopwatch = Stopwatch();
   int _flushedPlayTimeSeconds = 0;
   
-  // Link cable service (set externally via setter)
-  LinkCableService? _linkCable;
+  /// Link cable service for network multiplayer (set externally).
+  LinkCableService? linkCable;
 
-  // RetroAchievements runtime (set externally via setter)
-  RARuntimeService? _raRuntime;
-
-  /// Attach a link cable service for network multiplayer.
-  set linkCable(LinkCableService? service) => _linkCable = service;
-  LinkCableService? get linkCable => _linkCable;
-
-  /// Attach the RA runtime service for per-frame achievement processing.
-  set raRuntime(RARuntimeService? service) => _raRuntime = service;
-  RARuntimeService? get raRuntime => _raRuntime;
+  /// RA runtime service for per-frame achievement processing (set externally).
+  RARuntimeService? raRuntime;
 
   /// Whether the native core supports link cable I/O register access.
   bool get isLinkSupported {
@@ -557,7 +549,7 @@ class EmulatorService extends ChangeNotifier {
       _pollLinkCable();
 
       // ── RetroAchievements per-frame processing ──
-      _raRuntime?.processFrame();
+      raRuntime?.processFrame();
     }
 
     _updateFps();
@@ -681,7 +673,7 @@ class EmulatorService extends ChangeNotifier {
   /// Poll the SIO registers and exchange data with the link cable peer.
   /// Called once per frame when a [LinkCableService] is connected.
   void _pollLinkCable() {
-    final lc = _linkCable;
+    final lc = linkCable;
     if (lc == null || lc.state != LinkCableState.connected) return;
     if (_useStub || _core == null) return;
 

@@ -1296,11 +1296,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       style: TextStyle(fontSize: 12, color: YageColors.textMuted),
                     ),
                     onTap: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       Navigator.pop(context);
                       final saved =
                           await SaveBackupService.saveZipToUserLocation(zipPath);
                       if (saved != null && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        messenger.showSnackBar(
                           SnackBar(content: Text('Saved to $saved')),
                         );
                       }

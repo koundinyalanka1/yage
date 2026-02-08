@@ -256,7 +256,7 @@ class RARuntimeService extends ChangeNotifier {
 
     debugPrint('RA Runtime: Deactivated '
         '($sessionUnlockCount unlocks this session, '
-        '${pendingSubmissions} pending submissions)');
+        '$pendingSubmissions pending submissions)');
 
     notifyListeners();
   }

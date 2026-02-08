@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
 import '../models/ra_achievement.dart';
 
@@ -174,12 +175,6 @@ class RetroAchievementsService extends ChangeNotifier {
   // ── Achievement data state ─────────────────────────────────────────
   RAGameData? _gameData;
   bool _isLoadingGameData = false;
-
-  // ── Cache config ───────────────────────────────────────────────────
-  /// Achievement data older than this is considered stale and will be
-  /// refreshed in the background on next launch.  Stale data is still
-  /// served immediately — the user is never blocked.
-  static const Duration _cacheMaxAge = Duration(hours: 24);
 
   bool get isLoggedIn => _isLoggedIn;
   bool get isLoading => _isLoading;

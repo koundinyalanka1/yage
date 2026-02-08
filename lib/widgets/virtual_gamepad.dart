@@ -1191,7 +1191,7 @@ class _JoystickState extends State<_Joystick> {
                     colors: [
                       widget.skin.stickColor,
                       widget.skin.stickColor.withAlpha(
-                        (widget.skin.stickColor.alpha * 0.78).round(),
+                        (widget.skin.stickColor.a * 255 * 0.78).round().clamp(0, 255),
                       ),
                     ],
                     center: const Alignment(-0.3, -0.3),

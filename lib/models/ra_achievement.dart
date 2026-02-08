@@ -1,7 +1,8 @@
 /// Data models for RetroAchievements game & achievement metadata.
 ///
 /// These are pure data classes with JSON serialisation for disk caching.
-/// No network I/O happens here — see [RetroAchievementsService] for that.
+/// No network I/O happens here — see `RetroAchievementsService` for that.
+library;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Individual achievement
@@ -279,8 +280,8 @@ class RAGameData {
   String toString() =>
       'RAGameData(id=$gameId, "$title", '
       '${achievements.length} achievements, '
-      '${earnedPoints}/${totalPoints} pts, '
-      'stale=${isStale})';
+      '$earnedPoints/$totalPoints pts, '
+      'stale=$isStale)';
 }
 
 // ═══════════════════════════════════════════════════════════════════════

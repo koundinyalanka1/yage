@@ -152,7 +152,6 @@ enum GamePlatform {
 
 /// mGBA native library bindings
 class MGBABindings {
-  late final DynamicLibrary _lib;
   bool _isLoaded = false;
 
   // Function pointers
@@ -332,7 +331,6 @@ class MGBABindings {
           .asFunction<MgbaCoreRewindCount>();
 
       // ── All lookups succeeded — commit to instance fields atomically ──
-      _lib = lib;
       coreCreate = bindCoreCreate;
       coreInit = bindCoreInit;
       coreDestroy = bindCoreDestroy;

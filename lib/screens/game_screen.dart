@@ -1762,7 +1762,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
                               _screenshotFiles[index]!,
                               fit: BoxFit.cover,
                               cacheWidth: 192,
-                              errorBuilder: (_, __, ___) =>
+                              errorBuilder: (_, _, _) =>
                                   _placeholderWidget(hasState),
                             )
                           : _placeholderWidget(hasState),
@@ -2125,7 +2125,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
     // Also wrap in GestureDetector so tapping anywhere outside the card works.
     return Focus(
       autofocus: true,
-      onKeyEvent: (_, __) {
+      onKeyEvent: (_, _) {
         _dismiss(context);
         return KeyEventResult.handled;
       },
