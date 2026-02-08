@@ -62,6 +62,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   final FocusNode _keyFocusNode = FocusNode();
+  /// Focus node for the game list area so we can programmatically refocus it.
+  final FocusNode _gameListFocusNode = FocusNode();
 
   @override
   void dispose() {
@@ -69,14 +71,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _tabController.dispose();
     _searchController.dispose();
     _keyFocusNode.dispose();
+    _gameListFocusNode.dispose();
     super.dispose();
   }
 
-  /// Gamepad L1 / R1 bumpers and keyboard Page Up / Page Down switch tabs.
+  /// Gamepad L1 / R1 bumpers switch tabs, B / Back refocuses game list.
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final key = event.logicalKey;
+
+    // L1 / PageUp → previous tab
     if (key == LogicalKeyboardKey.gameButtonLeft1 ||
         key == LogicalKeyboardKey.pageUp) {
       final newIndex = (_tabController.index - 1).clamp(0, _tabController.length - 1);
@@ -85,6 +90,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
       return KeyEventResult.handled;
     }
+    // R1 / PageDown → next tab
     if (key == LogicalKeyboardKey.gameButtonRight1 ||
         key == LogicalKeyboardKey.pageDown) {
       final newIndex = (_tabController.index + 1).clamp(0, _tabController.length - 1);
@@ -92,6 +98,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _tabController.animateTo(newIndex);
       }
       return KeyEventResult.handled;
+    }
+    // B / Back / Escape → refocus the game list (escape the FAB / tabs)
+    if (key == LogicalKeyboardKey.gameButtonB ||
+        key == LogicalKeyboardKey.escape ||
+        key == LogicalKeyboardKey.goBack ||
+        key == LogicalKeyboardKey.browserBack) {
+      // If focus is NOT inside the game list, push it back there
+      if (!_gameListFocusNode.hasFocus && !_gameListFocusNode.hasPrimaryFocus) {
+        _gameListFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
     }
     return KeyEventResult.ignored;
   }
@@ -299,13 +316,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               Expanded(
                 child: FocusTraversalOrder(
                   order: const NumericFocusOrder(2),
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildAllGames(),
-                      _buildRecentGames(),
-                      _buildFavorites(),
-                    ],
+                  child: Focus(
+                    focusNode: _gameListFocusNode,
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildAllGames(),
+                        _buildRecentGames(),
+                        _buildFavorites(),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -313,7 +333,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ),
       ),
-      floatingActionButton: _buildFAB(),
+      // On TV don't show FAB (focus gets stuck on it) — TV has
+      // Add ROM buttons in the header and empty-state instead.
+      floatingActionButton: TvDetector.isTV ? null : _buildFAB(),
     ),
     );
   }
@@ -449,23 +471,55 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
           
-          // On TV: direct buttons (popup menus are hard with D-pad)
+          // On TV: direct focusable buttons (popup menus are hard with D-pad)
           if (TvDetector.isTV) ...[
-            IconButton(
-              icon: Icon(Icons.download, color: YageColors.textSecondary, size: 20),
-              tooltip: 'Download All Artwork',
-              onPressed: _downloadAllArtwork,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _addRomFile,
+              child: IconButton(
+                icon: Icon(Icons.add, color: YageColors.accent, size: 20),
+                tooltip: 'Add ROMs',
+                onPressed: _addRomFile,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
             ),
-            IconButton(
-              icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary, size: 20),
-              tooltip: 'Settings',
-              onPressed: () => Navigator.of(context).push(
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _addRomFolder,
+              child: IconButton(
+                icon: Icon(Icons.create_new_folder, color: YageColors.accent, size: 20),
+                tooltip: 'Add Folder',
+                onPressed: _addRomFolder,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+            ),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _downloadAllArtwork,
+              child: IconButton(
+                icon: Icon(Icons.download, color: YageColors.textSecondary, size: 20),
+                tooltip: 'Download All Artwork',
+                onPressed: _downloadAllArtwork,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+            ),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              child: IconButton(
+                icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary, size: 20),
+                tooltip: 'Settings',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
             ),
           ] else
           // More options menu (phone/tablet)
@@ -623,18 +677,46 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onPressed: () => setState(() => _isGridView = !_isGridView),
           ),
           
-          // On TV: direct settings button (popup menus are hard to navigate with D-pad)
+          // On TV: direct focusable buttons (popup menus are hard with D-pad)
           if (TvDetector.isTV) ...[
-            IconButton(
-              icon: Icon(Icons.download, color: YageColors.textSecondary),
-              tooltip: 'Download All Artwork',
-              onPressed: _downloadAllArtwork,
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _addRomFile,
+              child: IconButton(
+                icon: Icon(Icons.add, color: YageColors.accent),
+                tooltip: 'Add ROMs',
+                onPressed: _addRomFile,
+              ),
             ),
-            IconButton(
-              icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary),
-              tooltip: 'Settings',
-              onPressed: () => Navigator.of(context).push(
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _addRomFolder,
+              child: IconButton(
+                icon: Icon(Icons.create_new_folder, color: YageColors.accent),
+                tooltip: 'Add Folder',
+                onPressed: _addRomFolder,
+              ),
+            ),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _downloadAllArtwork,
+              child: IconButton(
+                icon: Icon(Icons.download, color: YageColors.textSecondary),
+                tooltip: 'Download All Artwork',
+                onPressed: _downloadAllArtwork,
+              ),
+            ),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary),
+                tooltip: 'Settings',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
               ),
             ),
           ] else

@@ -171,6 +171,11 @@ class EmulatorService extends ChangeNotifier {
   }
 
   Future<String> _getSaveDirectory() async {
+    // Prefer shared external storage so saves survive app uninstall/reinstall.
+    // Fallback to app-internal if external storage is not available.
+    final externalDir = await _getSharedSaveDirectory();
+    if (externalDir != null) return externalDir;
+
     final appDir = await getApplicationSupportDirectory();
     final saveDir = Directory(p.join(appDir.path, 'saves'));
     if (!saveDir.existsSync()) {
@@ -179,9 +184,36 @@ class EmulatorService extends ChangeNotifier {
     return saveDir.path;
   }
 
+  /// Shared storage path that persists across uninstall/reinstall.
+  /// Uses /storage/emulated/0/RetroPal/saves/ on Android.
+  Future<String?> _getSharedSaveDirectory() async {
+    const candidates = [
+      '/storage/emulated/0/RetroPal/saves',
+      '/sdcard/RetroPal/saves',
+    ];
+    for (final path in candidates) {
+      try {
+        final dir = Directory(path);
+        if (!dir.existsSync()) {
+          dir.createSync(recursive: true);
+        }
+        // Verify writable
+        final test = File(p.join(path, '.write_test'));
+        test.writeAsStringSync('');
+        test.deleteSync();
+        return path;
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
   /// Get the directory where save files are stored for a ROM.
-  /// Primary: same directory as the ROM file.
-  /// Fallback: app-internal saves directory (if ROM dir is not writable).
+  /// Priority order:
+  ///   1. Same directory as the ROM file (most intuitive, survives reinstall)
+  ///   2. Shared external storage (/storage/emulated/0/RetroPal/saves/)
+  ///   3. App-internal saves directory (last resort)
   String _getRomSaveDir(GameRom rom) {
     final romDir = p.dirname(rom.path);
     // Quick writability check: try creating a temp file
@@ -191,7 +223,7 @@ class EmulatorService extends ChangeNotifier {
       testFile.deleteSync();
       return romDir;
     } catch (_) {
-      // ROM directory not writable — fall back to app-internal
+      // ROM directory not writable — fall back to shared or app-internal
       return _saveDir ?? romDir;
     }
   }
@@ -203,19 +235,55 @@ class EmulatorService extends ChangeNotifier {
     return p.join(saveDir, '$saveName.sav');
   }
 
-  /// Load SRAM from .sav file if it exists
+  /// Load SRAM from .sav file if it exists.
+  /// Searches multiple directories so saves from before a reinstall are found.
   Future<void> _loadSram(GameRom rom) async {
     if (_useStub || _core == null) return;
-    
-    try {
-      final sramPath = _getSramPath(rom);
-      if (File(sramPath).existsSync()) {
-        final success = _core!.loadSram(sramPath);
-        debugPrint('Loaded SRAM from $sramPath: $success');
+
+    final saveName = '${p.basenameWithoutExtension(rom.path)}.sav';
+    final searchDirs = _allSaveDirectories(rom);
+
+    for (final dir in searchDirs) {
+      try {
+        final sramPath = p.join(dir, saveName);
+        if (File(sramPath).existsSync()) {
+          final success = _core!.loadSram(sramPath);
+          debugPrint('Loaded SRAM from $sramPath: $success');
+          return;
+        }
+      } catch (e) {
+        debugPrint('Error checking SRAM in $dir: $e');
       }
-    } catch (e) {
-      debugPrint('Error loading SRAM: $e');
     }
+    debugPrint('No SRAM file found for ${rom.name}');
+  }
+
+  /// All directories where save files might live, in priority order.
+  List<String> _allSaveDirectories(GameRom rom) {
+    final dirs = <String>{};
+    // 1. Next to the ROM
+    dirs.add(p.dirname(rom.path));
+    // 2. Shared external (/storage/emulated/0/RetroPal/saves/)
+    if (_saveDir != null) dirs.add(_saveDir!);
+    // 3. Common shared locations (in case _saveDir changed)
+    for (final candidate in [
+      '/storage/emulated/0/RetroPal/saves',
+      '/sdcard/RetroPal/saves',
+    ]) {
+      if (Directory(candidate).existsSync()) dirs.add(candidate);
+    }
+    // 4. App-internal (from older installs)
+    try {
+      // getApplicationSupportDirectory is async; check the sync path directly
+      final appSupportBase = Platform.isAndroid
+          ? '/data/data/com.yourmateapps.retropal/files'
+          : null;
+      if (appSupportBase != null) {
+        final oldDir = p.join(appSupportBase, 'saves');
+        if (Directory(oldDir).existsSync()) dirs.add(oldDir);
+      }
+    } catch (_) {}
+    return dirs.toList();
   }
 
   /// Save SRAM to .sav file.
@@ -703,19 +771,39 @@ class EmulatorService extends ChangeNotifier {
   }
 
   /// Get the save state file path for a slot — stored next to the ROM
+  /// Get the save state file path for a slot.
+  /// Searches all known save directories for an existing file; if none found,
+  /// returns a path in the primary save directory (for creating new saves).
   String? getStatePath(int slot) {
     if (_currentRom == null) return null;
-    final saveDir = _getRomSaveDir(_currentRom!);
     final romName = p.basenameWithoutExtension(_currentRom!.path);
-    return p.join(saveDir, '$romName.ss$slot');
+    final fileName = '$romName.ss$slot';
+
+    // Search for existing state file
+    for (final dir in _allSaveDirectories(_currentRom!)) {
+      final path = p.join(dir, fileName);
+      if (File(path).existsSync()) return path;
+    }
+    // Default: write to primary save dir
+    final saveDir = _getRomSaveDir(_currentRom!);
+    return p.join(saveDir, fileName);
   }
 
-  /// Get the screenshot file path for a save state slot — stored next to the ROM
+  /// Get the screenshot file path for a save state slot.
+  /// Searches all known save directories for an existing file.
   String? getStateScreenshotPath(int slot) {
     if (_currentRom == null) return null;
-    final saveDir = _getRomSaveDir(_currentRom!);
     final romName = p.basenameWithoutExtension(_currentRom!.path);
-    return p.join(saveDir, '$romName.ss$slot.png');
+    final fileName = '$romName.ss$slot.png';
+
+    // Search for existing screenshot
+    for (final dir in _allSaveDirectories(_currentRom!)) {
+      final path = p.join(dir, fileName);
+      if (File(path).existsSync()) return path;
+    }
+    // Default: write to primary save dir
+    final saveDir = _getRomSaveDir(_currentRom!);
+    return p.join(saveDir, fileName);
   }
 
   /// Save state to slot (also captures a screenshot thumbnail)

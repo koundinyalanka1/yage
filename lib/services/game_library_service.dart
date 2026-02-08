@@ -13,6 +13,11 @@ import 'artwork_service.dart';
 class GameLibraryService extends ChangeNotifier {
   static const String _gamesKey = 'game_library';
   static const String _romDirsKey = 'rom_directories';
+  /// Shared-storage backup path so the library survives uninstall/reinstall.
+  static const _backupPaths = [
+    '/storage/emulated/0/RetroPal/library_backup.json',
+    '/sdcard/RetroPal/library_backup.json',
+  ];
   
   List<GameRom> _games = [];
   List<String> _romDirectories = [];
@@ -40,7 +45,9 @@ class GameLibraryService extends ChangeNotifier {
     return played.take(10).toList();
   }
 
-  /// Initialize and load saved library
+  /// Initialize and load saved library.
+  /// First tries SharedPreferences; if empty (e.g. after reinstall),
+  /// falls back to the shared-storage backup.
   Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
@@ -54,9 +61,30 @@ class GameLibraryService extends ChangeNotifier {
         _romDirectories = dirsJson;
       }
 
-      // Load saved games
-      final gamesJson = prefs.getString(_gamesKey);
-      if (gamesJson != null) {
+      // Load saved games from SharedPreferences
+      String? gamesJson = prefs.getString(_gamesKey);
+
+      // If nothing in prefs (fresh install / reinstall), try shared-storage backup
+      if (gamesJson == null || gamesJson.isEmpty) {
+        gamesJson = _readBackup();
+        if (gamesJson != null) {
+          debugPrint('Restored game library from shared-storage backup');
+          // Also recover rom directories from backup
+          try {
+            final backup = jsonDecode(gamesJson) as Map<String, dynamic>;
+            if (backup.containsKey('romDirectories')) {
+              _romDirectories = List<String>.from(backup['romDirectories']);
+            }
+            if (backup.containsKey('games')) {
+              gamesJson = jsonEncode(backup['games']);
+            }
+          } catch (_) {
+            // Backup might be just the games list (old format)
+          }
+        }
+      }
+
+      if (gamesJson != null && gamesJson.isNotEmpty) {
         final List<dynamic> gamesList = jsonDecode(gamesJson);
         _games = gamesList
             .map((json) => GameRom.fromJson(json as Map<String, dynamic>))
@@ -67,6 +95,9 @@ class GameLibraryService extends ChangeNotifier {
       _isLoading = false;
       _error = null;
       notifyListeners();
+
+      // Write backup in background so it's ready for next reinstall
+      _writeBackup();
     } catch (e) {
       _error = 'Failed to load library: $e';
       _isLoading = false;
@@ -74,17 +105,61 @@ class GameLibraryService extends ChangeNotifier {
     }
   }
 
-  /// Save library to storage
+  /// Save library to storage (SharedPreferences + shared-storage backup).
   Future<void> _saveLibrary() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final gamesJson = jsonEncode(_games.map((g) => g.toJson()).toList());
       await prefs.setString(_gamesKey, gamesJson);
       await prefs.setStringList(_romDirsKey, _romDirectories);
+
+      // Also write to shared storage so data survives uninstall/reinstall
+      _writeBackup();
     } catch (e) {
       _error = 'Failed to save library: $e';
       notifyListeners();
     }
+  }
+
+  // ──────────── Shared-storage backup helpers ────────────
+
+  /// Write a JSON backup to shared storage (best-effort, non-blocking).
+  void _writeBackup() {
+    try {
+      final backup = jsonEncode({
+        'games': _games.map((g) => g.toJson()).toList(),
+        'romDirectories': _romDirectories,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      for (final path in _backupPaths) {
+        try {
+          final file = File(path);
+          final dir = file.parent;
+          if (!dir.existsSync()) dir.createSync(recursive: true);
+          file.writeAsStringSync(backup);
+          return; // success — no need to try more paths
+        } catch (_) {
+          continue;
+        }
+      }
+    } catch (e) {
+      debugPrint('Could not write library backup: $e');
+    }
+  }
+
+  /// Try reading a backup from shared storage. Returns the JSON or null.
+  String? _readBackup() {
+    for (final path in _backupPaths) {
+      try {
+        final file = File(path);
+        if (file.existsSync()) {
+          return file.readAsStringSync();
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
   }
 
   /// Add a single ROM file - returns the added game or null
