@@ -34,6 +34,9 @@ class EmulatorSettings {
   final int rewindBufferSeconds; // seconds of rewind history (1-10)
   final String sortOption; // persisted sort choice for the game library
   final bool isGridView; // grid vs list view on the home screen
+  final bool raEnabled; // master toggle for RetroAchievements
+  final bool raHardcoreMode; // RetroAchievements hardcore mode
+  final bool raNotificationsEnabled; // show in-game unlock toasts
 
   const EmulatorSettings({
     this.volume = 0.8,
@@ -64,6 +67,9 @@ class EmulatorSettings {
     this.rewindBufferSeconds = 3,
     this.sortOption = 'nameAsc',
     this.isGridView = true,
+    this.raEnabled = true,
+    this.raHardcoreMode = false,
+    this.raNotificationsEnabled = true,
   });
 
   EmulatorSettings copyWith({
@@ -95,6 +101,9 @@ class EmulatorSettings {
     int? rewindBufferSeconds,
     String? sortOption,
     bool? isGridView,
+    bool? raEnabled,
+    bool? raHardcoreMode,
+    bool? raNotificationsEnabled,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -125,6 +134,9 @@ class EmulatorSettings {
       rewindBufferSeconds: rewindBufferSeconds ?? this.rewindBufferSeconds,
       sortOption: sortOption ?? this.sortOption,
       isGridView: isGridView ?? this.isGridView,
+      raEnabled: raEnabled ?? this.raEnabled,
+      raHardcoreMode: raHardcoreMode ?? this.raHardcoreMode,
+      raNotificationsEnabled: raNotificationsEnabled ?? this.raNotificationsEnabled,
     );
   }
 
@@ -158,6 +170,9 @@ class EmulatorSettings {
       'rewindBufferSeconds': rewindBufferSeconds,
       'sortOption': sortOption,
       'isGridView': isGridView,
+      'raEnabled': raEnabled,
+      'raHardcoreMode': raHardcoreMode,
+      'raNotificationsEnabled': raNotificationsEnabled,
     };
   }
 
@@ -199,6 +214,9 @@ class EmulatorSettings {
       rewindBufferSeconds: json['rewindBufferSeconds'] as int? ?? 3,
       sortOption: json['sortOption'] as String? ?? 'nameAsc',
       isGridView: json['isGridView'] as bool? ?? true,
+      raEnabled: json['raEnabled'] as bool? ?? true,
+      raHardcoreMode: json['raHardcoreMode'] as bool? ?? false,
+      raNotificationsEnabled: json['raNotificationsEnabled'] as bool? ?? true,
     );
   }
 

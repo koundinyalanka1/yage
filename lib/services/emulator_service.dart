@@ -12,6 +12,7 @@ import '../core/mgba_stub.dart';
 import '../models/game_rom.dart';
 import '../models/emulator_settings.dart';
 import 'link_cable_service.dart';
+import 'ra_runtime_service.dart';
 
 /// State of the emulator
 enum EmulatorState {
@@ -63,9 +64,16 @@ class EmulatorService extends ChangeNotifier {
   // Link cable service (set externally via setter)
   LinkCableService? _linkCable;
 
+  // RetroAchievements runtime (set externally via setter)
+  RARuntimeService? _raRuntime;
+
   /// Attach a link cable service for network multiplayer.
   set linkCable(LinkCableService? service) => _linkCable = service;
   LinkCableService? get linkCable => _linkCable;
+
+  /// Attach the RA runtime service for per-frame achievement processing.
+  set raRuntime(RARuntimeService? service) => _raRuntime = service;
+  RARuntimeService? get raRuntime => _raRuntime;
 
   /// Whether the native core supports link cable I/O register access.
   bool get isLinkSupported {
@@ -547,6 +555,9 @@ class EmulatorService extends ChangeNotifier {
 
       // ── Link Cable SIO polling ──
       _pollLinkCable();
+
+      // ── RetroAchievements per-frame processing ──
+      _raRuntime?.processFrame();
     }
 
     _updateFps();

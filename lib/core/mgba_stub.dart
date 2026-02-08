@@ -151,6 +151,11 @@ class MGBAStub {
   int linkGetTransferStatus() => -1;
   int linkExchangeData(int incoming) => -1;
 
+  // Memory read stubs (for RetroAchievements — no-op in demo mode)
+  bool get isMemoryReadSupported => false;
+  int readByte(int address) => 0;
+  int getMemorySize(int regionId) => 0;
+
   void reset() {
     _frameCount = 0;
   }

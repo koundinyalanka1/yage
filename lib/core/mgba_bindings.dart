@@ -119,6 +119,15 @@ typedef MgbaCoreLinkGetTransferStatus = int Function(NativeCore core);
 typedef MgbaCoreLinkExchangeDataNative = Int32 Function(NativeCore core, Uint8 incoming);
 typedef MgbaCoreLinkExchangeData = int Function(NativeCore core, int incoming);
 
+// Memory read functions (for RetroAchievements runtime)
+typedef MgbaCoreReadMemoryNative = Int32 Function(
+    NativeCore core, Uint32 address, Int32 count, Pointer<Uint8> buffer);
+typedef MgbaCoreReadMemory = int Function(
+    NativeCore core, int address, int count, Pointer<Uint8> buffer);
+
+typedef MgbaCoreGetMemorySizeNative = Int32 Function(NativeCore core, Int32 regionId);
+typedef MgbaCoreGetMemorySize = int Function(NativeCore core, int regionId);
+
 /// Game Boy key codes matching mGBA's input format
 class GBAKey {
   static const int a = 1 << 0;
@@ -185,6 +194,12 @@ class MGBABindings {
   MgbaCoreLinkExchangeData? coreLinkExchangeData;
   bool _linkLoaded = false;
   bool get isLinkLoaded => _linkLoaded;
+
+  // Memory read (optional — for RetroAchievements runtime integration)
+  MgbaCoreReadMemory? coreReadMemory;
+  MgbaCoreGetMemorySize? coreGetMemorySize;
+  bool _memoryReadLoaded = false;
+  bool get isMemoryReadLoaded => _memoryReadLoaded;
 
   bool get isLoaded => _isLoaded;
 
@@ -374,6 +389,21 @@ class MGBABindings {
       } catch (e) {
         debugPrint('Link cable symbols not available (native lib rebuild needed): $e');
         _linkLoaded = false;
+      }
+
+      // ── Optional: try to load memory read symbols (for RA runtime) ──
+      try {
+        coreReadMemory = lib
+            .lookup<NativeFunction<MgbaCoreReadMemoryNative>>('yage_core_read_memory')
+            .asFunction<MgbaCoreReadMemory>();
+        coreGetMemorySize = lib
+            .lookup<NativeFunction<MgbaCoreGetMemorySizeNative>>('yage_core_get_memory_size')
+            .asFunction<MgbaCoreGetMemorySize>();
+        _memoryReadLoaded = true;
+        debugPrint('Memory read symbols loaded successfully');
+      } catch (e) {
+        debugPrint('Memory read symbols not available (native lib rebuild needed): $e');
+        _memoryReadLoaded = false;
       }
 
       return true;
@@ -682,6 +712,41 @@ class MGBACore {
   int linkExchangeData(int incoming) {
     if (_corePtr == null || _bindings.coreLinkExchangeData == null) return -1;
     return _bindings.coreLinkExchangeData!(_corePtr as Pointer<Void>, incoming);
+  }
+
+  // ── Memory Read (for RetroAchievements) ──
+
+  /// Whether the native core exposes memory-read symbols.
+  bool get isMemoryReadSupported => _bindings.isMemoryReadLoaded && _corePtr != null;
+
+  /// Read [count] bytes from the emulator's address space starting at [address].
+  /// Returns the number of bytes actually read, or -1 on error.
+  /// The caller must allocate [buffer] with at least [count] bytes.
+  int readMemory(int address, int count, Pointer<Uint8> buffer) {
+    if (_corePtr == null || _bindings.coreReadMemory == null) return -1;
+    return _bindings.coreReadMemory!(_corePtr as Pointer<Void>, address, count, buffer);
+  }
+
+  /// Read a single byte from the emulator's address space.
+  /// Returns the byte value (0-255), or -1 on error.
+  int readByte(int address) {
+    if (_corePtr == null || _bindings.coreReadMemory == null) return -1;
+    final buf = calloc<Uint8>(1);
+    try {
+      final read = _bindings.coreReadMemory!(_corePtr as Pointer<Void>, address, 1, buf);
+      if (read <= 0) return -1;
+      return buf.value;
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  /// Get the size (in bytes) of a memory region.
+  /// Region IDs: 0=WRAM, 1=SRAM, 2=VRAM, etc. (platform-dependent).
+  /// Returns 0 if unknown.
+  int getMemorySize(int regionId) {
+    if (_corePtr == null || _bindings.coreGetMemorySize == null) return 0;
+    return _bindings.coreGetMemorySize!(_corePtr as Pointer<Void>, regionId);
   }
 
   /// Stop and clean up

@@ -251,6 +251,36 @@ class SettingsService extends ChangeNotifier {
     await update((s) => s.copyWith(isGridView: isGridView));
   }
 
+  /// Toggle RetroAchievements master enable/disable
+  Future<void> toggleRA() async {
+    await update((s) => s.copyWith(raEnabled: !s.raEnabled));
+  }
+
+  /// Set RetroAchievements enabled explicitly
+  Future<void> setRAEnabled(bool enabled) async {
+    await update((s) => s.copyWith(raEnabled: enabled));
+  }
+
+  /// Toggle RetroAchievements hardcore mode
+  Future<void> toggleRAHardcoreMode() async {
+    await update((s) => s.copyWith(raHardcoreMode: !s.raHardcoreMode));
+  }
+
+  /// Set RetroAchievements hardcore mode explicitly
+  Future<void> setRAHardcoreMode(bool enabled) async {
+    await update((s) => s.copyWith(raHardcoreMode: enabled));
+  }
+
+  /// Toggle RetroAchievements unlock notifications
+  Future<void> toggleRANotifications() async {
+    await update((s) => s.copyWith(raNotificationsEnabled: !s.raNotificationsEnabled));
+  }
+
+  /// Set RetroAchievements notifications explicitly
+  Future<void> setRANotifications(bool enabled) async {
+    await update((s) => s.copyWith(raNotificationsEnabled: enabled));
+  }
+
   // ── One-time flags (stored outside the main settings blob) ──────────
 
   /// Whether the shortcuts help dialog has already been shown once.

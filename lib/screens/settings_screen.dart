@@ -12,9 +12,11 @@ import '../models/gamepad_skin.dart';
 import '../services/settings_service.dart';
 import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
+import '../services/retro_achievements_service.dart';
 import '../services/save_backup_service.dart';
 import '../utils/theme.dart';
 import '../widgets/tv_focusable.dart';
+import 'ra_login_screen.dart';
 
 /// Settings screen
 class SettingsScreen extends StatelessWidget {
@@ -310,6 +312,108 @@ class SettingsScreen extends StatelessWidget {
                       title: 'Restore from Google Drive',
                       onTap: () => _restoreFromDrive(context),
                     ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── RetroAchievements (collapsible) ──
+              _CollapsibleSection(
+                title: 'RetroAchievements',
+                icon: Icons.emoji_events,
+                initiallyExpanded: false,
+                child: Column(
+                  children: [
+                    // Master enable/disable toggle
+                    _SettingsCard(
+                      children: [
+                        _SwitchTile(
+                          icon: Icons.emoji_events,
+                          title: 'Enable RetroAchievements',
+                          subtitle: 'Track and earn achievements while playing',
+                          value: settings.raEnabled,
+                          onChanged: (_) => settingsService.toggleRA(),
+                        ),
+                      ],
+                    ),
+                    // Everything below is gated on raEnabled
+                    if (settings.raEnabled) ...[
+                      const SizedBox(height: 8),
+                      _RetroAchievementsTile(),
+                      // Show mode/notification settings only when logged in
+                      Consumer<RetroAchievementsService>(
+                        builder: (context, raService, _) {
+                          if (!raService.isLoggedIn) return const SizedBox.shrink();
+                          return Column(
+                            children: [
+                              const SizedBox(height: 8),
+                              _SettingsCard(
+                                children: [
+                                  _SwitchTile(
+                                    icon: Icons.shield,
+                                    title: 'Hardcore Mode',
+                                    subtitle: 'Disable savestates, cheats, rewind, and fast-forward',
+                                    value: settings.raHardcoreMode,
+                                    onChanged: (_) => settingsService.toggleRAHardcoreMode(),
+                                  ),
+                                  const Divider(height: 1),
+                                  _SwitchTile(
+                                    icon: Icons.notifications_active,
+                                    title: 'Unlock Notifications',
+                                    subtitle: 'Show on-screen toast when achievements unlock',
+                                    value: settings.raNotificationsEnabled,
+                                    onChanged: (_) => settingsService.toggleRANotifications(),
+                                  ),
+                                  const Divider(height: 1),
+                                  _ActionTile(
+                                    icon: Icons.key,
+                                    title: 'Change API Key',
+                                    onTap: () async {
+                                      await raService.logout();
+                                      if (context.mounted) {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => const RALoginScreen(),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // Disclosure
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: YageColors.textMuted,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Uses RetroAchievements. Passwords are never shared. '
+                                'Only your username and Web API key are stored securely on-device.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: YageColors.textMuted,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1441,6 +1545,194 @@ class _MiniFramePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MiniFramePainter old) => old.bodyColor != bodyColor;
+}
+
+// ─────────────────────────────────────────────────────────
+//  RetroAchievements account tile
+// ─────────────────────────────────────────────────────────
+
+class _RetroAchievementsTile extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<RetroAchievementsService>(
+      builder: (context, raService, _) {
+        if (raService.isLoading) {
+          return _SettingsCard(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: YageColors.accent,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (raService.isLoggedIn) {
+          final profile = raService.profile;
+          return _SettingsCard(
+            children: [
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: YageColors.primary,
+                  backgroundImage: profile != null
+                      ? NetworkImage(profile.profileImageUrl)
+                      : null,
+                  child: profile == null
+                      ? Icon(Icons.person, color: YageColors.textPrimary)
+                      : null,
+                ),
+                title: Text(
+                  raService.username ?? 'Player',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: YageColors.textPrimary,
+                  ),
+                ),
+                subtitle: Text(
+                  '${profile?.totalPoints ?? 0} points · Member since ${profile?.memberSince ?? '—'}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: YageColors.textMuted,
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              _ActionTile(
+                icon: Icons.logout,
+                title: 'Sign Out',
+                onTap: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: YageColors.surface,
+                      title: Text(
+                        'Sign out of RetroAchievements?',
+                        style: TextStyle(color: YageColors.textPrimary),
+                      ),
+                      content: Text(
+                        'You will no longer earn achievements until you sign in again.',
+                        style: TextStyle(color: YageColors.textSecondary),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: Text(
+                            'Sign Out',
+                            style: TextStyle(color: YageColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    raService.logout();
+                  }
+                },
+                isDestructive: true,
+              ),
+            ],
+          );
+        }
+
+        // Not logged in — show error banner if API key was invalid
+        return _SettingsCard(
+          children: [
+            // Error banner (invalid API key, network failure, etc.)
+            if (raService.lastError != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: YageColors.error.withAlpha(20),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: YageColors.error,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        raService.lastError!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: YageColors.error,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: raService.clearError,
+                      child: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: YageColors.error.withAlpha(160),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.emoji_events_outlined,
+                    size: 40,
+                    color: YageColors.textMuted,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Sign in to track achievements',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: YageColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.login, size: 18),
+                      label: const Text('Sign In'),
+                      onPressed: () {
+                        raService.clearError();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RALoginScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────

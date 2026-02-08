@@ -12,9 +12,12 @@ import '../models/gamepad_layout.dart';
 import '../services/emulator_service.dart';
 import '../services/game_library_service.dart';
 import '../services/link_cable_service.dart';
+import '../services/ra_runtime_service.dart';
+import '../services/retro_achievements_service.dart';
 import '../services/settings_service.dart';
 import '../services/gamepad_input.dart';
 import '../utils/tv_detector.dart';
+import '../widgets/achievement_unlock_overlay.dart';
 import '../widgets/game_display.dart';
 import '../widgets/game_frame_overlay.dart';
 import '../widgets/tv_focusable.dart';
@@ -89,8 +92,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       final emulator = context.read<EmulatorService>();
       // Wire link cable service to emulator
       emulator.linkCable = context.read<LinkCableService>();
+      // Wire RA runtime for per-frame achievement processing
+      emulator.raRuntime = context.read<RARuntimeService>();
       emulator.start();
       _maybeShowShortcutsHelp();
+
+      // Detect RetroAchievements game ID in the background.
+      // This does NOT block gameplay — achievements are enabled async.
+      _detectRetroAchievements();
     });
   }
 
@@ -104,7 +113,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       try {
         final lc = context.read<LinkCableService>();
         lc.disconnect();
-        context.read<EmulatorService>().linkCable = null;
+        final emulator = context.read<EmulatorService>();
+        emulator.linkCable = null;
+        emulator.raRuntime = null;
       } catch (_) {}
 
       // Allow screen to sleep again
@@ -209,6 +220,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       case 'quickLoad':
         _doQuickLoad();
       case 'fastForward':
+        final raRuntime = context.read<RARuntimeService>();
+        final blocked = raRuntime.checkAction('fastForward');
+        if (blocked != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(blocked),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
         context.read<EmulatorService>().toggleFastForward();
     }
   }
@@ -304,6 +326,33 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return KeyEventResult.ignored;
   }
 
+  /// Detect RetroAchievements game ID for the loaded ROM,
+  /// then activate the RA runtime for per-frame achievement processing.
+  ///
+  /// Skipped entirely when RetroAchievements is disabled in settings.
+  /// Runs asynchronously in the background so gameplay is never blocked.
+  /// On success, [RetroAchievementsService.activeSession] is populated
+  /// and the RA runtime is activated with mode enforcement enabled.
+  /// On failure, achievements are silently disabled for this game.
+  Future<void> _detectRetroAchievements() async {
+    final settings = context.read<SettingsService>().settings;
+    if (!settings.raEnabled) {
+      debugPrint('RA: RetroAchievements disabled in settings — skipping');
+      return;
+    }
+
+    final raService = context.read<RetroAchievementsService>();
+    await raService.startGameSession(widget.game);
+
+    if (!mounted) return;
+
+    final raRuntime = context.read<RARuntimeService>();
+
+    await raRuntime.activate(
+      hardcoreMode: settings.raHardcoreMode,
+    );
+  }
+
   /// Flush accumulated session play time to the library
   void _flushPlayTime() {
     final emulator = context.read<EmulatorService>();
@@ -315,16 +364,42 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _onRewindHold(bool held) {
-    final emulator = context.read<EmulatorService>();
     if (held) {
-      emulator.startRewind();
+      // Block rewind in Hardcore mode
+      final raRuntime = context.read<RARuntimeService>();
+      final blocked = raRuntime.checkAction('rewind');
+      if (blocked != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(blocked),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+      context.read<EmulatorService>().startRewind();
     } else {
-      emulator.stopRewind();
+      context.read<EmulatorService>().stopRewind();
     }
   }
 
   /// Quick-save to slot 0 and show feedback.
+  /// Blocked in Hardcore mode.
   Future<void> _doQuickSave() async {
+    final raRuntime = context.read<RARuntimeService>();
+    final blocked = raRuntime.checkAction('saveState');
+    if (blocked != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(blocked),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     final emulator = context.read<EmulatorService>();
     final success = await emulator.saveState(0);
     if (mounted) {
@@ -338,7 +413,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   /// Quick-load from slot 0 and show feedback.
+  /// Blocked in Hardcore mode.
   Future<void> _doQuickLoad() async {
+    final raRuntime = context.read<RARuntimeService>();
+    final blocked = raRuntime.checkAction('loadState');
+    if (blocked != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(blocked),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     final emulator = context.read<EmulatorService>();
     final success = await emulator.loadState(0);
     if (mounted) {
@@ -392,6 +482,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final emulator = context.read<EmulatorService>();
     _flushPlayTime();
     emulator.stop();
+
+    // Deactivate the RA runtime and end the session
+    context.read<RARuntimeService>().deactivate();
+    context.read<RetroAchievementsService>().endGameSession();
+
     Navigator.of(context).pop();
   }
 
@@ -612,6 +707,41 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+
+              // Hardcore mode indicator
+              if (settings.raEnabled && context.watch<RARuntimeService>().isHardcore)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: emulator.isUsingStub ? 150 : 60,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withAlpha(200),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.emoji_events, size: 10, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text(
+                          'HARDCORE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Achievement unlock toast overlay
+              if (settings.raEnabled && settings.raNotificationsEnabled)
+                AchievementUnlockOverlay(
+                  runtimeService: context.watch<RARuntimeService>(),
+                ),
               
               // Menu button (hide in edit mode)
               if (!_editingLayout)
@@ -646,7 +776,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   child: _FastForwardButton(
                     isActive: emulator.speedMultiplier > 1.0,
                     speed: emulator.speedMultiplier,
-                    onTap: () => emulator.toggleFastForward(),
+                    onTap: () {
+                      final raRuntime = context.read<RARuntimeService>();
+                      final blocked = raRuntime.checkAction('fastForward');
+                      if (blocked != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(blocked),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                        return;
+                      }
+                      emulator.toggleFastForward();
+                    },
                   ),
                 ),
               
@@ -692,6 +835,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     _toggleMenu();
                   },
                   onSaveState: (slot) async {
+                    // Enforce hardcore mode
+                    final raRuntime = context.read<RARuntimeService>();
+                    final blocked = raRuntime.checkAction('saveState');
+                    if (blocked != null) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(blocked),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                      return;
+                    }
                     final success = await emulator.saveState(slot);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -707,6 +864,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     }
                   },
                   onLoadState: (slot) async {
+                    // Enforce hardcore mode
+                    final raRuntime = context.read<RARuntimeService>();
+                    final blocked = raRuntime.checkAction('loadState');
+                    if (blocked != null) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(blocked),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                      return;
+                    }
                     final success = await emulator.loadState(slot);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
