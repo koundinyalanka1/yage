@@ -11,7 +11,7 @@ import '../models/game_rom.dart';
 /// Service for fetching and caching game artwork
 class ArtworkService {
   static const String _libretroBaseUrl = 
-      'https://raw.githubusercontent.com/libretro-thumbnails';
+      'https://raw.githubusercontent.com/koundinyalanka1/libretro-thumbnails';
   
   /// LibRetro system names for each platform
   static String _getSystemName(GamePlatform platform) {
