@@ -1868,84 +1868,91 @@ class _SpeedSelector extends StatelessWidget {
 class _ShortcutsHelpDialog extends StatelessWidget {
   const _ShortcutsHelpDialog();
 
+  void _dismiss(BuildContext context) {
+    if (Navigator.of(context).canPop()) {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: YageColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: YageColors.accent.withAlpha(100),
-          width: 2,
-        ),
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      title: Row(
-        children: [
-          Icon(Icons.keyboard, color: YageColors.accent, size: 22),
-          const SizedBox(width: 10),
-          Text(
-            'Shortcuts',
-            style: TextStyle(
-              color: YageColors.textPrimary,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+    // Wrap in Focus so ANY key press (gamepad, remote, keyboard) dismisses it.
+    // Also wrap in GestureDetector so tapping anywhere outside the card works.
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, __) {
+        _dismiss(context);
+        return KeyEventResult.handled;
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _dismiss(context),
+        child: AlertDialog(
+          backgroundColor: YageColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(
+              color: YageColors.accent.withAlpha(100),
+              width: 2,
             ),
           ),
-        ],
-      ),
-      content: SizedBox(
-        width: 340,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          title: Row(
             children: [
-              _sectionHeader(Icons.gamepad, 'Gamepad combos  (hold Select +)'),
-              _shortcutRow('Select + Start', 'Pause menu'),
-              _shortcutRow('Select + A', 'Quick save (slot 1)'),
-              _shortcutRow('Select + B', 'Quick load (slot 1)'),
-              _shortcutRow('Select + R1', 'Fast forward'),
-              _shortcutRow('Select (tap)', 'GBA Select button'),
-              const SizedBox(height: 14),
-              _sectionHeader(Icons.keyboard_alt_outlined, 'Keyboard'),
-              _shortcutRow('F1', 'Pause menu'),
-              _shortcutRow('F5', 'Quick save (slot 1)'),
-              _shortcutRow('F9', 'Quick load (slot 1)'),
-              _shortcutRow('Tab', 'Fast forward'),
-              _shortcutRow('Esc', 'Toggle pause menu'),
-              const SizedBox(height: 14),
-              _sectionHeader(Icons.tv, 'TV / Remote'),
-              _shortcutRow('Back', 'Pause menu'),
-              _shortcutRow('L1 / R1', 'Switch tabs (home)'),
-              const SizedBox(height: 8),
-              Divider(color: YageColors.surfaceLight),
-              const SizedBox(height: 4),
+              Icon(Icons.keyboard, color: YageColors.accent, size: 22),
+              const SizedBox(width: 10),
               Text(
-                'You can always open this from the pause menu → Shortcuts.',
+                'Shortcuts',
                 style: TextStyle(
-                  fontSize: 11,
-                  color: YageColors.textMuted,
-                  fontStyle: FontStyle.italic,
+                  color: YageColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
                 ),
               ),
             ],
           ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          autofocus: true,
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Got it',
-            style: TextStyle(
-              color: YageColors.accent,
-              fontWeight: FontWeight.bold,
+          content: SizedBox(
+            width: 340,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _sectionHeader(Icons.gamepad, 'Gamepad combos  (hold Select +)'),
+                  _shortcutRow('Select + Start', 'Pause menu'),
+                  _shortcutRow('Select + A', 'Quick save (slot 1)'),
+                  _shortcutRow('Select + B', 'Quick load (slot 1)'),
+                  _shortcutRow('Select + R1', 'Fast forward'),
+                  _shortcutRow('Select (tap)', 'GBA Select button'),
+                  const SizedBox(height: 14),
+                  _sectionHeader(Icons.keyboard_alt_outlined, 'Keyboard'),
+                  _shortcutRow('F1', 'Pause menu'),
+                  _shortcutRow('F5', 'Quick save (slot 1)'),
+                  _shortcutRow('F9', 'Quick load (slot 1)'),
+                  _shortcutRow('Tab', 'Fast forward'),
+                  _shortcutRow('Esc', 'Toggle pause menu'),
+                  const SizedBox(height: 14),
+                  _sectionHeader(Icons.tv, 'TV / Remote'),
+                  _shortcutRow('Back', 'Pause menu'),
+                  _shortcutRow('L1 / R1', 'Switch tabs (home)'),
+                  const SizedBox(height: 8),
+                  Divider(color: YageColors.surfaceLight),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Press any button to dismiss.  '
+                    'Open anytime from pause menu → Shortcuts.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: YageColors.textMuted,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 

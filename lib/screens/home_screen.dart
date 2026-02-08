@@ -77,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.gameButtonLeftBumper ||
+    if (key == LogicalKeyboardKey.gameButtonLeft1 ||
         key == LogicalKeyboardKey.pageUp) {
       final newIndex = (_tabController.index - 1).clamp(0, _tabController.length - 1);
       if (newIndex != _tabController.index) {
@@ -85,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.gameButtonRightBumper ||
+    if (key == LogicalKeyboardKey.gameButtonRight1 ||
         key == LogicalKeyboardKey.pageDown) {
       final newIndex = (_tabController.index + 1).clamp(0, _tabController.length - 1);
       if (newIndex != _tabController.index) {
