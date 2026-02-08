@@ -546,36 +546,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ),
           ] else
-          // More options menu (phone/tablet)
-          PopupMenuButton<String>(
+          // Settings button (phone/tablet)
+          IconButton(
             icon: Icon(
-              Icons.more_vert,
+              Icons.settings_outlined,
               color: YageColors.textSecondary,
               size: 20,
             ),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            color: YageColors.surface,
-            onSelected: (value) {
-              switch (value) {
-                case 'settings':
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  leading: Icon(Icons.settings_outlined, size: 20),
-                  title: Text('Settings'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -722,33 +705,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ),
           ] else
-          // More options menu (phone/tablet)
-          PopupMenuButton<String>(
+          // Settings button (phone/tablet)
+          IconButton(
             icon: Icon(
-              Icons.more_vert,
+              Icons.settings_outlined,
               color: YageColors.textSecondary,
             ),
-            color: YageColors.surface,
-            onSelected: (value) {
-              switch (value) {
-                case 'settings':
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  leading: Icon(Icons.settings_outlined, size: 20),
-                  title: Text('Settings'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              ),
-            ],
+            tooltip: 'Settings',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
           ),
         ],
       ),

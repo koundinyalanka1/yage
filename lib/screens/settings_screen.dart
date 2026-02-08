@@ -67,7 +67,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Theme',
                 icon: Icons.color_lens,
-                initiallyExpanded: false,
+                initiallyExpanded: true,
                 child: _ThemePicker(
                   selectedThemeId: settings.selectedTheme,
                   onChanged: settingsService.setAppTheme,
@@ -257,7 +257,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Library',
                 icon: Icons.library_books,
-                initiallyExpanded: false,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _ActionTile(
@@ -286,7 +286,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Backup & Restore',
                 icon: Icons.backup,
-                initiallyExpanded: false,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _ActionTile(
@@ -322,7 +322,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'RetroAchievements',
                 icon: Icons.emoji_events,
-                initiallyExpanded: false,
+                initiallyExpanded: true,
                 child: Column(
                   children: [
                     // Master enable/disable toggle
@@ -424,7 +424,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'About',
                 icon: Icons.info_outline,
-                initiallyExpanded: false,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _InfoTile(
