@@ -107,6 +107,7 @@ struct retro_system_av_info {
 #define VIDEO_BUFFER_SIZE (GBA_WIDTH * GBA_HEIGHT)
 
 /* Global state for libretro callbacks */
+static YageCore* g_current_core = NULL; /* Active core for env callback access */
 static uint32_t* g_video_buffer = NULL;
 static int16_t* g_audio_buffer = NULL;
 static int g_audio_samples = 0;
@@ -902,7 +903,8 @@ static bool environment_callback(unsigned cmd, void* data) {
             return true;
         case 9: /* RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY */
             if (data) {
-                *(const char**)data = ".";
+                *(const char**)data = (g_current_core && g_current_core->save_dir)
+                    ? g_current_core->save_dir : ".";
             }
             return true;
         case 15: /* RETRO_ENVIRONMENT_GET_VARIABLE */
@@ -915,7 +917,8 @@ static bool environment_callback(unsigned cmd, void* data) {
             return false;
         case 31: /* RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY */
             if (data) {
-                *(const char**)data = ".";
+                *(const char**)data = (g_current_core && g_current_core->save_dir)
+                    ? g_current_core->save_dir : ".";
             }
             return true;
         case 36:      /* RETRO_ENVIRONMENT_SET_MEMORY_MAPS (no experimental flag) */
@@ -1003,6 +1006,9 @@ int yage_core_init(YageCore* core) {
         return -1;
     }
     
+    /* Store core pointer for use in static callbacks (env, etc.) */
+    g_current_core = core;
+
     /* Set up callbacks */
     if (core->retro_set_environment)
         core->retro_set_environment(environment_callback);
@@ -1028,6 +1034,9 @@ int yage_core_init(YageCore* core) {
 
 void yage_core_destroy(YageCore* core) {
     if (!core) return;
+
+    /* Clear the global pointer so callbacks don't use a stale core */
+    if (g_current_core == core) g_current_core = NULL;
     
     /* Free rewind buffer */
     yage_core_rewind_deinit(core);

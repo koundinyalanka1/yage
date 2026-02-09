@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/game_library_service.dart';
-import '../services/notification_service.dart';
 import '../services/retro_achievements_service.dart';
 import '../services/settings_service.dart';
 import '../utils/theme.dart';
@@ -15,7 +14,6 @@ import 'home_screen.dart';
 ///   1. Display branding (logo + app name) immediately.
 ///   2. Run initialisation tasks in parallel:
 ///      • Detect Android TV
-///      • Initialize notification service & request permission
 ///   3. Wait for providers that were already kicked off by [AppProviders]:
 ///      • [SettingsService.load]
 ///      • [GameLibraryService.initialize]
@@ -60,10 +58,9 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _initialize() async {
     final stopwatch = Stopwatch()..start();
 
-    // ── Run platform + permission init in parallel ─────────────────
+    // ── Run platform init in parallel with provider readiness ──────
     await Future.wait([
       TvDetector.initialize(),
-      NotificationService().initialize(),
       // Wait for providers that were already started by AppProviders
       _waitForProviders(),
     ]);

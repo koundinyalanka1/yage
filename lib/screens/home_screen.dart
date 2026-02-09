@@ -213,15 +213,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Future<void> _addRomFile() async {
     List<String>? paths;
 
-    // Try system file picker (SAF) — works on both phone and TV
+    // Try system file picker (SAF) — works on both phone and TV.
+    // We use FileType.any because Android SAF requires MIME types and
+    // .gba/.gb/.gbc have no registered MIME type — FileType.custom would
+    // silently drop them, leaving only .zip.  We filter results ourselves.
+    const _allowedExtensions = {'.gba', '.gb', '.gbc', '.zip'};
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['gba', 'gb', 'gbc', 'zip'],
+        type: FileType.any,
         allowMultiple: true,
       );
       paths = result?.files
-          .where((f) => f.path != null)
+          .where((f) =>
+              f.path != null &&
+              _allowedExtensions.contains(
+                  f.path!.toLowerCase().substring(f.path!.lastIndexOf('.'))))
           .map((f) => f.path!)
           .toList();
     } catch (_) {

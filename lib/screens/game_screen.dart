@@ -203,6 +203,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     switch (event.type) {
       case RcEventType.achievementTriggered:
+        // Check if this achievement was already earned (re-achieved via encore)
+        final isReachieved = _raServiceRef?.gameData?.achievements
+            .any((a) => a.id == event.achievementId && a.isEarned) ?? false;
+
         _showRAToast(
           title: event.achievementTitle,
           subtitle: '${event.achievementDescription}\n'
@@ -210,10 +214,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           imageUrl: event.achievementBadgeUrl.isNotEmpty
               ? event.achievementBadgeUrl
               : null,
-          icon: Icons.emoji_events,
-          accentColor: (_rcheevosClientRef?.isHardcoreEnabled ?? false)
-              ? Colors.amber
-              : YageColors.accent,
+          icon: isReachieved ? Icons.replay : Icons.emoji_events,
+          accentColor: isReachieved
+              ? Colors.teal
+              : (_rcheevosClientRef?.isHardcoreEnabled ?? false)
+                  ? Colors.amber
+                  : YageColors.accent,
           duration: const Duration(seconds: 5),
         );
         break;
@@ -299,10 +305,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         emulator.rcheevosClient = null;
       } catch (_) {}
 
-      // Unload game from native rcheevos (but don't destroy the client
-      // — it's a Provider-managed singleton and may be reused).
+      // Fully shut down the native rcheevos client so it re-initialises
+      // cleanly when the user enters a game again.  Without this, the
+      // singleton stays in _initialized=true / _gameLoaded=false limbo
+      // and the next session never loads the game → no achievement events.
       try {
-        context.read<RcheevosClient>().unloadGame();
+        context.read<RcheevosClient>().shutdown();
       } catch (_) {}
 
       // Allow screen to sleep again
@@ -751,12 +759,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _exitGame() {
+  Future<void> _exitGame() async {
     final emulator = context.read<EmulatorService>();
     _flushPlayTime();
-    emulator.stop();
+
+    // Await stop so the SRAM save completes before we tear down the screen.
+    await emulator.stop();
 
     // Deactivate the RA runtime and end the session
+    if (!mounted) return;
     context.read<RARuntimeService>().deactivate();
     context.read<RetroAchievementsService>().endGameSession();
 

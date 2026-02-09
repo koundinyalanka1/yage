@@ -30,6 +30,12 @@
 static rc_client_t* g_rc_client = NULL;
 static YageCore* g_yage_core = NULL;
 
+/* Cached console memory regions for address translation.
+ * rcheevos uses virtual addresses (e.g. 0x000000 for GBA IWRAM) while
+ * the emulator uses hardware addresses (e.g. 0x03000000 for GBA IWRAM).
+ * Set when a game is loaded, cleared when unloaded. */
+static const rc_memory_regions_t* g_memory_regions = NULL;
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  HTTP Request Queue
  *
@@ -92,17 +98,90 @@ static void enqueue_simple_event(uint32_t type) {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 /**
+ * Translate a RetroAchievements virtual address to the emulator's hardware
+ * address using the cached console memory regions.
+ *
+ * rcheevos uses a linearized address space where memory regions are laid out
+ * sequentially.  For example, GBA maps:
+ *   rcheevos 0x000000-0x007FFF  →  hardware 0x03000000 (IWRAM 32KB)
+ *   rcheevos 0x008000-0x047FFF  →  hardware 0x02000000 (EWRAM 256KB)
+ *   rcheevos 0x048000-0x057FFF  →  hardware 0x0E000000 (SRAM 64KB)
+ *
+ * For GB/GBC the virtual and real addresses happen to be identical, so
+ * this translation is effectively a no-op for those consoles.
+ *
+ * Returns the hardware address, or the original address unchanged if no
+ * mapping is found (graceful fallback).
+ */
+static uint32_t translate_address(uint32_t rc_address) {
+    if (!g_memory_regions || g_memory_regions->num_regions == 0)
+        return rc_address; /* no mapping available — pass through */
+
+    for (uint32_t i = 0; i < g_memory_regions->num_regions; i++) {
+        const rc_memory_region_t* region = &g_memory_regions->region[i];
+        if (rc_address >= region->start_address &&
+            rc_address <= region->end_address) {
+            return region->real_address + (rc_address - region->start_address);
+        }
+    }
+
+    /* Address not in any known region — pass through unchanged */
+    return rc_address;
+}
+
+/**
  * Memory reader callback for rc_client.
  *
- * Reads from the emulator's address space via yage_core_read_memory.
+ * Translates rcheevos virtual addresses to the emulator's hardware
+ * address space, then reads via yage_core_read_memory.
+ *
+ * The memory regions are lazily resolved on the first call where the
+ * game is loaded.  This ensures they're available during the address
+ * validation pass that rc_client runs BEFORE our load_game_callback.
  */
 static uint32_t RC_CCONV memory_reader(uint32_t address, uint8_t* buffer,
                                         uint32_t num_bytes, rc_client_t* client) {
-    (void)client;
     if (!g_yage_core || !buffer || num_bytes == 0) return 0;
 
-    int result = yage_core_read_memory(g_yage_core, address, (int32_t)num_bytes, buffer);
-    return (result > 0) ? (uint32_t)result : 0;
+    /* Lazily resolve console memory regions for address translation.
+     * rc_client sets client->game before calling validate_addresses,
+     * so rc_client_get_game_info() is available here. */
+    if (!g_memory_regions && client) {
+        const rc_client_game_t* game = rc_client_get_game_info(client);
+        if (game && game->console_id != 0) {
+            g_memory_regions = rc_console_memory_regions(game->console_id);
+            if (g_memory_regions) {
+                RC_LOGI("Memory regions resolved: %u regions for console %u",
+                        g_memory_regions->num_regions, game->console_id);
+            }
+        }
+    }
+
+    /* Fast path: if the entire read [address, address+num_bytes-1] fits in
+     * a single rcheevos region, translate once and do a bulk read. */
+    if (g_memory_regions && g_memory_regions->num_regions > 0) {
+        uint32_t last = address + num_bytes - 1;
+        for (uint32_t i = 0; i < g_memory_regions->num_regions; i++) {
+            const rc_memory_region_t* r = &g_memory_regions->region[i];
+            if (address >= r->start_address && last <= r->end_address) {
+                uint32_t hw_addr = r->real_address + (address - r->start_address);
+                int result = yage_core_read_memory(g_yage_core, hw_addr,
+                                                    (int32_t)num_bytes, buffer);
+                return (result > 0) ? (uint32_t)result : 0;
+            }
+        }
+    }
+
+    /* Slow path: translate each byte individually (handles cross-region
+     * reads or when no region table is available yet). */
+    for (uint32_t i = 0; i < num_bytes; i++) {
+        uint32_t hw_addr = translate_address(address + i);
+        uint8_t byte_val = 0;
+        int result = yage_core_read_memory(g_yage_core, hw_addr, 1, &byte_val);
+        if (result <= 0) return i; /* return number of bytes successfully read */
+        buffer[i] = byte_val;
+    }
+    return num_bytes;
 }
 
 /**
@@ -263,9 +342,17 @@ static void RC_CCONV load_game_callback(int result, const char* error_message,
 
     if (result == RC_OK) {
         const rc_client_game_t* game = rc_client_get_game_info(g_rc_client);
-        RC_LOGI("Game loaded: \"%s\" (ID=%u)",
+        RC_LOGI("Game loaded: \"%s\" (ID=%u, console=%u)",
                 game ? game->title : "unknown",
-                game ? game->id : 0);
+                game ? game->id : 0,
+                game ? game->console_id : 0);
+
+        /* Ensure memory regions are cached (normally already done lazily
+         * in memory_reader during address validation, but set here as
+         * a safety net in case the lazy init didn't trigger). */
+        if (!g_memory_regions && game) {
+            g_memory_regions = rc_console_memory_regions(game->console_id);
+        }
 
         enqueue_simple_event(YAGE_RC_EVENT_GAME_LOAD_SUCCESS);
     } else {
@@ -323,6 +410,7 @@ void yage_rc_destroy(void) {
         g_rc_client = NULL;
     }
     g_yage_core = NULL;
+    g_memory_regions = NULL;
 
     /* Free any pending request strings */
     for (int i = 0; i < MAX_PENDING_REQUESTS; i++) {
@@ -422,6 +510,7 @@ const char* yage_rc_get_game_badge_url(void) {
 void yage_rc_unload_game(void) {
     if (!g_rc_client) return;
     rc_client_unload_game(g_rc_client);
+    g_memory_regions = NULL;
     RC_LOGI("Game unloaded");
 }
 
