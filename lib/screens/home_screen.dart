@@ -9,6 +9,7 @@ import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
 import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
+import '../services/retro_achievements_service.dart';
 
 import '../services/save_backup_service.dart';
 import '../utils/tv_detector.dart';
@@ -18,6 +19,7 @@ import '../widgets/tv_file_browser.dart';
 import '../widgets/tv_focusable.dart';
 import '../services/settings_service.dart';
 import '../utils/theme.dart';
+import 'achievements_screen.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
 
@@ -214,7 +216,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // Try system file picker (SAF) — works on both phone and TV
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
+        type: FileType.custom,
+        allowedExtensions: ['gba', 'gb', 'gbc', 'zip'],
         allowMultiple: true,
       );
       paths = result?.files
@@ -301,9 +304,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _launchGame(GameRom game) async {
     final emulator = context.read<EmulatorService>();
     final library = context.read<GameLibraryService>();
+    final settings = context.read<SettingsService>().settings;
+    final raService = context.read<RetroAchievementsService>();
 
     // Update last played
     await library.updateLastPlayed(game);
+
+    // Start RA achievement session in parallel with ROM loading.
+    // This kicks off hash computation + game ID lookup + achievement data
+    // fetch so they're already in progress (or cached) by the time the
+    // game screen's _detectRetroAchievements() runs.
+    if (settings.raEnabled && raService.isLoggedIn) {
+      // Fire-and-forget — don't block ROM loading
+      raService.startGameSession(game);
+    }
 
     // Load ROM
     final success = await emulator.loadRom(game);
@@ -1041,6 +1055,76 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
 
+  /// Show achievements list for a game.
+  ///
+  /// This resolves the game ID from the ROM hash, loads achievement data,
+  /// and opens the AchievementsScreen.
+  Future<void> _showAchievementsForGame(GameRom game) async {
+    final raService = context.read<RetroAchievementsService>();
+    final settings = context.read<SettingsService>().settings;
+
+    if (!raService.isLoggedIn) return;
+
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Loading achievements...'),
+          ],
+        ),
+        duration: Duration(seconds: 10),
+      ),
+    );
+
+    // Start game session to resolve game ID and load data.
+    // awaitData: true ensures achievement metadata is fully loaded before
+    // we check gameData — avoids the screen opening with no data.
+    await raService.startGameSession(game, awaitData: true);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    final gameData = raService.gameData;
+    final session = raService.activeSession;
+
+    if (session == null || session.gameId <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This ROM is not recognized by RetroAchievements'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (gameData == null || gameData.achievements.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No achievements found for this game'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AchievementsScreen(
+          gameData: gameData,
+          isHardcore: settings.raHardcoreMode,
+        ),
+      ),
+    );
+  }
+
   void _showGameOptions(GameRom game) {
     final library = context.read<GameLibraryService>();
 
@@ -1095,6 +1179,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           onTap: () {
                             Navigator.pop(context);
                             _launchGame(game);
+                          },
+                        ),
+                        // Achievements (only if RA is logged in)
+                        Builder(
+                          builder: (ctx) {
+                            final raService = ctx.read<RetroAchievementsService>();
+                            final settings = ctx.read<SettingsService>();
+                            if (!settings.settings.raEnabled || !raService.isLoggedIn) {
+                              return const SizedBox.shrink();
+                            }
+                            return ListTile(
+                              leading: const Icon(Icons.emoji_events, color: Colors.amber),
+                              title: const Text('Achievements'),
+                              subtitle: const Text('View RetroAchievements'),
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                _showAchievementsForGame(game);
+                              },
+                            );
                           },
                         ),
                         ListTile(

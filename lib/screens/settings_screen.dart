@@ -80,6 +80,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Audio',
                 icon: Icons.volume_up,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _SwitchTile(
@@ -108,6 +109,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Display',
                 icon: Icons.display_settings,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _SwitchTile(
@@ -153,6 +155,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Controls',
                 icon: Icons.sports_esports,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _SwitchTile(
@@ -203,6 +206,7 @@ class SettingsScreen extends StatelessWidget {
               _CollapsibleSection(
                 title: 'Emulation',
                 icon: Icons.memory,
+                initiallyExpanded: true,
                 child: _SettingsCard(
                   children: [
                     _SwitchTile(
@@ -358,17 +362,9 @@ class SettingsScreen extends StatelessWidget {
                                     onChanged: (_) => settingsService.toggleRAHardcoreMode(),
                                   ),
                                   const Divider(height: 1),
-                                  _SwitchTile(
-                                    icon: Icons.notifications_active,
-                                    title: 'Unlock Notifications',
-                                    subtitle: 'Show on-screen toast when achievements unlock',
-                                    value: settings.raNotificationsEnabled,
-                                    onChanged: (_) => settingsService.toggleRANotifications(),
-                                  ),
-                                  const Divider(height: 1),
                                   _ActionTile(
                                     icon: Icons.key,
-                                    title: 'Change API Key',
+                                    title: 'Change Password',
                                     onTap: () async {
                                       await raService.logout();
                                       if (context.mounted) {
@@ -401,8 +397,8 @@ class SettingsScreen extends StatelessWidget {
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                'Uses RetroAchievements. Passwords are never shared. '
-                                'Only your username and Web API key are stored securely on-device.',
+                                'Uses RetroAchievements. Your credentials are '
+                                'stored securely on-device and never shared.',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: YageColors.textMuted,
@@ -1599,7 +1595,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                   ),
                 ),
                 subtitle: Text(
-                  '${profile?.totalPoints ?? 0} points · Member since ${profile?.memberSince ?? '—'}',
+                  '${profile?.totalPoints ?? 0} points',
                   style: TextStyle(
                     fontSize: 11,
                     color: YageColors.textMuted,
@@ -1648,10 +1644,10 @@ class _RetroAchievementsTile extends StatelessWidget {
           );
         }
 
-        // Not logged in — show error banner if API key was invalid
+        // Not logged in — show error banner if login failed
         return _SettingsCard(
           children: [
-            // Error banner (invalid API key, network failure, etc.)
+            // Error banner (invalid credentials, network failure, etc.)
             if (raService.lastError != null)
               Container(
                 width: double.infinity,

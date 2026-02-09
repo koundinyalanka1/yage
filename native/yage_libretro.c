@@ -1582,6 +1582,47 @@ int yage_core_link_exchange_data(YageCore* core, uint8_t incoming) {
     return outgoing;
 }
 
+/*
+ * ============================================================
+ * Memory Read API (for RetroAchievements runtime)
+ *
+ * Uses the memory map obtained via RETRO_ENVIRONMENT_SET_MEMORY_MAPS
+ * to read arbitrary emulated addresses. Falls back to libretro
+ * retro_get_memory_data for standard region reads.
+ * ============================================================
+ */
+
+int yage_core_read_memory(YageCore* core, uint32_t address, int32_t count, uint8_t* buffer) {
+    (void)core;
+    if (!buffer || count <= 0) return -1;
+
+    /*
+     * Use the memory map obtained via RETRO_ENVIRONMENT_SET_MEMORY_MAPS.
+     * mGBA exposes the full GBA address space through this map, including:
+     *   0x02000000  EWRAM (256 KB)
+     *   0x03000000  IWRAM (32 KB)
+     *   0x04000000  I/O registers
+     *   0x05000000  Palette RAM
+     *   0x06000000  VRAM
+     *   0x07000000  OAM
+     *   0x08000000+ ROM
+     *   0x0E000000  SRAM/Flash
+     *
+     * resolve_address() scans the stored regions to find the host pointer
+     * for any emulated address. If not found, we return 0 for that byte.
+     */
+    for (int32_t i = 0; i < count; i++) {
+        uint8_t* p = resolve_address(address + (uint32_t)i);
+        buffer[i] = p ? *p : 0;
+    }
+    return count;
+}
+
+int yage_core_get_memory_size(YageCore* core, int32_t region_id) {
+    if (!core || !core->retro_get_memory_size) return 0;
+    return (int)core->retro_get_memory_size((unsigned)region_id);
+}
+
 /* Case-insensitive string compare for cross-platform */
 #ifdef _WIN32
 #define strcasecmp _stricmp

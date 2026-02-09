@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Auto Backup rules (Android 12+).
+  Cloud backup + device-to-device transfer rules.
+  Backs up save files, save states, settings, and RA cache.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- App-internal saves directory: .sav, save states, screenshots -->
+        <include domain="file" path="saves/" />
+
+        <!-- Settings (SharedPreferences) -->
+        <include domain="sharedpref" path="." />
+
+        <!-- Secure storage (RA credentials etc.) -->
+        <include domain="file" path="flutter_secure_storage/" />
+
+        <!-- RA achievement cache -->
+        <include domain="file" path="ra_cache/" />
+
+        <!-- Exclude large / transient files -->
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="app_flutter/cache/" />
+    </cloud-backup>
+
+    <device-transfer>
+        <!-- Same rules for device-to-device transfer -->
+        <include domain="file" path="saves/" />
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="flutter_secure_storage/" />
+        <include domain="file" path="ra_cache/" />
+
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="app_flutter/cache/" />
+    </device-transfer>
+</data-extraction-rules>

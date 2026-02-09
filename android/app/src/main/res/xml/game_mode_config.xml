@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Game Mode configuration for Android 12+ -->
+<!-- Game Mode disabled — it clears memory and blocks notifications,
+     which interferes with the emulator's native core and RA unlock alerts. -->
 <game-mode-config 
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:supportsBatteryGameMode="true"
-    android:supportsPerformanceGameMode="true"
-    android:allowGameAngleDriver="true"
+    android:supportsBatteryGameMode="false"
+    android:supportsPerformanceGameMode="false"
+    android:allowGameAngleDriver="false"
     android:allowGameDownscaling="false"/>
-

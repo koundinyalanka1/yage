@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/retro_achievements_service.dart';
 import '../utils/theme.dart';
 
-/// Screen for logging into RetroAchievements with username + API key.
+/// Screen for logging into RetroAchievements with username + password.
 class RALoginScreen extends StatefulWidget {
   const RALoginScreen({super.key});
 
@@ -15,16 +15,31 @@ class RALoginScreen extends StatefulWidget {
 class _RALoginScreenState extends State<RALoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
-  final _apiKeyController = TextEditingController();
+  final _passwordController = TextEditingController();
 
-  bool _obscureApiKey = true;
+  bool _obscurePassword = true;
   bool _isSubmitting = false;
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    _prefillCredentials();
+  }
+
+  Future<void> _prefillCredentials() async {
+    final raService = context.read<RetroAchievementsService>();
+    final username = raService.username;
+    final password = await raService.getStoredPassword();
+    if (!mounted) return;
+    if (username != null) _usernameController.text = username;
+    if (password != null) _passwordController.text = password;
+  }
+
+  @override
   void dispose() {
     _usernameController.dispose();
-    _apiKeyController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -39,19 +54,20 @@ class _RALoginScreenState extends State<RALoginScreen> {
     final raService = context.read<RetroAchievementsService>();
     final result = await raService.login(
       _usernameController.text,
-      _apiKeyController.text,
+      _passwordController.text,
     );
 
     if (!mounted) return;
 
     if (result.success) {
+      if (!mounted) return;
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'Welcome, ${result.profile?.username ?? 'Player'}!',
           ),
-          duration: const Duration(seconds: 2),
+          duration: const Duration(seconds: 3),
         ),
       );
     } else {
@@ -121,7 +137,8 @@ class _RALoginScreenState extends State<RALoginScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Enter your RetroAchievements username and\nWeb API key to unlock achievements.',
+                'Sign in with your RetroAchievements\n'
+                'username and password.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -153,35 +170,35 @@ class _RALoginScreenState extends State<RALoginScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ── API key field ──
+              // ── Password field ──
               TextFormField(
-                controller: _apiKeyController,
+                controller: _passwordController,
                 enabled: !_isSubmitting,
-                obscureText: _obscureApiKey,
+                obscureText: _obscurePassword,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _submit(),
                 decoration: InputDecoration(
-                  labelText: 'Web API Key',
-                  hintText: 'Paste your API key here',
+                  labelText: 'Password',
+                  hintText: 'Your RetroAchievements password',
                   prefixIcon: Icon(
-                    Icons.key,
+                    Icons.lock_outline,
                     color: YageColors.accent,
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureApiKey
+                      _obscurePassword
                           ? Icons.visibility_off
                           : Icons.visibility,
                       color: YageColors.textMuted,
                     ),
                     onPressed: () {
-                      setState(() => _obscureApiKey = !_obscureApiKey);
+                      setState(() => _obscurePassword = !_obscurePassword);
                     },
                   ),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'API key is required';
+                    return 'Password is required';
                   }
                   return null;
                 },
@@ -210,9 +227,9 @@ class _RALoginScreenState extends State<RALoginScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Find your Web API Key at:\n'
-                        'retroachievements.org → Settings → Keys\n\n'
-                        'This is NOT your password.',
+                        'Use your retroachievements.org credentials.\n'
+                        'Your password is stored securely on-device\n'
+                        'and never sent to any third party.',
                         style: TextStyle(
                           fontSize: 12,
                           color: YageColors.textSecondary,

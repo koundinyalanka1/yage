@@ -272,14 +272,6 @@ class SettingsService extends ChangeNotifier {
   }
 
   /// Toggle RetroAchievements unlock notifications
-  Future<void> toggleRANotifications() async {
-    await update((s) => s.copyWith(raNotificationsEnabled: !s.raNotificationsEnabled));
-  }
-
-  /// Set RetroAchievements notifications explicitly
-  Future<void> setRANotifications(bool enabled) async {
-    await update((s) => s.copyWith(raNotificationsEnabled: enabled));
-  }
 
   // ── One-time flags (stored outside the main settings blob) ──────────
 

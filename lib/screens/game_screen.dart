@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,19 +7,22 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/mgba_bindings.dart';
+import '../core/rcheevos_bindings.dart';
 import '../models/game_rom.dart';
 import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
+import '../models/ra_achievement.dart';
 import '../services/emulator_service.dart';
 import '../services/game_library_service.dart';
 import '../services/link_cable_service.dart';
 import '../services/ra_runtime_service.dart';
+import '../services/rcheevos_client.dart';
 import '../services/retro_achievements_service.dart';
 import '../services/settings_service.dart';
 import '../services/gamepad_input.dart';
 import '../utils/tv_detector.dart';
-import '../widgets/achievement_unlock_overlay.dart';
 import '../widgets/game_display.dart';
+import 'achievements_screen.dart';
 import '../widgets/game_frame_overlay.dart';
 import '../widgets/tv_focusable.dart';
 import '../widgets/virtual_gamepad.dart';
@@ -56,6 +60,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _hotkeyHeld = false;
   bool _hotkeyComboUsed = false;
 
+  // ── RetroAchievements notification tracking ──
+  bool _hasShownAchievementNotification = false;
+  RAGameData? _lastGameData;
+  OverlayEntry? _raToastEntry;
+
+  // ── Saved references for safe disposal ──
+  // Provider lookups are unsafe in dispose(), so we capture these early.
+  RetroAchievementsService? _raServiceRef;
+  RcheevosClient? _rcheevosClientRef;
+  StreamSubscription<RcEvent>? _rcheevosEventSub;
+
   @override
   void initState() {
     super.initState();
@@ -92,30 +107,202 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       final emulator = context.read<EmulatorService>();
       // Wire link cable service to emulator
       emulator.linkCable = context.read<LinkCableService>();
-      // Wire RA runtime for per-frame achievement processing
-      emulator.raRuntime = context.read<RARuntimeService>();
+      // Wire native rcheevos client for per-frame achievement processing
+      _rcheevosClientRef = context.read<RcheevosClient>();
+      emulator.rcheevosClient = _rcheevosClientRef;
       emulator.start();
       _maybeShowShortcutsHelp();
 
       // Detect RetroAchievements game ID in the background.
       // This does NOT block gameplay — achievements are enabled async.
       _detectRetroAchievements();
+
+      // Listen for achievement data loading to show notification
+      _raServiceRef = context.read<RetroAchievementsService>();
+      _raServiceRef!.addListener(_onRetroAchievementsChanged);
+
+      // Listen for native rcheevos events (achievement unlocks, etc.)
+      _rcheevosEventSub = _rcheevosClientRef!.events.listen(_onRcheevosEvent);
     });
+  }
+
+  /// Show a styled toast banner at the top of the screen with an optional
+  /// image (e.g. game icon or badge) and description text.
+  ///
+  /// Automatically dismisses after [duration].  If another toast is already
+  /// showing it is replaced immediately.
+  void _showRAToast({
+    required String title,
+    String? subtitle,
+    String? imageUrl,
+    IconData icon = Icons.emoji_events,
+    Color accentColor = Colors.amber,
+    Duration duration = const Duration(seconds: 4),
+  }) {
+    // Remove existing toast if any
+    _raToastEntry?.remove();
+    _raToastEntry = null;
+
+    final overlay = Overlay.of(context);
+
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => _RATopToast(
+        title: title,
+        subtitle: subtitle,
+        imageUrl: imageUrl,
+        icon: icon,
+        accentColor: accentColor,
+        onDismissed: () {
+          entry.remove();
+          if (_raToastEntry == entry) _raToastEntry = null;
+        },
+        duration: duration,
+      ),
+    );
+
+    _raToastEntry = entry;
+    overlay.insert(entry);
+  }
+
+  /// Called when RetroAchievementsService state changes.
+  /// Shows the "X / Y achievements" in-app toast when data finishes loading.
+  void _onRetroAchievementsChanged() {
+    if (!mounted) return;
+
+    final raService = context.read<RetroAchievementsService>();
+    final gameData = raService.gameData;
+    final session = raService.activeSession;
+
+    // Only show notification once per session, when data becomes available
+    if (gameData != null &&
+        gameData != _lastGameData &&
+        session != null &&
+        session.gameId > 0 &&
+        gameData.achievements.isNotEmpty &&
+        !_hasShownAchievementNotification) {
+      _lastGameData = gameData;
+      _hasShownAchievementNotification = true;
+
+      final earned = gameData.achievements.where((a) => a.isEarned).length;
+      final total = gameData.achievements.length;
+      final points = gameData.earnedPoints;
+      final totalPts = gameData.totalPoints;
+
+      _showRAToast(
+        title: gameData.title,
+        subtitle: '$earned/$total achievements · $points/$totalPts pts',
+        imageUrl: gameData.imageIconUrl,
+      );
+    }
+  }
+
+  /// Handle events from the native rcheevos client.
+  void _onRcheevosEvent(RcEvent event) {
+    if (!mounted) return;
+
+    switch (event.type) {
+      case RcEventType.achievementTriggered:
+        _showRAToast(
+          title: event.achievementTitle,
+          subtitle: '${event.achievementDescription}\n'
+              '${event.achievementPoints} pts',
+          imageUrl: event.achievementBadgeUrl.isNotEmpty
+              ? event.achievementBadgeUrl
+              : null,
+          icon: Icons.emoji_events,
+          accentColor: (_rcheevosClientRef?.isHardcoreEnabled ?? false)
+              ? Colors.amber
+              : YageColors.accent,
+          duration: const Duration(seconds: 5),
+        );
+        break;
+
+      case RcEventType.gameCompleted:
+        _showRAToast(
+          title: 'Mastered!',
+          subtitle: 'All achievements unlocked! 🎉',
+          icon: Icons.star,
+          accentColor: Colors.amber,
+          duration: const Duration(seconds: 8),
+        );
+        break;
+
+      case RcEventType.gameLoadSuccess:
+        // Update achievement count display
+        final client = _rcheevosClientRef;
+        if (client != null) {
+          final summary = client.getAchievementSummary();
+          if (summary.total > 0) {
+            _showRAToast(
+              title: client.gameTitle ?? 'Game Loaded',
+              subtitle:
+                  '${summary.unlocked}/${summary.total} achievements · '
+                  '${summary.unlockedPoints}/${summary.totalPoints} pts',
+              imageUrl: client.gameBadgeUrl,
+            );
+          }
+        }
+        break;
+
+      case RcEventType.gameLoadFailed:
+        debugPrint('RcheevosClient: Game load failed: ${event.errorMessage}');
+        break;
+
+      case RcEventType.loginSuccess:
+        debugPrint('RcheevosClient: Login successful');
+        // Now load the game if we have a pending hash
+        _onRcheevosLoginSuccess();
+        break;
+
+      case RcEventType.loginFailed:
+        debugPrint('RcheevosClient: Login failed: ${event.errorMessage}');
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  /// After native rcheevos login succeeds, load the game.
+  void _onRcheevosLoginSuccess() {
+    if (!mounted) return;
+    final raService = _raServiceRef;
+    if (raService == null) return;
+
+    final session = raService.activeSession;
+    if (session != null && session.romHash.isNotEmpty) {
+      _rcheevosClientRef?.beginLoadGame(session.romHash);
+    }
   }
 
   @override
   void dispose() {
     try {
       WidgetsBinding.instance.removeObserver(this);
+      // Remove RA listeners (using saved references — safe in dispose)
+      _raServiceRef?.removeListener(_onRetroAchievementsChanged);
+      _raServiceRef = null;
+      _rcheevosEventSub?.cancel();
+      _rcheevosEventSub = null;
+      _rcheevosClientRef = null;
+      _raToastEntry?.remove();
+      _raToastEntry = null;
       _focusNode.dispose();
 
-      // Disconnect link cable when leaving the game screen
+      // Disconnect link cable and clean up emulator references
       try {
         final lc = context.read<LinkCableService>();
         lc.disconnect();
         final emulator = context.read<EmulatorService>();
         emulator.linkCable = null;
-        emulator.raRuntime = null;
+        emulator.rcheevosClient = null;
+      } catch (_) {}
+
+      // Unload game from native rcheevos (but don't destroy the client
+      // — it's a Provider-managed singleton and may be reused).
+      try {
+        context.read<RcheevosClient>().unloadGame();
       } catch (_) {}
 
       // Allow screen to sleep again
@@ -333,24 +520,110 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// Runs asynchronously in the background so gameplay is never blocked.
   /// On success, [RetroAchievementsService.activeSession] is populated
   /// and the RA runtime is activated with mode enforcement enabled.
-  /// On failure, achievements are silently disabled for this game.
+  /// Shows explicit user feedback about achievement support status.
   Future<void> _detectRetroAchievements() async {
     final settings = context.read<SettingsService>().settings;
     if (!settings.raEnabled) {
-      debugPrint('RA: RetroAchievements disabled in settings — skipping');
+      _showRAToast(
+        title: 'RetroAchievements Off',
+        subtitle: 'Enable in Settings to track achievements',
+        icon: Icons.emoji_events_outlined,
+        accentColor: Colors.grey,
+        duration: const Duration(seconds: 3),
+      );
       return;
     }
 
     final raService = context.read<RetroAchievementsService>();
-    await raService.startGameSession(widget.game);
+
+    if (!raService.isLoggedIn) {
+      _showRAToast(
+        title: 'Not Logged In',
+        subtitle: 'Log in to RetroAchievements in Settings',
+        icon: Icons.login,
+        accentColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      );
+      return;
+    }
+
+    // Reset notification flag for new game session
+    _hasShownAchievementNotification = false;
+    _lastGameData = null;
+
+    // startGameSession may already have been fired from the home screen
+    // (fire-and-forget).  Calling it again is safe — hash + gameId are
+    // cached so it returns almost instantly if already resolved.  If the
+    // home-screen call is still in-flight, we just wait for it.
+    final existingSession = raService.activeSession;
+    final alreadyResolved = existingSession != null &&
+        existingSession.gameId > 0 &&
+        !raService.isResolvingGame;
+    if (!alreadyResolved) {
+      await raService.startGameSession(widget.game);
+    }
 
     if (!mounted) return;
 
-    final raRuntime = context.read<RARuntimeService>();
+    final session = raService.activeSession;
+    final gameData = raService.gameData;
 
-    await raRuntime.activate(
-      hardcoreMode: settings.raHardcoreMode,
-    );
+    // Show user feedback about achievement support
+    if (session == null || session.gameId <= 0) {
+      // Game not recognized by RetroAchievements
+      _showRAToast(
+        title: 'Not Recognized',
+        subtitle: 'This ROM is not in the RetroAchievements database',
+        icon: Icons.info_outline,
+        accentColor: Colors.white70,
+        duration: const Duration(seconds: 3),
+      );
+      return;
+    }
+
+    // Game recognized — activate mode enforcement
+    final raRuntime = context.read<RARuntimeService>();
+    raRuntime.activate(hardcoreMode: settings.raHardcoreMode);
+
+    if (!mounted) return;
+
+    // ── Native rcheevos integration ──────────────────────────────────
+    // Initialize the rc_client and begin login + game load.
+    final emulator = context.read<EmulatorService>();
+    final mgbaCore = emulator.core;
+    final rcClient = _rcheevosClientRef;
+    if (rcClient != null &&
+        rcClient.isInitialized == false &&
+        mgbaCore != null &&
+        mgbaCore.nativeCorePtr != null) {
+      final initialized = rcClient.initialize(mgbaCore.nativeCorePtr!);
+      if (initialized) {
+        // Configure mode
+        rcClient.setHardcoreEnabled(settings.raHardcoreMode);
+        rcClient.setEncoreEnabled(true);
+
+        // Begin login with saved credentials — game load happens
+        // in _onRcheevosLoginSuccess when the login event arrives.
+        final username = raService.username;
+        final token = raService.connectToken;
+        if (username != null && token != null) {
+          rcClient.beginLogin(username, token);
+        }
+      }
+    }
+
+    // Show achievement count feedback (top toast with game image)
+    if (gameData != null && gameData.achievements.isNotEmpty) {
+      final earned = gameData.achievements.where((a) => a.isEarned).length;
+      final total = gameData.achievements.length;
+      final points = gameData.earnedPoints;
+      final totalPts = gameData.totalPoints;
+      _showRAToast(
+        title: gameData.title,
+        subtitle: '$earned/$total achievements · $points/$totalPts pts',
+        imageUrl: gameData.imageIconUrl,
+      );
+    }
   }
 
   /// Flush accumulated session play time to the library
@@ -708,40 +981,113 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                 ),
 
-              // Hardcore mode indicator
-              if (settings.raEnabled && context.watch<RARuntimeService>().isHardcore)
-                Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  left: emulator.isUsingStub ? 150 : 60,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withAlpha(200),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.emoji_events, size: 10, color: Colors.white),
-                        SizedBox(width: 3),
-                        Text(
-                          'HARDCORE',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
+              // RetroAchievements status indicator (bottom-left)
+              if (settings.raEnabled)
+                Builder(
+                  builder: (context) {
+                    final raService = context.watch<RetroAchievementsService>();
+                    final session = raService.activeSession;
+                    final gameData = raService.gameData;
+                    final isResolving = raService.isResolvingGame;
+                    final isLoadingData = raService.isLoadingGameData;
+
+                    if (!raService.isLoggedIn) return const SizedBox.shrink();
+
+                    final bool hasAchievements = session != null && session.gameId > 0;
+                    final bool isLoading = isResolving || isLoadingData;
+
+                    String label;
+                    Color bgColor;
+                    IconData icon;
+
+                    if (isLoading) {
+                      label = 'Checking...';
+                      bgColor = YageColors.textMuted.withAlpha(180);
+                      icon = Icons.sync;
+                    } else if (!hasAchievements && session != null) {
+                      label = 'No achievements';
+                      bgColor = YageColors.textMuted.withAlpha(180);
+                      icon = Icons.block;
+                    } else if (hasAchievements && gameData != null) {
+                      final earned = gameData.achievements.where((a) => a.isEarned).length;
+                      final total = gameData.achievements.length;
+                      label = '$earned/$total';
+                      bgColor = YageColors.accent.withAlpha(200);
+                      icon = Icons.emoji_events;
+                    } else if (hasAchievements) {
+                      label = 'RA';
+                      bgColor = YageColors.accent.withAlpha(200);
+                      icon = Icons.emoji_events;
+                    } else {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Positioned(
+                      bottom: MediaQuery.of(context).padding.bottom + 16,
+                      left: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ],
-                    ),
-                  ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(icon, size: 12, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
 
-              // Achievement unlock toast overlay
-              if (settings.raEnabled && settings.raNotificationsEnabled)
-                AchievementUnlockOverlay(
-                  runtimeService: context.watch<RARuntimeService>(),
+              // Hardcore mode badge (bottom-right)
+              if (settings.raEnabled)
+                Builder(
+                  builder: (context) {
+                    final raRuntime = context.watch<RARuntimeService>();
+                    if (!raRuntime.isHardcore) return const SizedBox.shrink();
+
+                    return Positioned(
+                      bottom: MediaQuery.of(context).padding.bottom + 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withAlpha(200),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.shield, size: 12, color: Colors.white),
+                            SizedBox(width: 4),
+                            Text(
+                              'HARDCORE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
+
+              // Achievement unlock toasts are handled via _onRuntimeUnlock listener
               
               // Menu button (hide in edit mode)
               if (!_editingLayout)
@@ -829,6 +1175,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               if (_showMenu)
                 _InGameMenu(
                   game: widget.game,
+                  raService: settings.raEnabled
+                      ? context.read<RetroAchievementsService>()
+                      : null,
+                  raRuntime: settings.raEnabled
+                      ? context.read<RARuntimeService>()
+                      : null,
                   onResume: _toggleMenu,
                   onReset: () {
                     emulator.reset();
@@ -1390,6 +1742,8 @@ class _InGameMenu extends StatelessWidget {
   final VoidCallback onScreenshot;
   final VoidCallback onShowShortcuts;
   final VoidCallback onLinkCable;
+  final RetroAchievementsService? raService;
+  final RARuntimeService? raRuntime;
 
   const _InGameMenu({
     required this.game,
@@ -1409,6 +1763,8 @@ class _InGameMenu extends StatelessWidget {
     required this.onScreenshot,
     required this.onShowShortcuts,
     required this.onLinkCable,
+    this.raService,
+    this.raRuntime,
   });
 
   @override
@@ -1465,6 +1821,24 @@ class _InGameMenu extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+
+                    // Achievement progress section
+                    if (raService != null && raService!.isLoggedIn)
+                      _buildAchievementSection(),
+
+                    // View Achievements button
+                    if (raService != null &&
+                        raService!.isLoggedIn &&
+                        raService!.gameData != null &&
+                        raService!.gameData!.achievements.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _MenuActionButton(
+                        icon: Icons.emoji_events,
+                        label: 'View Achievements',
+                        onTap: () => _openAchievementsList(context),
+                      ),
+                    ],
+                    
                     const SizedBox(height: 20),
                     
                     // Resume button
@@ -1571,6 +1945,212 @@ class _InGameMenu extends StatelessWidget {
           ),
         ),
       ),
+      ),
+    );
+  }
+
+  Widget _buildAchievementSection() {
+    final session = raService?.activeSession;
+    final gameData = raService?.gameData;
+    final isResolving = raService?.isResolvingGame ?? false;
+    final isHardcore = raRuntime?.isHardcore ?? false;
+
+    // Still resolving game
+    if (isResolving) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: YageColors.textMuted,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Checking achievements...',
+              style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Game not recognized by RA
+    if (session == null || session.gameId <= 0) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: YageColors.backgroundLight,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: YageColors.textMuted.withAlpha(60)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.block, size: 14, color: YageColors.textMuted),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'No RetroAchievements for this ROM',
+                  style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Game recognized but data still loading
+    if (gameData == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.amber,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Loading achievements...',
+              style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Have achievement data — show progress
+    final total = gameData.achievements.length;
+    final earned = gameData.achievements.where((a) => a.isEarned).length;
+    final earnedHc = gameData.achievements.where((a) => a.isEarnedHardcore).length;
+    final displayEarned = isHardcore ? earnedHc : earned;
+    final earnedPts = isHardcore ? gameData.earnedPointsHardcore : gameData.earnedPoints;
+    final totalPts = gameData.totalPoints;
+    final progress = total > 0 ? displayEarned / total : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: YageColors.backgroundLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isHardcore
+                ? Colors.redAccent.withAlpha(80)
+                : YageColors.accent.withAlpha(80),
+          ),
+        ),
+        child: Column(
+          children: [
+            // Header row
+            Row(
+              children: [
+                Icon(Icons.emoji_events,
+                    size: 16,
+                    color: isHardcore ? Colors.amber : YageColors.accent),
+                const SizedBox(width: 6),
+                Text(
+                  'Achievements',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: YageColors.textPrimary,
+                  ),
+                ),
+                if (isHardcore) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withAlpha(40),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: Colors.redAccent.withAlpha(100), width: 0.5),
+                    ),
+                    child: const Text(
+                      'HC',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                Text(
+                  '$displayEarned / $total',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isHardcore ? Colors.amber : YageColors.accent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Progress bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: YageColors.backgroundDark,
+                color: isHardcore ? Colors.amber : YageColors.accent,
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Points row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '$earnedPts / $totalPts points',
+                  style: TextStyle(fontSize: 11, color: YageColors.textSecondary),
+                ),
+                if (total > 0)
+                  Text(
+                    '${(progress * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: YageColors.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openAchievementsList(BuildContext context) {
+    final gameData = raService?.gameData;
+    if (gameData == null) return;
+    final isHardcore = raRuntime?.isHardcore ?? false;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AchievementsScreen(
+          gameData: gameData,
+          isHardcore: isHardcore,
+        ),
       ),
     );
   }
@@ -1699,9 +2279,14 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
                   ),
                 ),
               )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(6, (i) => _buildSlot(i)),
+            : ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 400),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(6, (i) => _buildSlot(i)),
+                  ),
+                ),
               ),
       ),
       actions: [
@@ -2817,3 +3402,179 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Top toast for RA status messages
+// ═══════════════════════════════════════════════════════════════════════
+
+/// An animated top-of-screen toast with optional image and subtitle,
+/// used for RetroAchievements status messages (achievement counts, etc.).
+class _RATopToast extends StatefulWidget {
+  final String title;
+  final String? subtitle;
+  final String? imageUrl;
+  final IconData icon;
+  final Color accentColor;
+  final VoidCallback onDismissed;
+  final Duration duration;
+
+  const _RATopToast({
+    required this.title,
+    this.subtitle,
+    this.imageUrl,
+    this.icon = Icons.emoji_events,
+    this.accentColor = Colors.amber,
+    required this.onDismissed,
+    this.duration = const Duration(seconds: 4),
+  });
+
+  @override
+  State<_RATopToast> createState() => _RATopToastState();
+}
+
+class _RATopToastState extends State<_RATopToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, -1.5),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    ));
+
+    _fadeAnim = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeIn,
+    ));
+
+    _run();
+  }
+
+  Future<void> _run() async {
+    await _controller.forward();
+    await Future.delayed(widget.duration);
+    if (!mounted) return;
+    await _controller.reverse();
+    widget.onDismissed();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safeTop = MediaQuery.of(context).padding.top;
+    final hasImage = widget.imageUrl != null && widget.imageUrl!.isNotEmpty;
+
+    return Positioned(
+      top: safeTop + 8,
+      left: 16,
+      right: 16,
+      child: SlideTransition(
+        position: _slideAnim,
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: YageColors.surface.withAlpha(240),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: widget.accentColor.withAlpha(120),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.accentColor.withAlpha(60),
+                    blurRadius: 16,
+                    spreadRadius: 1,
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withAlpha(100),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  // Image or icon
+                  if (hasImage)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        widget.imageUrl!,
+                        width: 52,
+                        height: 52,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Icon(
+                          widget.icon,
+                          color: widget.accentColor,
+                          size: 28,
+                        ),
+                      ),
+                    )
+                  else
+                    Icon(widget.icon, color: widget.accentColor, size: 28),
+                  const SizedBox(width: 10),
+
+                  // Text content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: YageColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (widget.subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.subtitle!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: YageColors.textMuted,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

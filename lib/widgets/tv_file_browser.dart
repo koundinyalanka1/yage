@@ -31,7 +31,7 @@ class TvFileBrowser extends StatefulWidget {
   /// Show the browser as a full-screen dialog. Returns selected paths or null.
   static Future<List<String>?> pickFiles(
     BuildContext context, {
-    Set<String> extensions = const {'.gba', '.gb', '.gbc', '.sgb'},
+    Set<String> extensions = const {'.gba', '.gb', '.gbc', '.sgb', '.zip'},
     bool allowMultiple = true,
   }) {
     return Navigator.of(context).push<List<String>>(

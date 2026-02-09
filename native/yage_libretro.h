@@ -161,6 +161,21 @@ YAGE_API int yage_core_link_get_transfer_status(YageCore* core);
  * Returns the outgoing byte that was in SB before replacement, or -1 on error. */
 YAGE_API int yage_core_link_exchange_data(YageCore* core, uint8_t incoming);
 
+/*
+ * Memory Read (for RetroAchievements runtime)
+ *
+ * Read bytes from the emulated address space using the libretro memory map.
+ * address:  emulated address (e.g. 0x02000000 for GBA WRAM)
+ * count:    number of bytes to read
+ * buffer:   output buffer (must be at least count bytes)
+ * Returns number of bytes read, or -1 on error.
+ */
+YAGE_API int yage_core_read_memory(YageCore* core, uint32_t address,
+                                    int32_t count, uint8_t* buffer);
+
+/* Get size of a libretro memory region (0=SaveRAM, 1=RTC, 2=SystemRAM, 3=VRAM). */
+YAGE_API int yage_core_get_memory_size(YageCore* core, int32_t region_id);
+
 #ifdef __cplusplus
 }
 #endif

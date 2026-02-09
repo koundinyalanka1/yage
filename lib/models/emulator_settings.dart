@@ -36,8 +36,6 @@ class EmulatorSettings {
   final bool isGridView; // grid vs list view on the home screen
   final bool raEnabled; // master toggle for RetroAchievements
   final bool raHardcoreMode; // RetroAchievements hardcore mode
-  final bool raNotificationsEnabled; // show in-game unlock toasts
-
   const EmulatorSettings({
     this.volume = 0.8,
     this.enableSound = true,
@@ -69,7 +67,6 @@ class EmulatorSettings {
     this.isGridView = true,
     this.raEnabled = true,
     this.raHardcoreMode = false,
-    this.raNotificationsEnabled = true,
   });
 
   EmulatorSettings copyWith({
@@ -103,7 +100,6 @@ class EmulatorSettings {
     bool? isGridView,
     bool? raEnabled,
     bool? raHardcoreMode,
-    bool? raNotificationsEnabled,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -136,7 +132,6 @@ class EmulatorSettings {
       isGridView: isGridView ?? this.isGridView,
       raEnabled: raEnabled ?? this.raEnabled,
       raHardcoreMode: raHardcoreMode ?? this.raHardcoreMode,
-      raNotificationsEnabled: raNotificationsEnabled ?? this.raNotificationsEnabled,
     );
   }
 
@@ -172,7 +167,6 @@ class EmulatorSettings {
       'isGridView': isGridView,
       'raEnabled': raEnabled,
       'raHardcoreMode': raHardcoreMode,
-      'raNotificationsEnabled': raNotificationsEnabled,
     };
   }
 
@@ -216,7 +210,6 @@ class EmulatorSettings {
       isGridView: json['isGridView'] as bool? ?? true,
       raEnabled: json['raEnabled'] as bool? ?? true,
       raHardcoreMode: json['raHardcoreMode'] as bool? ?? false,
-      raNotificationsEnabled: json['raNotificationsEnabled'] as bool? ?? true,
     );
   }
 

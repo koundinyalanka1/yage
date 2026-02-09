@@ -431,6 +431,9 @@ class MGBACore {
   int get height => _height;
   GamePlatform get platform => _platform;
 
+  /// The raw native YageCore pointer (for passing to rcheevos init).
+  NativeCore? get nativeCorePtr => _corePtr;
+
   /// Initialize the emulator core
   bool initialize() {
     if (!_bindings.isLoaded) {
@@ -725,18 +728,18 @@ class MGBACore {
     return _bindings.coreReadMemory!(_corePtr as Pointer<Void>, address, count, buffer);
   }
 
+  /// Pre-allocated native buffer for single-byte reads (avoids repeated
+  /// calloc/free per readByte which was causing severe performance issues).
+  Pointer<Uint8>? _readBuf;
+
   /// Read a single byte from the emulator's address space.
   /// Returns the byte value (0-255), or -1 on error.
   int readByte(int address) {
     if (_corePtr == null || _bindings.coreReadMemory == null) return -1;
-    final buf = calloc<Uint8>(1);
-    try {
-      final read = _bindings.coreReadMemory!(_corePtr as Pointer<Void>, address, 1, buf);
-      if (read <= 0) return -1;
-      return buf.value;
-    } finally {
-      calloc.free(buf);
-    }
+    _readBuf ??= calloc<Uint8>(4); // allocate once, reuse forever
+    final read = _bindings.coreReadMemory!(_corePtr as Pointer<Void>, address, 1, _readBuf!);
+    if (read <= 0) return -1;
+    return _readBuf!.value;
   }
 
   /// Get the size (in bytes) of a memory region.
@@ -749,6 +752,10 @@ class MGBACore {
 
   /// Stop and clean up
   void dispose() {
+    if (_readBuf != null) {
+      calloc.free(_readBuf!);
+      _readBuf = null;
+    }
     if (_corePtr != null) {
       _bindings.coreDestroy(_corePtr as Pointer<Void>);
       _corePtr = null;

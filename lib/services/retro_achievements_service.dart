@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
@@ -145,15 +146,14 @@ class RALoginResult {
 
 /// Service for managing RetroAchievements authentication and state.
 ///
-/// Credentials (username + web API key) are stored in Android Keystore /
-/// iOS Keychain via [FlutterSecureStorage]. No password is ever used.
+/// Credentials (username + password) are stored in Android Keystore /
+/// iOS Keychain via [FlutterSecureStorage].  A Connect API token is
+/// obtained via `login2` and used for all RA API calls.
 class RetroAchievementsService extends ChangeNotifier {
   // ── Secure storage keys ──────────────────────────────────────────────
   static const String _keyUsername = 'ra_username';
-  static const String _keyApiKey = 'ra_api_key';
-
-  // ── RA API ───────────────────────────────────────────────────────────
-  static const String _baseUrl = 'https://retroachievements.org/API';
+  static const String _keyPassword = 'ra_password';
+  static const String _keyConnectToken = 'ra_connect_token';
 
   // ── Secure storage instance ──────────────────────────────────────────
   // AndroidOptions: use encrypted shared prefs backed by the Android Keystore.
@@ -168,6 +168,11 @@ class RetroAchievementsService extends ChangeNotifier {
   RAUserProfile? _profile;
   String? _lastError;
 
+  // ── Connect API token ───────────────────────────────────────────────
+  //  All RA API calls go through `dorequest.php` with a Connect token.
+  //  Obtained via `login2` with username + password.
+  String? _connectToken;
+
   // ── Game session state ──────────────────────────────────────────────
   RAGameSession? _activeSession;
   bool _isResolvingGame = false;
@@ -175,6 +180,15 @@ class RetroAchievementsService extends ChangeNotifier {
   // ── Achievement data state ─────────────────────────────────────────
   RAGameData? _gameData;
   bool _isLoadingGameData = false;
+
+  // ── Lookup caches (avoid repeated hashing / API calls) ────────────
+  //  • _romHashCache:  "romPath|fileSize" → MD5 hex string
+  //  • _gameIdCache:   MD5 hex string     → RA game ID (int)
+  //  Both are persisted to SharedPreferences so they survive restarts.
+  static const String _prefRomHashCache = 'ra_rom_hash_cache';
+  static const String _prefGameIdCache  = 'ra_game_id_cache';
+  Map<String, String> _romHashCache = {};
+  Map<String, int>    _gameIdCache  = {};
 
   bool get isLoggedIn => _isLoggedIn;
   bool get isLoading => _isLoading;
@@ -203,78 +217,107 @@ class RetroAchievementsService extends ChangeNotifier {
   // ── Initialisation (call once at app start) ──────────────────────────
 
   /// Loads persisted credentials from secure storage and silently
-  /// re-validates them against the RA API.  If validation fails the
-  /// user is logged out automatically.
+  /// re-validates them.  If validation fails the user is logged out.
   Future<void> initialize() async {
     _isLoading = true;
     _lastError = null;
     notifyListeners();
 
+    // Load lookup caches from disk (fire-and-forget-safe)
+    await _loadLookupCaches();
+
     try {
       final storedUser = await _storage.read(key: _keyUsername);
-      final storedKey = await _storage.read(key: _keyApiKey);
+      final storedPassword = await _storage.read(key: _keyPassword);
 
       if (storedUser != null &&
           storedUser.isNotEmpty &&
-          storedKey != null &&
-          storedKey.isNotEmpty) {
-        // Re-validate stored credentials
-        final result = await _fetchUserProfile(storedUser, storedKey);
-        if (result.success) {
+          storedPassword != null &&
+          storedPassword.isNotEmpty) {
+        // Try to restore persisted connect token first
+        _connectToken = await _storage.read(key: _keyConnectToken);
+
+        if (_connectToken != null) {
+          // Token found — assume valid (will auto-refresh on 401)
           _username = storedUser;
-          _profile = result.profile;
+          _profile = _buildProfile(storedUser);
           _isLoggedIn = true;
           _lastError = null;
+          debugPrint('RA: Restored session for $storedUser');
         } else {
-          // Credentials stale / revoked → wipe them
-          _lastError = result.errorMessage ?? 'API key invalid or revoked.';
-          await _clearCredentials();
+          // No token — re-acquire from password
+          final ok = await _obtainConnectToken(storedUser, storedPassword);
+          if (ok) {
+            _username = storedUser;
+            _profile = _buildProfile(storedUser);
+            _isLoggedIn = true;
+            _lastError = null;
+          } else {
+            _lastError = 'Login failed — password may have changed.';
+            await _clearCredentials();
+          }
         }
       }
     } catch (e) {
       debugPrint('RA init error: $e');
       _lastError = 'Initialization error: $e';
-      // Don't crash – just stay logged out
     }
 
     _isLoading = false;
     notifyListeners();
   }
 
+  /// Build a minimal profile from username (no web API call needed).
+  RAUserProfile _buildProfile(String username) {
+    return RAUserProfile(
+      username: username,
+      profileImageUrl: 'https://retroachievements.org/UserPic/$username.png',
+      totalPoints: 0,
+      totalSoftcorePoints: 0,
+      totalTruePoints: 0,
+      memberSince: '',
+    );
+  }
+
   // ── Login ────────────────────────────────────────────────────────────
 
-  /// Attempt to log in with the given [username] and [apiKey].
+  /// Attempt to log in with the given [username] and [password].
   ///
-  /// Calls `API_GetUserProfile` to validate the credentials.  On success
-  /// the credentials are persisted to secure storage and the service
-  /// transitions to the *logged-in* state.
-  Future<RALoginResult> login(String username, String apiKey) async {
-    if (username.trim().isEmpty || apiKey.trim().isEmpty) {
-      return RALoginResult.error('Username and API key are required.');
+  /// Calls the RA Connect API `login2` endpoint to validate credentials
+  /// and obtain a session token.  On success the credentials are
+  /// persisted to secure storage and the service is *logged in*.
+  Future<RALoginResult> login(
+    String username,
+    String password,
+  ) async {
+    if (username.trim().isEmpty || password.trim().isEmpty) {
+      return RALoginResult.error('Username and password are required.');
     }
 
     _isLoading = true;
     notifyListeners();
 
     try {
-      final result = await _fetchUserProfile(username.trim(), apiKey.trim());
+      final ok = await _obtainConnectToken(username.trim(), password.trim());
 
-      if (result.success) {
-        // Persist to secure storage
+      if (ok) {
         await _storage.write(key: _keyUsername, value: username.trim());
-        await _storage.write(key: _keyApiKey, value: apiKey.trim());
+        await _storage.write(key: _keyPassword, value: password.trim());
 
         _username = username.trim();
-        _profile = result.profile;
+        _profile = _buildProfile(username.trim());
         _isLoggedIn = true;
         _lastError = null;
-      } else {
-        _lastError = result.errorMessage;
-      }
 
-      _isLoading = false;
-      notifyListeners();
-      return result;
+        _isLoading = false;
+        notifyListeners();
+        return RALoginResult.ok(_profile!);
+      } else {
+        _lastError = 'Login failed — check username and password.';
+        _isLoading = false;
+        notifyListeners();
+        return RALoginResult.error(_lastError!);
+      }
     } catch (e) {
       _isLoading = false;
       notifyListeners();
@@ -294,6 +337,7 @@ class RetroAchievementsService extends ChangeNotifier {
     _activeSession = null;
     _gameData = null;
     _lastError = null;
+    _connectToken = null;
     notifyListeners();
   }
 
@@ -306,101 +350,58 @@ class RetroAchievementsService extends ChangeNotifier {
 
   // ── Credential helpers ───────────────────────────────────────────────
 
-  /// Read the stored API key (needed by other services that call the RA API).
-  Future<String?> getApiKey() async {
-    return _storage.read(key: _keyApiKey);
+  /// Read the stored password (for pre-filling the login form).
+  Future<String?> getStoredPassword() async {
+    return _storage.read(key: _keyPassword);
   }
 
   Future<void> _clearCredentials() async {
     await _storage.delete(key: _keyUsername);
-    await _storage.delete(key: _keyApiKey);
+    await _storage.delete(key: _keyPassword);
+    await _storage.delete(key: _keyConnectToken);
+    // Also clean up legacy API key if it exists
+    await _storage.delete(key: 'ra_api_key');
   }
 
-  // ── API call ─────────────────────────────────────────────────────────
-
-  /// Calls `API_GetUserProfile` and returns a [RALoginResult].
+  /// Obtain a Connect API token via `dorequest.php?r=login2`.
   ///
-  /// API request structure:
-  /// ```
-  /// GET https://retroachievements.org/API/API_GetUserProfile.php
-  ///   ?z=<username>     ← authenticating user
-  ///   &y=<apiKey>       ← web API key (NOT password)
-  ///   &u=<username>     ← user to look up (same user)
-  /// ```
-  ///
-  /// A successful response is JSON containing at least the `User` field.
-  /// An error or invalid credentials return an HTTP error code or a JSON
-  /// body without the expected fields.
-  static Future<RALoginResult> _fetchUserProfile(
-    String username,
-    String apiKey,
-  ) async {
-    final uri = Uri.parse('$_baseUrl/API_GetUserProfile.php').replace(
-      queryParameters: {
-        'z': username,
-        'y': apiKey,
-        'u': username,
-      },
-    );
+  /// The Connect token is used for all RA API calls (startsession,
+  /// ping, awardachievement, patch, gameid).
+  Future<bool> _obtainConnectToken(String username, String password) async {
+    final uri = Uri.parse(
+      'https://retroachievements.org/dorequest.php',
+    ).replace(queryParameters: {
+      'r': 'login2',
+      'u': username,
+      'p': password,
+    });
 
     try {
       final response = await http.get(uri).timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 10),
       );
-
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        return RALoginResult.error(
-          'Invalid credentials. Please double-check your username and API key.',
-        );
-      }
 
       if (response.statusCode != 200) {
-        return RALoginResult.error(
-          'Server error (HTTP ${response.statusCode}). Try again later.',
-        );
+        debugPrint('RA Connect: login2 HTTP ${response.statusCode}');
+        return false;
       }
 
-      // Parse JSON body
-      final dynamic body = jsonDecode(response.body);
-
-      if (body is! Map<String, dynamic>) {
-        return RALoginResult.error(
-          'Invalid response from RetroAchievements. Check your API key.',
-        );
+      final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic> &&
+          body['Success'] == true &&
+          body['Token'] is String) {
+        _connectToken = body['Token'] as String;
+        // Persist token (NOT the password) for future sessions
+        await _storage.write(key: _keyConnectToken, value: _connectToken!);
+        debugPrint('RA Connect: login2 OK — token acquired & persisted');
+        return true;
       }
 
-      // The API returns an object with an 'Error' key on bad credentials
-      if (body.containsKey('Error')) {
-        return RALoginResult.error(
-          body['Error'] as String? ??
-              'Authentication failed. Verify your API key.',
-        );
-      }
-
-      // Must contain 'User' to be a valid profile
-      if (!body.containsKey('User') || (body['User'] as String?) == null) {
-        return RALoginResult.error(
-          'Invalid response — user not found. Check your username.',
-        );
-      }
-
-      final profile = RAUserProfile.fromJson(body);
-      return RALoginResult.ok(profile);
-    } on http.ClientException {
-      return RALoginResult.error(
-        'Network error. Check your internet connection and try again.',
-      );
-    } on FormatException {
-      return RALoginResult.error(
-        'Unexpected response format from RetroAchievements.',
-      );
+      debugPrint('RA Connect: login2 failed — ${response.body}');
+      return false;
     } catch (e) {
-      if (e.toString().contains('TimeoutException')) {
-        return RALoginResult.error(
-          'Connection timed out. Please try again.',
-        );
-      }
-      return RALoginResult.error('Connection failed: $e');
+      debugPrint('RA Connect: login2 error: $e');
+      return false;
     }
   }
 
@@ -413,15 +414,22 @@ class RetroAchievementsService extends ChangeNotifier {
   /// Steps performed (all locally except the final API call):
   ///   1. Map [GameRom.platform] → RA console ID.
   ///   2. Compute the RA-compatible MD5 hash of the ROM file **locally**.
+  ///      The hash is cached so subsequent calls for the same ROM are instant.
   ///      No ROM data is uploaded — only the 32-char hex hash is sent.
   ///   3. Call `API_GetGameID` with the console ID and ROM hash.
+  ///      The result is cached so the API is only called once per hash.
   ///   4. If a valid game ID (> 0) is returned, enable achievements.
   ///      Otherwise disable them silently for this game.
+  ///
+  /// When [awaitData] is `true` (e.g. when showing the achievements list
+  /// from the home screen), achievement metadata loading is awaited before
+  /// returning.  When `false` (default — used during gameplay), the data
+  /// loads in the background so gameplay is never blocked.
   ///
   /// The session is stored in [activeSession] and listeners are notified.
   /// If the user is not logged in, the session is still created but
   /// achievements are marked as disabled.
-  Future<void> startGameSession(GameRom rom) async {
+  Future<void> startGameSession(GameRom rom, {bool awaitData = false}) async {
     // ── 1. Console ID ─────────────────────────────────────────────────
     final consoleId = RAConsoleId.fromPlatform(rom.platform);
     if (consoleId == null) {
@@ -436,8 +444,8 @@ class RetroAchievementsService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // ── 2. Compute ROM hash (local only, no upload) ───────────────
-      final romHash = await computeRAHash(rom.path);
+      // ── 2. Compute ROM hash (cached / isolate) ─────────────────────
+      final romHash = await _getOrComputeHash(rom.path);
       if (romHash == null) {
         debugPrint('RA: Failed to hash ROM ${rom.name} — '
             'achievements disabled');
@@ -450,8 +458,8 @@ class RetroAchievementsService extends ChangeNotifier {
       debugPrint('RA: ROM hash for "${rom.name}" '
           '[${RAConsoleId.label(consoleId)}] = $romHash');
 
-      // ── 3. Resolve Game ID via API ────────────────────────────────
-      final gameId = await _resolveGameId(romHash);
+      // ── 3. Resolve Game ID (cached / API) ──────────────────────────
+      final gameId = await _getOrResolveGameId(romHash);
 
       // ── 4. Build session ──────────────────────────────────────────
       final enabled = gameId > 0 && _isLoggedIn;
@@ -478,12 +486,17 @@ class RetroAchievementsService extends ChangeNotifier {
     _isResolvingGame = false;
     notifyListeners();
 
-    // ── 5. Load achievement data (async, never blocks gameplay) ──────
+    // ── 5. Load achievement data ──────────────────────────────────────
     if (_activeSession != null &&
         _activeSession!.gameId > 0 &&
         _isLoggedIn) {
-      // Fire-and-forget: loads from cache first, then refreshes in bg
-      _loadGameData(_activeSession!.gameId);
+      if (awaitData) {
+        // Await fully — caller needs the data immediately (e.g. achievements list)
+        await _loadGameData(_activeSession!.gameId);
+      } else {
+        // Fire-and-forget — gameplay is never blocked
+        _loadGameData(_activeSession!.gameId);
+      }
     }
   }
 
@@ -498,7 +511,51 @@ class RetroAchievementsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── ROM Hashing ─────────────────────────────────────────────────────
+  // ── ROM Hashing (cached + background isolate) ──────────────────────
+
+  /// Return the cached hash for [romPath], or compute it in a background
+  /// isolate and cache the result.  The cache key includes file size so
+  /// a replaced ROM with the same name is re-hashed automatically.
+  Future<String?> _getOrComputeHash(String romPath) async {
+    try {
+      final file = File(romPath);
+      if (!await file.exists()) {
+        debugPrint('RA hash: file not found — $romPath');
+        return null;
+      }
+      final size = await file.length();
+      final cacheKey = '$romPath|$size';
+
+      // Cache hit → instant return
+      final cached = _romHashCache[cacheKey];
+      if (cached != null) {
+        debugPrint('RA hash: cache hit for "$romPath"');
+        return cached;
+      }
+
+      // Cache miss → compute in background isolate
+      final hash = await compute(_computeMd5, romPath);
+      if (hash != null) {
+        _romHashCache[cacheKey] = hash;
+        _persistLookupCaches(); // fire-and-forget
+      }
+      return hash;
+    } catch (e) {
+      debugPrint('RA hash error: $e');
+      return null;
+    }
+  }
+
+  /// Top-level-compatible function that runs in a background isolate.
+  /// Reads the file and returns its MD5 hex string.
+  static String? _computeMd5(String romPath) {
+    try {
+      final bytes = File(romPath).readAsBytesSync();
+      return md5.convert(bytes).toString();
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Compute the RetroAchievements-compatible hash for a ROM file.
   ///
@@ -510,6 +567,8 @@ class RetroAchievementsService extends ChangeNotifier {
   /// All hashing is done **locally** — no ROM data leaves the device.
   /// Returns the lowercase 32-character hex MD5 string, or `null` on
   /// error (file not found, read failure, etc.).
+  ///
+  /// Prefer [_getOrComputeHash] which adds caching on top.
   static Future<String?> computeRAHash(String romPath) async {
     try {
       final file = File(romPath);
@@ -526,6 +585,24 @@ class RetroAchievementsService extends ChangeNotifier {
       debugPrint('RA hash error: $e');
       return null;
     }
+  }
+
+  // ── Game ID resolution (cached) ─────────────────────────────────────
+
+  /// Return the cached game ID for [hash], or resolve it via API and
+  /// cache the result.  A game ID of 0 (not recognised) is also cached
+  /// so we don't keep hitting the network for unsupported ROMs.
+  Future<int> _getOrResolveGameId(String hash) async {
+    final cached = _gameIdCache[hash];
+    if (cached != null) {
+      debugPrint('RA gameId: cache hit for hash $hash → $cached');
+      return cached;
+    }
+
+    final gameId = await _resolveGameId(hash);
+    _gameIdCache[hash] = gameId;
+    _persistLookupCaches(); // fire-and-forget
+    return gameId;
   }
 
   // ── API_GetGameID ───────────────────────────────────────────────────
@@ -715,74 +792,178 @@ class RetroAchievementsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── API_GetGameInfoExtended ─────────────────────────────────────────
+  // ── Connect API: patch + startsession ───────────────────────────────
 
-  /// Fetch full game metadata (including achievements and user progress)
-  /// from the RA API.
-  ///
-  /// ```
-  /// GET https://retroachievements.org/API/API_GetGameInfoExtended.php
-  ///   ?z=<username>
-  ///   &y=<apiKey>
-  ///   &i=<gameId>
-  /// ```
+  /// Fetch game metadata via `dorequest.php?r=patch` and merge user
+  /// unlock status from `dorequest.php?r=startsession`.
   ///
   /// Returns [RAGameData] on success, or `null` on any failure.
-  /// All errors are caught and logged — the caller never sees an exception.
   Future<RAGameData?> _fetchGameDataFromApi(int gameId) async {
-    final apiKey = await getApiKey();
-    if (_username == null || apiKey == null) {
-      debugPrint('RA API_GetGame: not logged in');
+    if (_username == null || _connectToken == null) {
+      debugPrint('RA patch: not logged in');
       return null;
     }
 
-    final uri = Uri.parse('$_baseUrl/API_GetGameInfoExtended.php').replace(
-      queryParameters: {
-        'z': _username!,
-        'y': apiKey,
-        'i': gameId.toString(),
-      },
-    );
-
     try {
-      final response = await http.get(uri).timeout(
+      // ── 1. Fetch achievement definitions via `patch` ──────────────
+      final patchUri = Uri.parse(
+        'https://retroachievements.org/dorequest.php',
+      ).replace(queryParameters: {
+        'r': 'patch',
+        'u': _username!,
+        't': _connectToken!,
+        'g': gameId.toString(),
+      });
+
+      final patchResp = await http.get(patchUri).timeout(
         const Duration(seconds: 15),
       );
 
-      if (response.statusCode != 200) {
-        debugPrint('RA API_GetGame: HTTP ${response.statusCode}');
+      if (patchResp.statusCode == 401) {
+        debugPrint('RA patch: 401 — refreshing token');
+        if (await _refreshConnectToken()) {
+          return _fetchGameDataFromApi(gameId); // retry once
+        }
         return null;
       }
 
-      final dynamic body = jsonDecode(response.body);
-      if (body is! Map<String, dynamic>) {
-        debugPrint('RA API_GetGame: unexpected response format');
+      if (patchResp.statusCode != 200) {
+        debugPrint('RA patch: HTTP ${patchResp.statusCode}');
         return null;
       }
 
-      if (body.containsKey('Error')) {
-        debugPrint('RA API_GetGame: ${body['Error']}');
+      final patchBody = jsonDecode(patchResp.body);
+      if (patchBody is! Map<String, dynamic> ||
+          patchBody['Success'] != true) {
+        debugPrint('RA patch: unexpected response');
         return null;
       }
 
-      // Inject fetchedAt timestamp before parsing
-      body['fetchedAt'] = DateTime.now().toIso8601String();
+      final patchData = patchBody['PatchData'] as Map<String, dynamic>?;
+      if (patchData == null) {
+        debugPrint('RA patch: no PatchData');
+        return null;
+      }
 
-      return RAGameData.fromJson(body);
+      // ── 2. Fetch user unlocks via `startsession` ─────────────────
+      final sessionUri = Uri.parse(
+        'https://retroachievements.org/dorequest.php',
+      ).replace(queryParameters: {
+        'r': 'startsession',
+        'u': _username!,
+        't': _connectToken!,
+        'g': gameId.toString(),
+      });
+
+      Map<String, dynamic>? sessionData;
+      try {
+        final sessionResp = await http.get(sessionUri).timeout(
+          const Duration(seconds: 10),
+        );
+        if (sessionResp.statusCode == 200) {
+          final decoded = jsonDecode(sessionResp.body);
+          if (decoded is Map<String, dynamic> && decoded['Success'] == true) {
+            sessionData = decoded;
+            debugPrint('RA API: startsession OK');
+          }
+        }
+      } catch (e) {
+        debugPrint('RA startsession error (non-fatal): $e');
+      }
+
+      // ── 3. Build RAGameData from patch + session data ─────────────
+      return _buildGameDataFromPatch(gameId, patchData, sessionData);
     } on http.ClientException catch (e) {
-      debugPrint('RA API_GetGame network error: $e');
+      debugPrint('RA patch network error: $e');
       return null;
     } on FormatException catch (e) {
-      debugPrint('RA API_GetGame parse error: $e');
+      debugPrint('RA patch parse error: $e');
       return null;
     } catch (e) {
       if (e.toString().contains('TimeoutException')) {
-        debugPrint('RA API_GetGame: timed out');
+        debugPrint('RA patch: timed out');
       } else {
-        debugPrint('RA API_GetGame error: $e');
+        debugPrint('RA patch error: $e');
       }
       return null;
     }
+  }
+
+  /// Build [RAGameData] from the Connect API `patch` response and
+  /// optional `startsession` unlock data.
+  RAGameData _buildGameDataFromPatch(
+    int gameId,
+    Map<String, dynamic> patchData,
+    Map<String, dynamic>? sessionData,
+  ) {
+    // Collect unlock timestamps from startsession response
+    final softcoreUnlocks = <int, DateTime>{};
+    final hardcoreUnlocks = <int, DateTime>{};
+
+    if (sessionData != null) {
+      for (final u in sessionData['Unlocks'] as List? ?? []) {
+        if (u is Map<String, dynamic>) {
+          final id = u['ID'] as int? ?? 0;
+          final when = u['When'] as int? ?? 0;
+          if (id > 0) {
+            softcoreUnlocks[id] =
+                DateTime.fromMillisecondsSinceEpoch(when * 1000, isUtc: true);
+          }
+        }
+      }
+      for (final u in sessionData['HardcoreUnlocks'] as List? ?? []) {
+        if (u is Map<String, dynamic>) {
+          final id = u['ID'] as int? ?? 0;
+          final when = u['When'] as int? ?? 0;
+          if (id > 0) {
+            hardcoreUnlocks[id] =
+                DateTime.fromMillisecondsSinceEpoch(when * 1000, isUtc: true);
+          }
+        }
+      }
+    }
+
+    // Parse achievements from PatchData.Achievements
+    final rawAchievements = patchData['Achievements'] as List? ?? [];
+    final achievements = <RAAchievement>[];
+    int displayIdx = 0;
+
+    for (final raw in rawAchievements) {
+      if (raw is! Map<String, dynamic>) continue;
+      // Only include official achievements (Flags == 3 = core set)
+      final flags = raw['Flags'] as int? ?? 3;
+      if (flags != 3) continue;
+
+      final id = raw['ID'] as int? ?? 0;
+      achievements.add(RAAchievement(
+        id: id,
+        title: raw['Title'] as String? ?? '',
+        description: raw['Description'] as String? ?? '',
+        points: raw['Points'] as int? ?? 0,
+        trueRatio: 0, // not available from patch endpoint
+        badgeName: (raw['BadgeName'] ?? '00000').toString(),
+        type: raw['Type'] as String?,
+        memAddr: raw['MemAddr'] as String?,
+        displayOrder: displayIdx++,
+        numAwarded: 0,
+        numAwardedHardcore: 0,
+        dateEarned: softcoreUnlocks[id],
+        dateEarnedHardcore: hardcoreUnlocks[id],
+      ));
+    }
+
+    achievements.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+
+    final imageIcon = patchData['ImageIcon'] as String?;
+
+    return RAGameData(
+      gameId: gameId,
+      title: patchData['Title'] as String? ?? 'Unknown',
+      imageIcon: imageIcon,
+      consoleName: null, // not in patch response
+      achievements: achievements,
+      fetchedAt: DateTime.now(),
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -843,136 +1024,96 @@ class RetroAchievementsService extends ChangeNotifier {
     }
   }
 
+  // ── Lookup caches (ROM hash + game ID) ──────────────────────────────
+
+  /// Load the ROM-hash and game-ID lookup caches from SharedPreferences.
+  Future<void> _loadLookupCaches() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final hashJson = prefs.getString(_prefRomHashCache);
+      if (hashJson != null) {
+        final decoded = jsonDecode(hashJson);
+        if (decoded is Map) {
+          _romHashCache = decoded.map((k, v) => MapEntry(k as String, v as String));
+        }
+      }
+
+      final idJson = prefs.getString(_prefGameIdCache);
+      if (idJson != null) {
+        final decoded = jsonDecode(idJson);
+        if (decoded is Map) {
+          _gameIdCache = decoded.map((k, v) => MapEntry(k as String, (v as num).toInt()));
+        }
+      }
+
+      debugPrint('RA: Loaded lookup caches — '
+          '${_romHashCache.length} hashes, ${_gameIdCache.length} game IDs');
+    } catch (e) {
+      debugPrint('RA: Failed to load lookup caches: $e');
+    }
+  }
+
+  /// Persist lookup caches to SharedPreferences (fire-and-forget).
+  void _persistLookupCaches() {
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(_prefRomHashCache, jsonEncode(_romHashCache));
+      prefs.setString(_prefGameIdCache, jsonEncode(_gameIdCache));
+    }).catchError((e) {
+      debugPrint('RA: Failed to persist lookup caches: $e');
+    });
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
-  //  Runtime API — Session, Ping, Award
+  //  Connect API — Session, Ping, Award
   // ═══════════════════════════════════════════════════════════════════════
   //
-  //  These are called by [RARuntimeService] during gameplay.
-  //  All calls are fire-and-forget and must never block the frame loop.
+  //  The `dorequest.php` "Connect API" requires a session token obtained
+  //  via password-based login (`login2`).  The web API key is NOT
+  //  accepted — it only works with the REST `API_Get*` endpoints.
+  //
+  //  When a Connect token is available (password login), these methods
+  //  talk to the server.  Otherwise they no-op silently so we never
+  //  spam 401s.
+  //
+  //  Achievement metadata & progress still work perfectly via the REST
+  //  API (API_GetGameInfoAndUserProgress, API_GetUserProfile, etc.).
 
-  /// Start a play session on the RA server.
-  ///
-  /// ```
-  /// GET https://retroachievements.org/dorequest.php
-  ///   ?r=startsession
-  ///   &u=<username>
-  ///   &t=<apiKey>
-  ///   &g=<gameId>
-  /// ```
-  Future<void> apiStartSession() async {
-    final session = _activeSession;
-    if (session == null || !_isLoggedIn) return;
+  /// Whether the Connect API is available (we have a valid token).
+  bool get hasConnectToken => _connectToken != null;
 
-    final apiKey = await getApiKey();
-    if (apiKey == null || _username == null) return;
+  /// The raw Connect API token (for native rcheevos login).
+  /// Returns null if the user is not logged in.
+  String? get connectToken => _connectToken;
 
-    final uri = Uri.parse(
-      'https://retroachievements.org/dorequest.php',
-    ).replace(queryParameters: {
-      'r': 'startsession',
-      'u': _username!,
-      't': apiKey,
-      'g': session.gameId.toString(),
-    });
+  /// Guard to prevent infinite refresh loops.
+  bool _isRefreshingToken = false;
 
+  /// Try to refresh the Connect token using the stored password.
+  /// Returns `true` if a new token was acquired.
+  Future<bool> _refreshConnectToken() async {
+    if (_isRefreshingToken) return false; // prevent re-entrant loop
+    if (_username == null) return false;
+    final storedPassword = await _storage.read(key: _keyPassword);
+    if (storedPassword == null || storedPassword.isEmpty) return false;
+    _isRefreshingToken = true;
     try {
-      final response = await http.get(uri).timeout(
-        const Duration(seconds: 10),
-      );
-      if (response.statusCode == 200) {
-        debugPrint('RA API: startsession OK');
-      } else {
-        debugPrint('RA API: startsession HTTP ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('RA API: startsession error: $e');
+      debugPrint('RA: Refreshing Connect token from stored password');
+      await _obtainConnectToken(_username!, storedPassword);
+      return _connectToken != null;
+    } finally {
+      _isRefreshingToken = false;
     }
   }
 
-  /// Send a heartbeat ping to the RA server.
-  ///
-  /// ```
-  /// GET https://retroachievements.org/dorequest.php
-  ///   ?r=ping
-  ///   &u=<username>
-  ///   &t=<apiKey>
-  ///   &g=<gameId>
-  /// ```
-  Future<void> apiPing() async {
-    final session = _activeSession;
-    if (session == null || !_isLoggedIn) return;
-
-    final apiKey = await getApiKey();
-    if (apiKey == null || _username == null) return;
-
-    final uri = Uri.parse(
-      'https://retroachievements.org/dorequest.php',
-    ).replace(queryParameters: {
-      'r': 'ping',
-      'u': _username!,
-      't': apiKey,
-      'g': session.gameId.toString(),
-    });
-
-    try {
-      await http.get(uri).timeout(const Duration(seconds: 10));
-    } catch (e) {
-      debugPrint('RA API: ping error: $e');
-    }
+  /// Set a Connect API token obtained externally (e.g. password login).
+  void setConnectToken(String token) {
+    _connectToken = token;
   }
 
-  /// Submit an achievement unlock to the RA server.
-  ///
-  /// ```
-  /// GET https://retroachievements.org/dorequest.php
-  ///   ?r=awardachievement
-  ///   &u=<username>
-  ///   &t=<apiKey>
-  ///   &a=<achievementId>
-  ///   &h=<1 for hardcore, 0 for softcore>
-  /// ```
-  ///
-  /// Returns `true` if the server accepted the unlock.
-  Future<bool> apiAwardAchievement({
-    required int achievementId,
-    required bool hardcore,
-  }) async {
-    if (!_isLoggedIn) return false;
-
-    final apiKey = await getApiKey();
-    if (apiKey == null || _username == null) return false;
-
-    final uri = Uri.parse(
-      'https://retroachievements.org/dorequest.php',
-    ).replace(queryParameters: {
-      'r': 'awardachievement',
-      'u': _username!,
-      't': apiKey,
-      'a': achievementId.toString(),
-      'h': hardcore ? '1' : '0',
-    });
-
-    try {
-      final response = await http.get(uri).timeout(
-        const Duration(seconds: 10),
-      );
-
-      if (response.statusCode != 200) {
-        debugPrint('RA API: awardachievement HTTP ${response.statusCode}');
-        return false;
-      }
-
-      final dynamic body = jsonDecode(response.body);
-      if (body is Map<String, dynamic>) {
-        final success = body['Success'] as bool? ?? false;
-        return success;
-      }
-      return false;
-    } catch (e) {
-      debugPrint('RA API: awardachievement error: $e');
-      return false;
-    }
-  }
+  // ── Session, ping, and award APIs are now handled by the native
+  //    rcheevos client (RcheevosClient).  Removed: apiStartSession(),
+  //    apiPing(), apiAwardAchievement(). ──
 
   /// Delete all cached achievement data for the current user.
   ///

@@ -40,6 +40,11 @@ class RAAchievement {
   ///   • `null` — standard / unclassified
   final String? type;
 
+  /// Raw rcheevos condition string from the `MemAddr` field of the
+  /// RA `patch` endpoint.  Used by the runtime evaluator to detect
+  /// unlocks in real-time by reading emulator memory each frame.
+  final String? memAddr;
+
   /// Display order as defined by the achievement set author.
   final int displayOrder;
 
@@ -63,6 +68,7 @@ class RAAchievement {
     required this.trueRatio,
     required this.badgeName,
     this.type,
+    this.memAddr,
     this.displayOrder = 0,
     this.numAwarded = 0,
     this.numAwardedHardcore = 0,
@@ -94,7 +100,8 @@ class RAAchievement {
       points: _toInt(json['Points']),
       trueRatio: _toInt(json['TrueRatio']),
       badgeName: json['BadgeName'] as String? ?? '00000',
-      type: json['type'] as String?,
+      type: (json['Type'] ?? json['type']) as String?,
+      memAddr: (json['MemAddr'] ?? json['memAddr']) as String?,
       displayOrder: _toInt(json['DisplayOrder']),
       numAwarded: _toInt(json['NumAwarded']),
       numAwardedHardcore: _toInt(json['NumAwardedHardcore']),
@@ -112,6 +119,7 @@ class RAAchievement {
       'TrueRatio': trueRatio,
       'BadgeName': badgeName,
       'type': type,
+      'memAddr': memAddr,
       'DisplayOrder': displayOrder,
       'NumAwarded': numAwarded,
       'NumAwardedHardcore': numAwardedHardcore,

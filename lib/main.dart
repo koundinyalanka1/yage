@@ -6,18 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/app_providers.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/settings_service.dart';
 import 'utils/theme.dart';
-import 'utils/tv_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
+  // ── Firebase (must be first — Crashlytics needs it) ────────────────
   await Firebase.initializeApp();
 
-  // Forward Flutter errors to Crashlytics (release builds only)
   if (!kDebugMode) {
     FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
     PlatformDispatcher.instance.onError = (error, stack) {
@@ -26,10 +24,7 @@ void main() async {
     };
   }
 
-  // Detect Android TV before building the UI
-  await TvDetector.initialize();
-
-  // Allow all orientations
+  // ── System UI (safe to set before the first frame) ─────────────────
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -37,14 +32,15 @@ void main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Set status bar style
-  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: YageColors.backgroundDark,
+    systemNavigationBarColor: Color(0xFF0D0D1A), // YageColors.backgroundDark default
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
+  // Everything else (TV detection, notifications, provider init)
+  // happens inside the SplashScreen so the user sees branding immediately.
   runApp(const RetroPalApp());
 }
 
@@ -72,7 +68,7 @@ class RetroPalApp extends StatelessWidget {
             title: 'RetroPal',
             debugShowCheckedModeBanner: false,
             theme: YageTheme.darkTheme,
-            home: const HomeScreen(),
+            home: const SplashScreen(),
           );
         },
       ),

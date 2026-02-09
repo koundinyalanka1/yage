@@ -12,7 +12,7 @@ import '../core/mgba_stub.dart';
 import '../models/game_rom.dart';
 import '../models/emulator_settings.dart';
 import 'link_cable_service.dart';
-import 'ra_runtime_service.dart';
+import 'rcheevos_client.dart';
 
 /// State of the emulator
 enum EmulatorState {
@@ -64,8 +64,11 @@ class EmulatorService extends ChangeNotifier {
   /// Link cable service for network multiplayer (set externally).
   LinkCableService? linkCable;
 
-  /// RA runtime service for per-frame achievement processing (set externally).
-  RARuntimeService? raRuntime;
+  /// Native rcheevos client for per-frame achievement processing (set externally).
+  RcheevosClient? rcheevosClient;
+
+  /// Expose the native core for memory reading (used by RA runtime).
+  MGBACore? get core => _core;
 
   /// Whether the native core supports link cable I/O register access.
   bool get isLinkSupported {
@@ -398,7 +401,12 @@ class EmulatorService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Pause emulation (also saves SRAM)
+  /// Pause emulation.
+  ///
+  /// SRAM is NOT flushed here — it is only written when:
+  ///   1. The game itself writes to SRAM (in-game save).
+  ///   2. The auto-save timer fires (if enabled by the user).
+  ///   3. The ROM is unloaded via [stop] (exit game).
   Future<void> pause() async {
     if (_state != EmulatorState.running) return;
 
@@ -413,10 +421,7 @@ class EmulatorService extends ChangeNotifier {
     _frameTimer = null;
     _playTimeStopwatch.stop();
     _stopAutoSaveTimer();
-    
-    // Auto-save SRAM when pausing
-    await saveSram();
-    
+
     notifyListeners();
   }
 
@@ -549,7 +554,7 @@ class EmulatorService extends ChangeNotifier {
       _pollLinkCable();
 
       // ── RetroAchievements per-frame processing ──
-      raRuntime?.processFrame();
+      rcheevosClient?.doFrame();
     }
 
     _updateFps();

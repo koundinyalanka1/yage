@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/rcheevos_bindings.dart';
 import '../services/emulator_service.dart';
 import '../services/game_library_service.dart';
 import '../services/link_cable_service.dart';
 import '../services/ra_runtime_service.dart';
+import '../services/rcheevos_client.dart';
 import '../services/retro_achievements_service.dart';
 import '../services/settings_service.dart';
 
@@ -23,18 +25,17 @@ class AppProviders extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EmulatorService()),
         ChangeNotifierProvider(create: (_) => LinkCableService()),
         ChangeNotifierProvider(create: (_) => RetroAchievementsService()..initialize()),
+        // Mode enforcement only — no longer depends on RA service.
+        ChangeNotifierProvider(create: (_) => RARuntimeService()),
+        // Native rcheevos client — loads bindings eagerly, but
+        // initialization (rc_init) happens later when the emulator core
+        // is ready.
+        ChangeNotifierProvider(create: (_) {
+          final bindings = RcheevosBindings()..load();
+          return RcheevosClient(bindings);
+        }),
       ],
-      // RARuntimeService depends on RetroAchievementsService, so it sits
-      // in a nested provider that can read the RA service from context.
-      child: Consumer<RetroAchievementsService>(
-        builder: (context, raService, _) {
-          return ChangeNotifierProvider(
-            create: (_) => RARuntimeService(raService),
-            child: child,
-          );
-        },
-      ),
+      child: child,
     );
   }
 }
-
