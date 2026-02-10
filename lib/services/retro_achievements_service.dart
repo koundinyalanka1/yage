@@ -374,12 +374,12 @@ class RetroAchievementsService extends ChangeNotifier {
       // Use POST so the password travels in the request body instead of
       // the URL.  Passwords in query strings are logged by web servers,
       // proxies, and may appear in Crashlytics crash reports.
-      final response = await http.post(uri, body: {
-        'r': 'login2',
-        'u': username,
-        'p': password,
-      }).timeout(
-        const Duration(seconds: 10),
+      final response = await _httpWithRetry(
+        () => http.post(uri, body: {
+          'r': 'login2',
+          'u': username,
+          'p': password,
+        }).timeout(const Duration(seconds: 10)),
       );
 
       if (response.statusCode != 200) {
@@ -534,9 +534,10 @@ class RetroAchievementsService extends ChangeNotifier {
         return cached;
       }
 
-      // Cache miss → stream through MD5 to avoid loading the entire ROM
-      // into memory at once (GBA ROMs can be up to 32 MB).
-      final hash = await computeRAHash(romPath);
+      // Cache miss → compute MD5 in a background isolate so hashing a
+      // 32 MB GBA ROM never janks the UI thread.  The static method
+      // already streams the file so memory stays low.
+      final hash = await compute(computeRAHash, romPath);
       if (hash != null) {
         _romHashCache[cacheKey] = hash;
         _persistLookupCaches(); // fire-and-forget
@@ -620,8 +621,8 @@ class RetroAchievementsService extends ChangeNotifier {
     );
 
     try {
-      final response = await http.get(uri).timeout(
-        const Duration(seconds: 10),
+      final response = await _httpWithRetry(
+        () => http.get(uri).timeout(const Duration(seconds: 10)),
       );
 
       if (response.statusCode != 200) {
@@ -806,8 +807,8 @@ class RetroAchievementsService extends ChangeNotifier {
         'g': gameId.toString(),
       });
 
-      final patchResp = await http.get(patchUri).timeout(
-        const Duration(seconds: 15),
+      final patchResp = await _httpWithRetry(
+        () => http.get(patchUri).timeout(const Duration(seconds: 15)),
       );
 
       if (patchResp.statusCode == 401) {
@@ -848,8 +849,8 @@ class RetroAchievementsService extends ChangeNotifier {
 
       Map<String, dynamic>? sessionData;
       try {
-        final sessionResp = await http.get(sessionUri).timeout(
-          const Duration(seconds: 10),
+        final sessionResp = await _httpWithRetry(
+          () => http.get(sessionUri).timeout(const Duration(seconds: 10)),
         );
         if (sessionResp.statusCode == 200) {
           final decoded = jsonDecode(sessionResp.body);
@@ -1012,6 +1013,44 @@ class RetroAchievementsService extends ChangeNotifier {
           '(${jsonString.length} bytes)');
     } catch (e) {
       debugPrint('RA cache write error (game $gameId): $e');
+    }
+  }
+
+  // ── HTTP retry helper ───────────────────────────────────────────────
+
+  /// Execute [request] with a single retry on transient failures (timeout,
+  /// 5xx server error, or network exception).  The retry waits with
+  /// exponential backoff before re-attempting.
+  static Future<http.Response> _httpWithRetry(
+    Future<http.Response> Function() request, {
+    int maxRetries = 1,
+    Duration initialDelay = const Duration(seconds: 2),
+  }) async {
+    int attempt = 0;
+    while (true) {
+      try {
+        final response = await request();
+        // Retry on server errors (5xx)
+        if (response.statusCode >= 500 && attempt < maxRetries) {
+          attempt++;
+          final delay = initialDelay * (1 << (attempt - 1));
+          debugPrint('RA: Server error ${response.statusCode}, '
+              'retrying in ${delay.inSeconds}s (attempt $attempt)');
+          await Future.delayed(delay);
+          continue;
+        }
+        return response;
+      } catch (e) {
+        if (attempt < maxRetries) {
+          attempt++;
+          final delay = initialDelay * (1 << (attempt - 1));
+          debugPrint('RA: Request failed ($e), '
+              'retrying in ${delay.inSeconds}s (attempt $attempt)');
+          await Future.delayed(delay);
+          continue;
+        }
+        rethrow;
+      }
     }
   }
 

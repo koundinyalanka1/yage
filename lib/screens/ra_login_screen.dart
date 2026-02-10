@@ -62,7 +62,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
     if (result.success) {
       if (!mounted) return;
       Navigator.pop(context, true);
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(
           content: Text(
             'Welcome, ${result.profile?.username ?? 'Player'}!',

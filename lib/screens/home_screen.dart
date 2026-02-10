@@ -154,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       final game = GameRom.fromPath(path);
       if (game == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
             SnackBar(content: Text('Unsupported file: $path')),
           );
         }
@@ -245,17 +245,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (paths != null && paths.isNotEmpty && mounted) {
       final library = context.read<GameLibraryService>();
       final addedGames = <GameRom>[];
-      
+
+      // Show a loading indicator while files are being copied.
+      final navigator = Navigator.of(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    'Importing ${paths!.length} ROM${paths.length == 1 ? '' : 's'}…',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
       for (final path in paths) {
-        // Import via internal copy so the file persists
         final game = await library.importRom(path);
-        if (game != null) {
-          addedGames.add(game);
-        }
+        if (game != null) addedGames.add(game);
       }
-      
+
+      // Dismiss loading dialog
+      if (navigator.mounted) navigator.pop();
+
       if (addedGames.isNotEmpty && mounted) {
-        // Switch to "All Games" tab so the user sees the newly added ROM
         _tabController.animateTo(0);
       }
     }
@@ -285,27 +307,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     if (importedPaths != null && importedPaths.isNotEmpty && mounted) {
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+
+      // Show a loading indicator while files are being registered.
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    'Importing ${importedPaths!.length} ROM${importedPaths.length == 1 ? '' : 's'}…',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
       final addedGames = <GameRom>[];
       for (final path in importedPaths) {
         final game = await library.addRom(path);
         if (game != null) addedGames.add(game);
       }
 
+      // Dismiss loading dialog
+      if (navigator.mounted) navigator.pop();
+
       if (addedGames.isNotEmpty && mounted) {
         _tabController.animateTo(0);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Imported ${addedGames.length} ROM${addedGames.length == 1 ? '' : 's'}'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Imported ${addedGames.length} ROM${addedGames.length == 1 ? '' : 's'}'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No new ROM files found in selected folder'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('No new ROM files found in selected folder'),
+              duration: Duration(seconds: 2),
+            ),
+          );
       }
     }
   }
@@ -338,7 +392,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       );
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(
           content: Text('Failed to load ${game.name}'),
           backgroundColor: AppColorTheme.of(context).error,
@@ -1058,7 +1112,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       if (path != null) {
         await library.setCoverArt(game, path);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
             const SnackBar(
               content: Text('Cover art set!'),
               duration: Duration(seconds: 1),
@@ -1081,7 +1135,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (!raService.isLoggedIn) return;
 
     // Show loading indicator
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
       const SnackBar(
         content: Row(
           children: [
@@ -1109,7 +1163,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final session = raService.activeSession;
 
     if (session == null || session.gameId <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         const SnackBar(
           content: Text('This ROM is not recognized by RetroAchievements'),
           duration: Duration(seconds: 3),
@@ -1119,7 +1173,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     if (gameData == null || gameData.achievements.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         const SnackBar(
           content: Text('No achievements found for this game'),
           duration: Duration(seconds: 3),
@@ -1307,7 +1361,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final colors = AppColorTheme.of(context);
     final emulator = context.read<EmulatorService>();
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
       const SnackBar(content: Text('Creating save backup…')),
     );
 
@@ -1320,7 +1374,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       if (!mounted) return;
 
       if (zipPath == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(content: Text('No save files found for ${game.name}')),
         );
         return;
@@ -1388,9 +1442,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       final saved =
                           await SaveBackupService.saveZipToUserLocation(zipPath);
                       if (saved != null && mounted) {
-                        messenger.showSnackBar(
-                          SnackBar(content: Text('Saved to $saved')),
-                        );
+                        messenger
+                          ..clearSnackBars()
+                          ..showSnackBar(
+                            SnackBar(content: Text('Saved to $saved')),
+                          );
                       }
                     },
                   ),
@@ -1406,7 +1462,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(content: Text('Export failed: $e')),
         );
       }
@@ -1504,7 +1560,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       final emulator = context.read<EmulatorService>();
       final count = await emulator.deleteSaveData(game);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(
             content: Text(
               count > 0

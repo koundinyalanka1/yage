@@ -126,8 +126,14 @@ class EmulatorSettings {
     );
   }
 
+  /// Current schema version for the persisted settings JSON.
+  /// Bump this when adding / removing / renaming fields so that future
+  /// migration logic can detect the old format and upgrade it.
+  static const int _jsonVersion = 1;
+
   Map<String, dynamic> toJson() {
     return {
+      'version': _jsonVersion,
       'volume': volume,
       'enableSound': enableSound,
       'showFps': showFps,
@@ -148,7 +154,7 @@ class EmulatorSettings {
       'gamepadLayoutLandscape': gamepadLayoutLandscape.toJson(),
       'useJoystick': useJoystick,
       'enableExternalGamepad': enableExternalGamepad,
-      'gamepadSkin': gamepadSkin.index,
+      'gamepadSkin': gamepadSkin.name,
       'selectedTheme': selectedTheme,
       'enableRewind': enableRewind,
       'rewindBufferSeconds': rewindBufferSeconds,
@@ -185,9 +191,7 @@ class EmulatorSettings {
           : GamepadLayout.defaultLandscape,
       useJoystick: json['useJoystick'] as bool? ?? false,
       enableExternalGamepad: json['enableExternalGamepad'] as bool? ?? true,
-      gamepadSkin: GamepadSkinType.values.elementAtOrNull(
-        json['gamepadSkin'] as int? ?? 0,
-      ) ?? GamepadSkinType.classic,
+      gamepadSkin: _parseGamepadSkin(json['gamepadSkin']),
       selectedTheme: json['selectedTheme'] as String? ?? 'neon_night',
       enableRewind: json['enableRewind'] as bool? ?? false,
       rewindBufferSeconds: json['rewindBufferSeconds'] as int? ?? 3,
@@ -232,14 +236,31 @@ class EmulatorSettings {
           raHardcoreMode == other.raHardcoreMode;
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
         volume, enableSound, showFps, enableVibration,
         gamepadOpacity, gamepadScale, enableTurbo, turboSpeed,
         biosPathGba, biosPathGb, biosPathGbc, skipBios,
         selectedColorPalette, enableFiltering, maintainAspectRatio,
         autoSaveInterval, gamepadLayoutPortrait, gamepadLayoutLandscape,
-        useJoystick, enableExternalGamepad,
+        useJoystick, enableExternalGamepad, gamepadSkin, selectedTheme,
+        enableRewind, rewindBufferSeconds, sortOption, isGridView,
+        raEnabled, raHardcoreMode,
+      ]);
+
+  /// Parse gamepad skin from JSON, supporting both the current string format
+  /// (.name) and the legacy int index format for backwards compatibility.
+  static GamepadSkinType _parseGamepadSkin(dynamic value) {
+    if (value is String) {
+      return GamepadSkinType.values.firstWhere(
+        (e) => e.name == value,
+        orElse: () => GamepadSkinType.classic,
       );
+    }
+    if (value is int && value >= 0 && value < GamepadSkinType.values.length) {
+      return GamepadSkinType.values[value];
+    }
+    return GamepadSkinType.classic;
+  }
 
   String toJsonString() => jsonEncode(toJson());
   

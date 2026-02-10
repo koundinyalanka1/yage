@@ -270,7 +270,7 @@ class SettingsScreen extends StatelessWidget {
                       title: 'Refresh Library',
                       onTap: () {
                         context.read<GameLibraryService>().refresh();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                           const SnackBar(content: Text('Refreshing library...')),
                         );
                       },
@@ -584,7 +584,7 @@ class SettingsScreen extends StatelessWidget {
     final games = library.games;
 
     if (games.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         const SnackBar(content: Text('No games in library to export')),
       );
       return;
@@ -607,7 +607,7 @@ class SettingsScreen extends StatelessWidget {
     final games = library.games;
 
     if (games.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         const SnackBar(content: Text('Add games to library first before importing saves')),
       );
       return;
@@ -616,7 +616,7 @@ class SettingsScreen extends StatelessWidget {
     try {
       final count = await SaveBackupService.importFromZipPicker(games: games);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(
           content: Text(
             count > 0
@@ -627,7 +627,7 @@ class SettingsScreen extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(content: Text('Import failed: $e')),
       );
     }
@@ -639,7 +639,7 @@ class SettingsScreen extends StatelessWidget {
     final games = library.games;
 
     if (games.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         const SnackBar(content: Text('No games in library to backup')),
       );
       return;
@@ -659,7 +659,7 @@ class SettingsScreen extends StatelessWidget {
     final library = context.read<GameLibraryService>();
 
     if (library.games.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         const SnackBar(content: Text('Add games to library first before restoring')),
       );
       return;
@@ -1718,7 +1718,7 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
                         await SaveBackupService.saveZipToUserLocation(_zipPath!);
                     if (saved != null && context.mounted) {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                         SnackBar(content: Text('Saved to $saved')),
                       );
                     }
@@ -1980,7 +1980,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(
             content: Text(
               count > 0

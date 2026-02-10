@@ -45,6 +45,9 @@ class SaveBackupService {
   }
 
   /// Let the user pick where to save the ZIP (file picker).
+  ///
+  /// The temp ZIP at [tempZipPath] is always deleted when this method
+  /// returns — whether the user saved, cancelled, or an error occurred.
   static Future<String?> saveZipToUserLocation(String tempZipPath) async {
     try {
       final result = await FilePicker.platform.saveFile(
@@ -58,14 +61,12 @@ class SaveBackupService {
       // Copy temp file to chosen location
       final destPath = result.endsWith('.zip') ? result : '$result.zip';
       await File(tempZipPath).copy(destPath);
-      // Clean up the temp source now that it has been saved
-      try {
-        await File(tempZipPath).delete();
-      } catch (_) {}
       return destPath;
     } catch (e) {
       debugPrint('Error saving ZIP: $e');
       return null;
+    } finally {
+      deleteTempZip(tempZipPath);
     }
   }
 
@@ -80,6 +81,9 @@ class SaveBackupService {
   }
 
   /// Share the ZIP via the system share sheet (Google Drive, email, etc.).
+  ///
+  /// The temp ZIP at [zipPath] is deleted after the share sheet is
+  /// dismissed (or on error).
   static Future<void> shareZip(String zipPath) async {
     try {
       await Share.shareXFiles(
@@ -89,6 +93,8 @@ class SaveBackupService {
       );
     } catch (e) {
       debugPrint('Error sharing ZIP: $e');
+    } finally {
+      deleteTempZip(zipPath);
     }
   }
 

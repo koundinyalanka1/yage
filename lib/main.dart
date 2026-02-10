@@ -1,17 +1,27 @@
+import 'dart:io' show Platform;
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'providers/app_providers.dart';
 import 'screens/splash_screen.dart';
+import 'services/game_database.dart';
 import 'services/settings_service.dart';
 import 'utils/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── SQLite FFI for desktop (Windows / Linux) ─────────────────────
+  if (Platform.isWindows || Platform.isLinux) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
 
   // ── Firebase (must be first — Crashlytics needs it) ────────────────
   await Firebase.initializeApp();
@@ -23,6 +33,10 @@ void main() async {
       return true;
     };
   }
+
+  // ── Open the game library database ────────────────────────────────
+  final gameDatabase = GameDatabase();
+  await gameDatabase.open();
 
   // ── System UI (safe to set before the first frame) ─────────────────
   SystemChrome.setPreferredOrientations([
@@ -41,15 +55,18 @@ void main() async {
 
   // Everything else (TV detection, notifications, provider init)
   // happens inside the SplashScreen so the user sees branding immediately.
-  runApp(const RetroPalApp());
+  runApp(RetroPalApp(gameDatabase: gameDatabase));
 }
 
 class RetroPalApp extends StatelessWidget {
-  const RetroPalApp({super.key});
+  final GameDatabase gameDatabase;
+
+  const RetroPalApp({super.key, required this.gameDatabase});
 
   @override
   Widget build(BuildContext context) {
     return AppProviders(
+      gameDatabase: gameDatabase,
       child: Consumer<SettingsService>(
         builder: (context, settingsService, _) {
           final colors = AppThemes.getById(settingsService.settings.selectedTheme);

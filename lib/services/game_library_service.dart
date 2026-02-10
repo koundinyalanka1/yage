@@ -1,19 +1,22 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/game_rom.dart';
 import '../core/mgba_bindings.dart';
+import 'game_database.dart';
 
 
-/// Service for managing the game library
+/// Service for managing the game library.
+///
+/// Backed by SQLite (via [GameDatabase]) so that each mutation is a cheap
+/// row-level write rather than a full JSON-blob rewrite.
 class GameLibraryService extends ChangeNotifier {
-  static const String _gamesKey = 'game_library';
-  static const String _romDirsKey = 'rom_directories';
+  final GameDatabase _database;
+
+  GameLibraryService(this._database);
 
   List<GameRom> _games = [];
   List<String> _romDirectories = [];
@@ -58,30 +61,28 @@ class GameLibraryService extends ChangeNotifier {
 
   // ──────────── Initialize ────────────
 
-  /// Initialize and load saved library from SharedPreferences.
+  /// Load the game library from SQLite.
   Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final prefs = await SharedPreferences.getInstance();
+      // Load games from the database, filtering out deleted files.
+      final allGames = await _database.getAllGames();
+      _games = allGames.where((game) => File(game.path).existsSync()).toList();
 
-      // Load ROM directories (legacy — kept for backwards compat)
-      final dirsJson = prefs.getStringList(_romDirsKey);
-      if (dirsJson != null) {
-        _romDirectories = dirsJson;
+      // Remove stale entries (files that no longer exist) from the database.
+      final stale = allGames.length - _games.length;
+      if (stale > 0) {
+        final stalePaths = allGames
+            .where((g) => !File(g.path).existsSync())
+            .map((g) => g.path);
+        for (final path in stalePaths) {
+          await _database.deleteGame(path);
+        }
       }
 
-      // Load saved games from SharedPreferences
-      final gamesJson = prefs.getString(_gamesKey);
-
-      if (gamesJson != null && gamesJson.isNotEmpty) {
-        final List<dynamic> gamesList = jsonDecode(gamesJson);
-        _games = gamesList
-            .map((json) => GameRom.fromJson(json as Map<String, dynamic>))
-            .where((game) => File(game.path).existsSync())
-            .toList();
-      }
+      _romDirectories = await _database.getRomDirectories();
 
       _isLoading = false;
       _error = null;
@@ -89,19 +90,6 @@ class GameLibraryService extends ChangeNotifier {
     } catch (e) {
       _error = 'Failed to load library: $e';
       _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  /// Save library to SharedPreferences.
-  Future<void> _saveLibrary() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final gamesJson = jsonEncode(_games.map((g) => g.toJson()).toList());
-      await prefs.setString(_gamesKey, gamesJson);
-      await prefs.setStringList(_romDirsKey, _romDirectories);
-    } catch (e) {
-      _error = 'Failed to save library: $e';
       notifyListeners();
     }
   }
@@ -145,7 +133,7 @@ class GameLibraryService extends ChangeNotifier {
     if (_games.any((g) => g.path == path)) return null;
 
     _games.add(game);
-    await _saveLibrary();
+    await _database.upsertGame(game);
     notifyListeners();
     return game;
   }
@@ -155,8 +143,8 @@ class GameLibraryService extends ChangeNotifier {
     if (_romDirectories.contains(path)) return;
 
     _romDirectories.add(path);
+    await _database.addRomDirectory(path);
     await scanDirectory(path);
-    await _saveLibrary();
   }
 
   /// Scan a directory for ROM files (requires filesystem read access)
@@ -174,6 +162,7 @@ class GameLibraryService extends ChangeNotifier {
       }
 
       final entities = dir.listSync(recursive: true);
+      final newGames = <GameRom>[];
 
       for (final entity in entities) {
         if (entity is File) {
@@ -182,12 +171,16 @@ class GameLibraryService extends ChangeNotifier {
             final game = GameRom.fromPath(entity.path);
             if (game != null && !_games.any((g) => g.path == entity.path)) {
               _games.add(game);
+              newGames.add(game);
             }
           }
         }
       }
 
-      await _saveLibrary();
+      if (newGames.isNotEmpty) {
+        await _database.upsertGames(newGames);
+      }
+
       _isLoading = false;
       _error = null;
       notifyListeners();
@@ -201,7 +194,7 @@ class GameLibraryService extends ChangeNotifier {
   /// Remove a ROM from library
   Future<void> removeRom(GameRom game) async {
     _games.removeWhere((g) => g.path == game.path);
-    await _saveLibrary();
+    await _database.deleteGame(game.path);
     notifyListeners();
   }
 
@@ -209,8 +202,11 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> removeRomDirectory(String path) async {
     _romDirectories.remove(path);
     final prefix = path.endsWith(p.separator) ? path : '$path${p.separator}';
-    _games.removeWhere((g) => g.path.startsWith(prefix));
-    await _saveLibrary();
+    // Use both prefix match AND exact match to avoid false positives
+    // (e.g. "/roms" must not match "/roms2/game.gba").
+    _games.removeWhere((g) => g.path.startsWith(prefix) || g.path == path);
+    await _database.removeRomDirectory(path);
+    await _database.deleteGamesWithPrefix(prefix);
     notifyListeners();
   }
 
@@ -219,7 +215,9 @@ class GameLibraryService extends ChangeNotifier {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
       _games[index] = _games[index].copyWith(isFavorite: !_games[index].isFavorite);
-      await _saveLibrary();
+      await _database.updateGame(game.path, {
+        'is_favorite': _games[index].isFavorite ? 1 : 0,
+      });
       notifyListeners();
     }
   }
@@ -228,8 +226,11 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> updateLastPlayed(GameRom game) async {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
-      _games[index] = _games[index].copyWith(lastPlayed: DateTime.now());
-      await _saveLibrary();
+      final now = DateTime.now();
+      _games[index] = _games[index].copyWith(lastPlayed: now);
+      await _database.updateGame(game.path, {
+        'last_played': now.toIso8601String(),
+      });
       notifyListeners();
     }
   }
@@ -239,10 +240,11 @@ class GameLibraryService extends ChangeNotifier {
     if (seconds <= 0) return;
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
-      _games[index] = _games[index].copyWith(
-        totalPlayTimeSeconds: _games[index].totalPlayTimeSeconds + seconds,
-      );
-      await _saveLibrary();
+      final newTotal = _games[index].totalPlayTimeSeconds + seconds;
+      _games[index] = _games[index].copyWith(totalPlayTimeSeconds: newTotal);
+      await _database.updateGame(game.path, {
+        'total_play_time_seconds': newTotal,
+      });
       notifyListeners();
     }
   }
@@ -252,7 +254,7 @@ class GameLibraryService extends ChangeNotifier {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
       _games[index] = _games[index].copyWith(coverPath: coverPath);
-      await _saveLibrary();
+      await _database.updateGame(game.path, {'cover_path': coverPath});
       notifyListeners();
     }
   }
@@ -262,7 +264,7 @@ class GameLibraryService extends ChangeNotifier {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
       _games[index] = _games[index].copyWith(coverPath: null);
-      await _saveLibrary();
+      await _database.updateGame(game.path, {'cover_path': null});
       notifyListeners();
     }
   }
@@ -323,12 +325,12 @@ class GameLibraryService extends ChangeNotifier {
       }
     }
 
-    // Atomic swap — old library is only replaced after scanning succeeds
-    _games
-      ..clear()
-      ..addAll(freshGames);
+    // Atomic swap — old library is only replaced after scanning succeeds.
+    // A plain assignment ensures _games is never transiently empty.
+    _games = freshGames;
 
-    await _saveLibrary();
+    // Persist the refreshed list to the database in a single batch.
+    await _database.upsertGames(freshGames);
     _isLoading = false;
     _error = null;
     notifyListeners();

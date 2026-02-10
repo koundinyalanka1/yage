@@ -136,19 +136,46 @@ class GameRom {
   }
 
   factory GameRom.fromJson(Map<String, dynamic> json) {
+    // Required fields — fail fast with a clear message if missing.
+    final path = json['path'] as String?;
+    final name = json['name'] as String?;
+    final ext  = json['extension'] as String?;
+    if (path == null || name == null || ext == null) {
+      throw FormatException(
+        'GameRom.fromJson: missing required field(s) — '
+        'path=$path, name=$name, extension=$ext',
+      );
+    }
+
     return GameRom(
-      path: json['path'] as String,
-      name: json['name'] as String,
-      extension: json['extension'] as String,
+      path: path,
+      name: name,
+      extension: ext,
       platform: _parsePlatform(json['platform']),
-      sizeBytes: json['sizeBytes'] as int,
-      lastPlayed: json['lastPlayed'] != null
-          ? DateTime.parse(json['lastPlayed'] as String)
-          : null,
+      sizeBytes: json['sizeBytes'] as int? ?? 0,
+      lastPlayed: _tryParseDateTime(json['lastPlayed']),
       coverPath: json['coverPath'] as String?,
       isFavorite: json['isFavorite'] as bool? ?? false,
       totalPlayTimeSeconds: json['totalPlayTimeSeconds'] as int? ?? 0,
     );
+  }
+
+  /// Safely try to parse a [GameRom] from JSON.
+  /// Returns `null` on any error (missing fields, wrong types, etc.)
+  /// instead of throwing — ideal for loading potentially-corrupt persisted data.
+  static GameRom? tryFromJson(Map<String, dynamic> json) {
+    try {
+      return GameRom.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Parse a date-time value that may be null, a String, or already invalid.
+  static DateTime? _tryParseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   /// Parse platform from JSON, supporting both the current string format

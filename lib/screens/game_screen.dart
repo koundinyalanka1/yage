@@ -64,13 +64,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   OverlayEntry? _raToastEntry;
 
   // ── Saved references for safe disposal ──
-  // Provider lookups are unsafe in dispose(), so we capture these early.
+  // Provider lookups are unsafe in dispose(), so we capture these early
+  // and reuse them everywhere instead of calling context.read<>().
   EmulatorService? _emulatorRef;
   LinkCableService? _linkCableRef;
   RetroAchievementsService? _raServiceRef;
+  RARuntimeService? _raRuntimeRef;
   RcheevosClient? _rcheevosClientRef;
   StreamSubscription<RcEvent>? _rcheevosEventSub;
   SettingsService? _settingsServiceRef;
+  GameLibraryService? _libraryRef;
 
   @override
   void initState() {
@@ -110,6 +113,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _emulatorRef = context.read<EmulatorService>();
       _linkCableRef = context.read<LinkCableService>();
       _rcheevosClientRef = context.read<RcheevosClient>();
+      _raRuntimeRef = context.read<RARuntimeService>();
+      _libraryRef = context.read<GameLibraryService>();
 
       final emulator = _emulatorRef!;
       // Wire link cable service to emulator
@@ -184,8 +189,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// notifyListeners() calls don't trigger an infinite rebuild loop.
   void _onSettingsChanged() {
     if (!mounted) return;
-    final emulator = context.read<EmulatorService>();
-    emulator.updateSettings(_settingsServiceRef!.settings);
+    _emulatorRef!.updateSettings(_settingsServiceRef!.settings);
   }
 
   /// Called when RetroAchievementsService state changes.
@@ -193,7 +197,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void _onRetroAchievementsChanged() {
     if (!mounted) return;
 
-    final raService = context.read<RetroAchievementsService>();
+    final raService = _raServiceRef!;
     final gameData = raService.gameData;
     final session = raService.activeSession;
 
@@ -318,7 +322,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _rcheevosEventSub?.cancel();
       _rcheevosEventSub = null;
       _rcheevosClientRef = null;
-      _raToastEntry?.remove();
+      // Remove any lingering RA toast.  Wrapped in try-catch because the
+      // overlay entry may have been removed already by its own animation.
+      try { _raToastEntry?.remove(); } catch (_) {}
       _raToastEntry = null;
       _focusNode.dispose();
 
@@ -336,6 +342,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
       _emulatorRef = null;
       _linkCableRef = null;
+      _raRuntimeRef = null;
+      _libraryRef = null;
 
       // Allow screen to sleep again
       WakelockPlus.disable();
@@ -370,7 +378,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _toggleMenu() {
-    final emulator = context.read<EmulatorService>();
+    final emulator = _emulatorRef!;
     
     setState(() {
       _showMenu = !_showMenu;
@@ -389,8 +397,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Merge virtual and physical keys and push to emulator
   void _syncKeys() {
-    final emulator = context.read<EmulatorService>();
-    emulator.setKeys(_virtualKeys | _physicalKeys);
+    _emulatorRef?.setKeys(_virtualKeys | _physicalKeys);
   }
 
   /// Called by VirtualGamepad when touch keys change
@@ -440,10 +447,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       case 'quickLoad':
         _doQuickLoad();
       case 'fastForward':
-        final raRuntime = context.read<RARuntimeService>();
-        final blocked = raRuntime.checkAction('fastForward');
+        final blocked = _raRuntimeRef!.checkAction('fastForward');
         if (blocked != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
             SnackBar(
               content: Text(blocked),
               duration: const Duration(seconds: 2),
@@ -451,7 +457,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           );
           return;
         }
-        context.read<EmulatorService>().toggleFastForward();
+        _emulatorRef!.toggleFastForward();
     }
   }
 
@@ -469,7 +475,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
-    final settings = context.read<SettingsService>().settings;
+    final settings = _settingsServiceRef!.settings;
     if (!settings.enableExternalGamepad) return KeyEventResult.ignored;
 
     // ── Hotkey modifier (Select button) ──────────────────────────────
@@ -533,7 +539,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // Auto-hide virtual gamepad the first time a real controller is detected
       if (!wasDetected && _gamepadMapper.controllerDetected && _showControls) {
         setState(() => _showControls = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           const SnackBar(
             content: Text('Controller detected — touch controls hidden'),
             duration: Duration(seconds: 2),
@@ -555,7 +561,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// and the RA runtime is activated with mode enforcement enabled.
   /// Shows explicit user feedback about achievement support status.
   Future<void> _detectRetroAchievements() async {
-    final settings = context.read<SettingsService>().settings;
+    final settings = _settingsServiceRef!.settings;
     if (!settings.raEnabled) {
       _showRAToast(
         title: 'RetroAchievements Off',
@@ -567,7 +573,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final raService = context.read<RetroAchievementsService>();
+    final raService = _raServiceRef!;
 
     if (!raService.isLoggedIn) {
       _showRAToast(
@@ -615,14 +621,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
 
     // Game recognized — activate mode enforcement
-    final raRuntime = context.read<RARuntimeService>();
-    raRuntime.activate(hardcoreMode: settings.raHardcoreMode);
+    _raRuntimeRef!.activate(hardcoreMode: settings.raHardcoreMode);
 
     if (!mounted) return;
 
     // ── Native rcheevos integration ──────────────────────────────────
     // Initialize the rc_client and begin login + game load.
-    final emulator = context.read<EmulatorService>();
+    final emulator = _emulatorRef!;
     final mgbaCore = emulator.core;
     final rcClient = _rcheevosClientRef;
     if (rcClient != null &&
@@ -661,8 +666,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Flush accumulated session play time to the library
   void _flushPlayTime() {
-    final emulator = context.read<EmulatorService>();
-    final library = context.read<GameLibraryService>();
+    final emulator = _emulatorRef!;
+    final library = _libraryRef!;
     final delta = emulator.flushPlayTime();
     if (delta > 0) {
       library.addPlayTime(widget.game, delta);
@@ -672,10 +677,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void _onRewindHold(bool held) {
     if (held) {
       // Block rewind in Hardcore mode
-      final raRuntime = context.read<RARuntimeService>();
-      final blocked = raRuntime.checkAction('rewind');
+      final blocked = _raRuntimeRef!.checkAction('rewind');
       if (blocked != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(
             content: Text(blocked),
             duration: const Duration(seconds: 2),
@@ -683,20 +687,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         );
         return;
       }
-      context.read<EmulatorService>().startRewind();
+      _emulatorRef!.startRewind();
     } else {
-      context.read<EmulatorService>().stopRewind();
+      _emulatorRef!.stopRewind();
     }
   }
 
   /// Quick-save to slot 0 and show feedback.
   /// Blocked in Hardcore mode.
   Future<void> _doQuickSave() async {
-    final raRuntime = context.read<RARuntimeService>();
-    final blocked = raRuntime.checkAction('saveState');
+    final blocked = _raRuntimeRef!.checkAction('saveState');
     if (blocked != null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(
             content: Text(blocked),
             duration: const Duration(seconds: 2),
@@ -706,10 +709,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final emulator = context.read<EmulatorService>();
-    final success = await emulator.saveState(0);
+    final success = await _emulatorRef!.saveState(0);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(
           content: Text(success ? 'Quick saved (slot 1)' : 'Quick save failed'),
           duration: const Duration(seconds: 1),
@@ -721,11 +723,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// Quick-load from slot 0 and show feedback.
   /// Blocked in Hardcore mode.
   Future<void> _doQuickLoad() async {
-    final raRuntime = context.read<RARuntimeService>();
-    final blocked = raRuntime.checkAction('loadState');
+    final blocked = _raRuntimeRef!.checkAction('loadState');
     if (blocked != null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           SnackBar(
             content: Text(blocked),
             duration: const Duration(seconds: 2),
@@ -735,10 +736,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final emulator = context.read<EmulatorService>();
-    final success = await emulator.loadState(0);
+    final success = await _emulatorRef!.loadState(0);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(
           content: Text(success ? 'Quick loaded (slot 1)' : 'Quick load failed'),
           duration: const Duration(seconds: 1),
@@ -751,7 +751,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// On the first launch the user should just enjoy the game; the dialog
   /// is always available from the in-game menu anyway.
   Future<void> _maybeShowShortcutsHelp() async {
-    final settingsService = context.read<SettingsService>();
+    final settingsService = _settingsServiceRef!;
     await settingsService.incrementGameLaunchCount();
     final alreadyShown = await settingsService.isShortcutsHelpShown();
     if (alreadyShown) return;
@@ -768,7 +768,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Display the shortcuts reference dialog.
   Future<void> _showShortcutsHelp() {
-    final emulator = context.read<EmulatorService>();
+    final emulator = _emulatorRef!;
     final wasRunning = emulator.state == EmulatorState.running;
     if (wasRunning) emulator.pause();
 
@@ -785,23 +785,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _exitGame() async {
-    final emulator = context.read<EmulatorService>();
     _flushPlayTime();
 
     // Await stop so the SRAM save completes before we tear down the screen.
-    await emulator.stop();
+    await _emulatorRef!.stop();
 
     // Deactivate the RA runtime and end the session
     if (!mounted) return;
-    context.read<RARuntimeService>().deactivate();
-    context.read<RetroAchievementsService>().endGameSession();
+    _raRuntimeRef?.deactivate();
+    _raServiceRef?.endGameSession();
 
     Navigator.of(context).pop();
   }
 
   Future<bool> _showExitDialog() async {
     final colors = AppColorTheme.of(context);
-    final emulator = context.read<EmulatorService>();
+    final emulator = _emulatorRef!;
     final wasRunning = emulator.state == EmulatorState.running;
     
     // Pause while showing dialog
@@ -872,8 +871,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _showLinkCableDialog() {
-    final emulator = context.read<EmulatorService>();
-    final linkCable = context.read<LinkCableService>();
+    final emulator = _emulatorRef!;
+    final linkCable = _linkCableRef!;
 
     showDialog(
       context: context,
@@ -1158,10 +1157,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     isActive: emulator.speedMultiplier > 1.0,
                     speed: emulator.speedMultiplier,
                     onTap: () {
-                      final raRuntime = context.read<RARuntimeService>();
-                      final blocked = raRuntime.checkAction('fastForward');
+                      final blocked = _raRuntimeRef!.checkAction('fastForward');
                       if (blocked != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                           SnackBar(
                             content: Text(blocked),
                             duration: const Duration(seconds: 2),
@@ -1210,12 +1208,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               if (_showMenu)
                 _InGameMenu(
                   game: widget.game,
-                  raService: settings.raEnabled
-                      ? context.read<RetroAchievementsService>()
-                      : null,
-                  raRuntime: settings.raEnabled
-                      ? context.read<RARuntimeService>()
-                      : null,
+                  raService: settings.raEnabled ? _raServiceRef : null,
+                  raRuntime: settings.raEnabled ? _raRuntimeRef : null,
                   onResume: _toggleMenu,
                   onReset: () {
                     emulator.reset();
@@ -1223,11 +1217,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   },
                   onSaveState: (slot) async {
                     // Enforce hardcore mode
-                    final raRuntime = context.read<RARuntimeService>();
-                    final blocked = raRuntime.checkAction('saveState');
+                    final blocked = _raRuntimeRef!.checkAction('saveState');
                     if (blocked != null) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                           SnackBar(
                             content: Text(blocked),
                             duration: const Duration(seconds: 2),
@@ -1238,7 +1231,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     }
                     final success = await emulator.saveState(slot);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                         SnackBar(
                           content: Text(
                             success 
@@ -1252,11 +1245,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   },
                   onLoadState: (slot) async {
                     // Enforce hardcore mode
-                    final raRuntime = context.read<RARuntimeService>();
-                    final blocked = raRuntime.checkAction('loadState');
+                    final blocked = _raRuntimeRef!.checkAction('loadState');
                     if (blocked != null) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                           SnackBar(
                             content: Text(blocked),
                             duration: const Duration(seconds: 2),
@@ -1267,7 +1259,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     }
                     final success = await emulator.loadState(slot);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                         SnackBar(
                           content: Text(
                             success 
@@ -1293,12 +1285,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   onExit: _exitGame,
                   useJoystick: settings.useJoystick,
                   onToggleJoystick: () {
-                    context.read<SettingsService>().toggleJoystick();
+                    _settingsServiceRef!.toggleJoystick();
                   },
                   onScreenshot: () async {
                     final path = await emulator.captureScreenshot();
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                         SnackBar(
                           content: Text(
                             path != null
@@ -1464,7 +1456,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
   
   void _enterEditMode() {
-    final settings = context.read<SettingsService>().settings;
+    final settings = _settingsServiceRef!.settings;
     setState(() {
       _editingLayout = true;
       _showMenu = false;
@@ -1474,14 +1466,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
     
     // Pause emulation while editing
-    context.read<EmulatorService>().pause();
+    _emulatorRef!.pause();
   }
   
   void _saveLayout() async {
     if (_tempLayout == null) return;
     
-    final settingsService = context.read<SettingsService>();
-    final emulatorService = context.read<EmulatorService>();
+    final settingsService = _settingsServiceRef!;
+    final emulatorService = _emulatorRef!;
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     
     if (_isLandscape) {
@@ -1515,7 +1507,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
     
     // Resume emulation
-    context.read<EmulatorService>().start();
+    _emulatorRef!.start();
   }
   
   void _resetLayout() {
@@ -3489,11 +3481,16 @@ class _RATopToastState extends State<_RATopToast>
   }
 
   Future<void> _run() async {
-    await _controller.forward();
-    await Future.delayed(widget.duration);
-    if (!mounted) return;
-    await _controller.reverse();
-    widget.onDismissed();
+    try {
+      await _controller.forward();
+      await Future.delayed(widget.duration);
+      if (!mounted) return;
+      await _controller.reverse();
+      widget.onDismissed();
+    } catch (_) {
+      // AnimationController may be disposed if the game screen exits
+      // while the toast is still visible — ignore silently.
+    }
   }
 
   @override
