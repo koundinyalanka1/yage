@@ -35,7 +35,7 @@ void main() async {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Color(0xFF0D0D1A), // YageColors.backgroundDark default
+    systemNavigationBarColor: Color(0xFF0D0D1A), // default backgroundDark
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
@@ -52,22 +52,24 @@ class RetroPalApp extends StatelessWidget {
     return AppProviders(
       child: Consumer<SettingsService>(
         builder: (context, settingsService, _) {
-          // Apply the selected theme before building the MaterialApp
-          final theme = AppThemes.getById(settingsService.settings.selectedTheme);
-          YageColors.setTheme(theme);
+          final colors = AppThemes.getById(settingsService.settings.selectedTheme);
 
           // Update system nav bar color to match theme
           SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: Brightness.light,
-            systemNavigationBarColor: YageColors.backgroundDark,
+            systemNavigationBarColor: colors.backgroundDark,
             systemNavigationBarIconBrightness: Brightness.light,
           ));
 
+          // The AppColorTheme is stored as a ThemeExtension inside the
+          // ThemeData.  Widgets access it via AppColorTheme.of(context)
+          // which calls Theme.of(context) — so they rebuild automatically
+          // when the theme changes.  No ValueKey hack needed.
           return MaterialApp(
             title: 'RetroPal',
             debugShowCheckedModeBanner: false,
-            theme: YageTheme.darkTheme,
+            theme: YageTheme.darkTheme(colors),
             home: const SplashScreen(),
           );
         },

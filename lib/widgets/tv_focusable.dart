@@ -105,6 +105,7 @@ class _TvFocusableState extends State<TvFocusable>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Focus(
       focusNode: _focusNode,
       autofocus: widget.autofocus,
@@ -123,14 +124,14 @@ class _TvFocusableState extends State<TvFocusable>
                       borderRadius: widget.borderRadius,
                       boxShadow: [
                         BoxShadow(
-                          color: YageColors.accent
+                          color: colors.accent
                               .withAlpha((_pulseAnimation.value * 120).toInt()),
                           blurRadius: 12,
                           spreadRadius: 2,
                         ),
                       ],
                       border: Border.all(
-                        color: YageColors.accent,
+                        color: colors.accent,
                         width: 2.5,
                       ),
                     )

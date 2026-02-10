@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
 
-/// Defines a complete app color theme
-class AppColorTheme {
+/// Defines a complete app color theme as a [ThemeExtension].
+///
+/// Access the current theme in any widget via [AppColorTheme.of]:
+/// ```dart
+/// final colors = AppColorTheme.of(context);
+/// Container(color: colors.primary);
+/// ```
+///
+/// Because it's stored inside [ThemeData.extensions], any widget that calls
+/// [AppColorTheme.of] (which uses [Theme.of]) will automatically rebuild
+/// when the theme changes — no static mutable state needed.
+class AppColorTheme extends ThemeExtension<AppColorTheme> {
   final String id;
   final String name;
   final String emoji;
@@ -63,6 +73,96 @@ class AppColorTheme {
     this.warning = const Color(0xFFFF9800),
     this.error = const Color(0xFFF44336),
   });
+
+  /// Convenient context-based accessor.
+  ///
+  /// Widgets that call this will automatically rebuild when the theme changes.
+  static AppColorTheme of(BuildContext context) {
+    return Theme.of(context).extension<AppColorTheme>()!;
+  }
+
+  @override
+  AppColorTheme copyWith({
+    String? id,
+    String? name,
+    String? emoji,
+    Color? primary,
+    Color? primaryDark,
+    Color? primaryLight,
+    Color? accent,
+    Color? accentAlt,
+    Color? accentYellow,
+    Color? backgroundDark,
+    Color? backgroundMedium,
+    Color? backgroundLight,
+    Color? surface,
+    Color? surfaceLight,
+    Color? textPrimary,
+    Color? textSecondary,
+    Color? textMuted,
+    Color? gbColor,
+    Color? gbcColor,
+    Color? gbaColor,
+    Color? success,
+    Color? warning,
+    Color? error,
+  }) {
+    return AppColorTheme(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      emoji: emoji ?? this.emoji,
+      primary: primary ?? this.primary,
+      primaryDark: primaryDark ?? this.primaryDark,
+      primaryLight: primaryLight ?? this.primaryLight,
+      accent: accent ?? this.accent,
+      accentAlt: accentAlt ?? this.accentAlt,
+      accentYellow: accentYellow ?? this.accentYellow,
+      backgroundDark: backgroundDark ?? this.backgroundDark,
+      backgroundMedium: backgroundMedium ?? this.backgroundMedium,
+      backgroundLight: backgroundLight ?? this.backgroundLight,
+      surface: surface ?? this.surface,
+      surfaceLight: surfaceLight ?? this.surfaceLight,
+      textPrimary: textPrimary ?? this.textPrimary,
+      textSecondary: textSecondary ?? this.textSecondary,
+      textMuted: textMuted ?? this.textMuted,
+      gbColor: gbColor ?? this.gbColor,
+      gbcColor: gbcColor ?? this.gbcColor,
+      gbaColor: gbaColor ?? this.gbaColor,
+      success: success ?? this.success,
+      warning: warning ?? this.warning,
+      error: error ?? this.error,
+    );
+  }
+
+  @override
+  AppColorTheme lerp(AppColorTheme? other, double t) {
+    if (other is! AppColorTheme) return this;
+    return AppColorTheme(
+      id: t < 0.5 ? id : other.id,
+      name: t < 0.5 ? name : other.name,
+      emoji: t < 0.5 ? emoji : other.emoji,
+      primary: Color.lerp(primary, other.primary, t)!,
+      primaryDark: Color.lerp(primaryDark, other.primaryDark, t)!,
+      primaryLight: Color.lerp(primaryLight, other.primaryLight, t)!,
+      accent: Color.lerp(accent, other.accent, t)!,
+      accentAlt: Color.lerp(accentAlt, other.accentAlt, t)!,
+      accentYellow: Color.lerp(accentYellow, other.accentYellow, t)!,
+      backgroundDark: Color.lerp(backgroundDark, other.backgroundDark, t)!,
+      backgroundMedium: Color.lerp(backgroundMedium, other.backgroundMedium, t)!,
+      backgroundLight: Color.lerp(backgroundLight, other.backgroundLight, t)!,
+      surface: Color.lerp(surface, other.surface, t)!,
+      surfaceLight: Color.lerp(surfaceLight, other.surfaceLight, t)!,
+      textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
+      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
+      gbColor: Color.lerp(gbColor, other.gbColor, t)!,
+      gbcColor: Color.lerp(gbcColor, other.gbcColor, t)!,
+      gbaColor: Color.lerp(gbaColor, other.gbaColor, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      error: Color.lerp(error, other.error, t)!,
+    );
+  }
 }
 
 /// All available app themes
@@ -72,7 +172,7 @@ class AppThemes {
     AppColorTheme(
       id: 'neon_night',
       name: 'Neon Night',
-      emoji: '🌃',
+      emoji: '\u{1F303}',
       primary: Color(0xFF6B4EE6),
       primaryDark: Color(0xFF4A2FB8),
       primaryLight: Color(0xFF9B7EFF),
@@ -93,7 +193,7 @@ class AppThemes {
     AppColorTheme(
       id: 'crimson_blaze',
       name: 'Crimson Blaze',
-      emoji: '🔥',
+      emoji: '\u{1F525}',
       primary: Color(0xFFE63946),
       primaryDark: Color(0xFFB5212D),
       primaryLight: Color(0xFFFF6B7A),
@@ -114,7 +214,7 @@ class AppThemes {
     AppColorTheme(
       id: 'cyberpunk',
       name: 'Cyberpunk',
-      emoji: '⚡',
+      emoji: '\u26A1',
       primary: Color(0xFFFF2A6D),
       primaryDark: Color(0xFFD1184F),
       primaryLight: Color(0xFFFF6B9D),
@@ -135,7 +235,7 @@ class AppThemes {
     AppColorTheme(
       id: 'emerald_forest',
       name: 'Emerald',
-      emoji: '🌲',
+      emoji: '\u{1F332}',
       primary: Color(0xFF00C853),
       primaryDark: Color(0xFF009624),
       primaryLight: Color(0xFF5EFC82),
@@ -156,7 +256,7 @@ class AppThemes {
     AppColorTheme(
       id: 'midnight_ocean',
       name: 'Ocean',
-      emoji: '🌊',
+      emoji: '\u{1F30A}',
       primary: Color(0xFF0088FF),
       primaryDark: Color(0xFF0055CC),
       primaryLight: Color(0xFF55AAFF),
@@ -177,7 +277,7 @@ class AppThemes {
     AppColorTheme(
       id: 'sunset_haze',
       name: 'Sunset',
-      emoji: '🌅',
+      emoji: '\u{1F305}',
       primary: Color(0xFFFF7043),
       primaryDark: Color(0xFFD84315),
       primaryLight: Color(0xFFFFAB91),
@@ -208,93 +308,57 @@ class AppThemes {
   }
 }
 
-/// Provides the current active colors — delegates to the active theme
-class YageColors {
-  static AppColorTheme _current = AppThemes.all.first;
-
-  /// Set the active theme
-  static void setTheme(AppColorTheme theme) {
-    _current = theme;
-  }
-
-  static AppColorTheme get currentTheme => _current;
-
-  // Primary colors
-  static Color get primary => _current.primary;
-  static Color get primaryDark => _current.primaryDark;
-  static Color get primaryLight => _current.primaryLight;
-
-  // Accent colors
-  static Color get accent => _current.accent;
-  static Color get accentAlt => _current.accentAlt;
-  static Color get accentYellow => _current.accentYellow;
-
-  // Background colors
-  static Color get backgroundDark => _current.backgroundDark;
-  static Color get backgroundMedium => _current.backgroundMedium;
-  static Color get backgroundLight => _current.backgroundLight;
-  static Color get surface => _current.surface;
-  static Color get surfaceLight => _current.surfaceLight;
-
-  // Text colors
-  static Color get textPrimary => _current.textPrimary;
-  static Color get textSecondary => _current.textSecondary;
-  static Color get textMuted => _current.textMuted;
-
-  // Platform colors
-  static Color get gbColor => _current.gbColor;
-  static Color get gbcColor => _current.gbcColor;
-  static Color get gbaColor => _current.gbaColor;
-
-  // State colors
-  static Color get success => _current.success;
-  static Color get warning => _current.warning;
-  static Color get error => _current.error;
-}
-
-/// RetroPal theme configuration
+/// RetroPal theme configuration.
+///
+/// Call [YageTheme.darkTheme] with an [AppColorTheme] to get a fully
+/// configured [ThemeData] that carries the color theme as a
+/// [ThemeExtension] — accessible everywhere via [AppColorTheme.of].
 class YageTheme {
   static const String _fontFamily = 'Rajdhani';
   static const String _monoFontFamily = 'JetBrains Mono';
 
-  static ThemeData get darkTheme {
+  static ThemeData darkTheme(AppColorTheme colors) {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       fontFamily: _fontFamily,
+
+      // Carry the full color theme so widgets can read it via
+      // AppColorTheme.of(context).
+      extensions: [colors],
       
       // Color scheme
       colorScheme: ColorScheme.dark(
-        primary: YageColors.primary,
-        secondary: YageColors.accent,
-        surface: YageColors.surface,
-        error: YageColors.error,
-        onPrimary: YageColors.textPrimary,
-        onSecondary: YageColors.backgroundDark,
-        onSurface: YageColors.textPrimary,
-        onError: YageColors.textPrimary,
+        primary: colors.primary,
+        secondary: colors.accent,
+        surface: colors.surface,
+        error: colors.error,
+        onPrimary: colors.textPrimary,
+        onSecondary: colors.backgroundDark,
+        onSurface: colors.textPrimary,
+        onError: colors.textPrimary,
       ),
       
       // Scaffold
-      scaffoldBackgroundColor: YageColors.backgroundDark,
+      scaffoldBackgroundColor: colors.backgroundDark,
       
       // AppBar
       appBarTheme: AppBarTheme(
-        backgroundColor: YageColors.backgroundMedium,
-        foregroundColor: YageColors.textPrimary,
+        backgroundColor: colors.backgroundMedium,
+        foregroundColor: colors.textPrimary,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 20,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
       ),
       
       // Cards
       cardTheme: CardThemeData(
-        color: YageColors.surface,
+        color: colors.surface,
         elevation: 4,
         shadowColor: Colors.black54,
         shape: RoundedRectangleBorder(
@@ -305,8 +369,8 @@ class YageTheme {
       // Buttons
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: YageColors.primary,
-          foregroundColor: YageColors.textPrimary,
+          backgroundColor: colors.primary,
+          foregroundColor: colors.textPrimary,
           elevation: 4,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
@@ -322,8 +386,8 @@ class YageTheme {
       
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: YageColors.accent,
-          side: BorderSide(color: YageColors.accent, width: 2),
+          foregroundColor: colors.accent,
+          side: BorderSide(color: colors.accent, width: 2),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -333,20 +397,20 @@ class YageTheme {
       
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: YageColors.accent,
+          foregroundColor: colors.accent,
         ),
       ),
       
       // FAB
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: YageColors.accent,
-        foregroundColor: YageColors.backgroundDark,
+        backgroundColor: colors.accent,
+        foregroundColor: colors.backgroundDark,
         elevation: 6,
       ),
       
       // Icons
       iconTheme: IconThemeData(
-        color: YageColors.textPrimary,
+        color: colors.textPrimary,
         size: 24,
       ),
       
@@ -356,112 +420,112 @@ class YageTheme {
           fontFamily: _fontFamily,
           fontSize: 48,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         displayMedium: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 36,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         displaySmall: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 28,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         headlineLarge: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 24,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         headlineMedium: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 20,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         headlineSmall: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         titleLarge: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 16,
           fontWeight: FontWeight.w600,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         titleMedium: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         titleSmall: TextStyle(
           fontFamily: _fontFamily,
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: YageColors.textSecondary,
+          color: colors.textSecondary,
         ),
         bodyLarge: TextStyle(
           fontSize: 16,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         bodyMedium: TextStyle(
           fontSize: 14,
-          color: YageColors.textSecondary,
+          color: colors.textSecondary,
         ),
         bodySmall: TextStyle(
           fontSize: 12,
-          color: YageColors.textMuted,
+          color: colors.textMuted,
         ),
         labelLarge: TextStyle(
           fontFamily: _monoFontFamily,
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         labelMedium: TextStyle(
           fontFamily: _monoFontFamily,
           fontSize: 12,
-          color: YageColors.textSecondary,
+          color: colors.textSecondary,
         ),
         labelSmall: TextStyle(
           fontFamily: _monoFontFamily,
           fontSize: 10,
-          color: YageColors.textMuted,
+          color: colors.textMuted,
         ),
       ),
       
       // Input decoration
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: YageColors.backgroundLight,
+        fillColor: colors.backgroundLight,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: YageColors.surfaceLight, width: 1),
+          borderSide: BorderSide(color: colors.surfaceLight, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: YageColors.primary, width: 2),
+          borderSide: BorderSide(color: colors.primary, width: 2),
         ),
-        hintStyle: TextStyle(color: YageColors.textMuted),
+        hintStyle: TextStyle(color: colors.textMuted),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       
       // Slider
       sliderTheme: SliderThemeData(
-        activeTrackColor: YageColors.primary,
-        inactiveTrackColor: YageColors.surfaceLight,
-        thumbColor: YageColors.accent,
-        overlayColor: YageColors.accent.withAlpha(51),
+        activeTrackColor: colors.primary,
+        inactiveTrackColor: colors.surfaceLight,
+        thumbColor: colors.accent,
+        overlayColor: colors.accent.withAlpha(51),
         trackHeight: 4,
       ),
       
@@ -469,36 +533,36 @@ class YageTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return YageColors.accent;
+            return colors.accent;
           }
-          return YageColors.textMuted;
+          return colors.textMuted;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return YageColors.primary;
+            return colors.primary;
           }
-          return YageColors.surfaceLight;
+          return colors.surfaceLight;
         }),
       ),
       
       // Divider
       dividerTheme: DividerThemeData(
-        color: YageColors.surfaceLight,
+        color: colors.surfaceLight,
         thickness: 1,
       ),
       
       // Bottom nav
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: YageColors.backgroundMedium,
-        selectedItemColor: YageColors.accent,
-        unselectedItemColor: YageColors.textMuted,
+        backgroundColor: colors.backgroundMedium,
+        selectedItemColor: colors.accent,
+        unselectedItemColor: colors.textMuted,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
       ),
       
       // Dialogs
       dialogTheme: DialogThemeData(
-        backgroundColor: YageColors.surface,
+        backgroundColor: colors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
@@ -506,8 +570,8 @@ class YageTheme {
       
       // Snackbar
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: YageColors.surfaceLight,
-        contentTextStyle: TextStyle(color: YageColors.textPrimary),
+        backgroundColor: colors.surfaceLight,
+        contentTextStyle: TextStyle(color: colors.textPrimary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -516,15 +580,15 @@ class YageTheme {
       
       // Progress indicator
       progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: YageColors.accent,
-        linearTrackColor: YageColors.surfaceLight,
+        color: colors.accent,
+        linearTrackColor: colors.surfaceLight,
       ),
       
       // Tab bar
       tabBarTheme: TabBarThemeData(
-        labelColor: YageColors.textPrimary,
-        unselectedLabelColor: YageColors.textMuted,
-        indicatorColor: YageColors.primary,
+        labelColor: colors.textPrimary,
+        unselectedLabelColor: colors.textMuted,
+        indicatorColor: colors.primary,
       ),
     );
   }

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../models/emulator_settings.dart';
-import '../models/game_frame.dart';
 import '../models/game_rom.dart';
 import '../models/gamepad_skin.dart';
 import '../services/settings_service.dart';
@@ -24,6 +23,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -139,11 +139,6 @@ class SettingsScreen extends StatelessWidget {
                     _PaletteTile(
                       selectedIndex: settings.selectedColorPalette,
                       onChanged: settingsService.setColorPalette,
-                    ),
-                    const Divider(height: 1),
-                    _GameFrameTile(
-                      selected: settings.gameFrame,
-                      onChanged: settingsService.setGameFrame,
                     ),
                   ],
                 ),
@@ -392,7 +387,7 @@ class SettingsScreen extends StatelessWidget {
                             Icon(
                               Icons.info_outline,
                               size: 14,
-                              color: YageColors.textMuted,
+                              color: colors.textMuted,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -401,7 +396,7 @@ class SettingsScreen extends StatelessWidget {
                                 'stored securely on-device and never shared.',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: YageColors.textMuted,
+                                  color: colors.textMuted,
                                   height: 1.4,
                                 ),
                               ),
@@ -448,11 +443,12 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showRomFolders(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final library = context.read<GameLibraryService>();
     
     showModalBottomSheet(
       context: context,
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -468,7 +464,7 @@ class SettingsScreen extends StatelessWidget {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: YageColors.surfaceLight,
+                      color: colors.surfaceLight,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -478,7 +474,7 @@ class SettingsScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: YageColors.textPrimary,
+                      color: colors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -488,7 +484,7 @@ class SettingsScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(32),
                       child: Text(
                         'No folders added yet',
-                        style: TextStyle(color: YageColors.textMuted),
+                        style: TextStyle(color: colors.textMuted),
                       ),
                     )
                   else
@@ -498,22 +494,22 @@ class SettingsScreen extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final dir = library.romDirectories[index];
                         return ListTile(
-                          leading: Icon(Icons.folder, color: YageColors.accent),
+                          leading: Icon(Icons.folder, color: colors.accent),
                           title: Text(
                             dir.split(RegExp(r'[/\\]')).last,
-                            style: TextStyle(color: YageColors.textPrimary),
+                            style: TextStyle(color: colors.textPrimary),
                           ),
                           subtitle: Text(
                             dir,
                             style: TextStyle(
                               fontSize: 11,
-                              color: YageColors.textMuted,
+                              color: colors.textMuted,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: IconButton(
-                            icon: Icon(Icons.delete, color: YageColors.error),
+                            icon: Icon(Icons.delete, color: colors.error),
                             onPressed: () {
                               library.removeRomDirectory(dir);
                               setState(() {});
@@ -547,19 +543,20 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _confirmReset(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: YageColors.surface,
+        backgroundColor: colors.surface,
         title: Text(
           'Reset Settings?',
           style: TextStyle(
-            color: YageColors.textPrimary,
+            color: colors.textPrimary,
           ),
         ),
         content: Text(
           'This will reset all settings to their default values.',
-          style: TextStyle(color: YageColors.textSecondary),
+          style: TextStyle(color: colors.textSecondary),
         ),
         actions: [
           TextButton(
@@ -573,7 +570,7 @@ class SettingsScreen extends StatelessWidget {
             },
             child: Text(
               'Reset',
-              style: TextStyle(color: YageColors.error),
+              style: TextStyle(color: colors.error),
             ),
           ),
         ],
@@ -692,12 +689,13 @@ class _CollapsibleSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: YageColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: YageColors.surfaceLight,
+          color: colors.surfaceLight,
           width: 1,
         ),
       ),
@@ -709,20 +707,20 @@ class _CollapsibleSection extends StatelessWidget {
           initiallyExpanded: initiallyExpanded,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: EdgeInsets.zero,
-          leading: Icon(icon, color: YageColors.accent, size: 22),
+          leading: Icon(icon, color: colors.accent, size: 22),
           title: Text(
             title.toUpperCase(),
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
-              color: YageColors.primary,
+              color: colors.primary,
               letterSpacing: 1.5,
             ),
           ),
-          iconColor: YageColors.textMuted,
-          collapsedIconColor: YageColors.textMuted,
+          iconColor: colors.textMuted,
+          collapsedIconColor: colors.textMuted,
           children: [
-            Divider(height: 1, color: YageColors.surfaceLight),
+            Divider(height: 1, color: colors.surfaceLight),
             child,
           ],
         ),
@@ -738,6 +736,7 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
@@ -745,7 +744,7 @@ class _SectionHeader extends StatelessWidget {
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
-          color: YageColors.primary,
+          color: colors.primary,
           letterSpacing: 2,
         ),
       ),
@@ -760,12 +759,13 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: YageColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: YageColors.surfaceLight,
+          color: colors.surfaceLight,
           width: 1,
         ),
       ),
@@ -793,20 +793,21 @@ class _SwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return ListTile(
-      leading: Icon(icon, color: YageColors.accent),
+      leading: Icon(icon, color: colors.accent),
       title: Text(
         title,
         style: TextStyle(
           fontSize: 14,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
       ),
       subtitle: Text(
         subtitle,
         style: TextStyle(
           fontSize: 12,
-          color: YageColors.textMuted,
+          color: colors.textMuted,
         ),
       ),
       trailing: Switch(
@@ -840,6 +841,7 @@ class _SliderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -847,14 +849,14 @@ class _SliderTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: YageColors.accent, size: 20),
+              Icon(icon, color: colors.accent, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   title,
                   style: TextStyle(
                     fontSize: 14,
-                    color: YageColors.textPrimary,
+                    color: colors.textPrimary,
                   ),
                 ),
               ),
@@ -862,7 +864,7 @@ class _SliderTile extends StatelessWidget {
                 '${value.toStringAsFixed(1)}$labelSuffix',
                 style: TextStyle(
                   fontSize: 12,
-                  color: YageColors.accent,
+                  color: colors.accent,
                 ),
               ),
             ],
@@ -895,21 +897,22 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return ListTile(
       leading: Icon(
         icon,
-        color: isDestructive ? YageColors.error : YageColors.accent,
+        color: isDestructive ? colors.error : colors.accent,
       ),
       title: Text(
         title,
         style: TextStyle(
           fontSize: 14,
-          color: isDestructive ? YageColors.error : YageColors.textPrimary,
+          color: isDestructive ? colors.error : colors.textPrimary,
         ),
       ),
       trailing: Icon(
         Icons.chevron_right,
-        color: YageColors.textMuted,
+        color: colors.textMuted,
       ),
       onTap: onTap,
     );
@@ -929,21 +932,22 @@ class _InfoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return ListTile(
-      leading: Icon(icon, color: YageColors.accent),
+      leading: Icon(icon, color: colors.accent),
       title: Text(
         title,
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
       ),
       subtitle: Text(
         subtitle,
         style: TextStyle(
           fontSize: 12,
-          color: YageColors.textMuted,
+          color: colors.textMuted,
         ),
       ),
     );
@@ -961,6 +965,7 @@ class _PaletteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -968,7 +973,7 @@ class _PaletteTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.palette, color: YageColors.accent, size: 20),
+              Icon(Icons.palette, color: colors.accent, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -978,14 +983,14 @@ class _PaletteTile extends StatelessWidget {
                       'GB Color Palette',
                       style: TextStyle(
                         fontSize: 14,
-                        color: YageColors.textPrimary,
+                        color: colors.textPrimary,
                       ),
                     ),
                     Text(
                       'Custom colors for original Game Boy',
                       style: TextStyle(
                         fontSize: 12,
-                        color: YageColors.textMuted,
+                        color: colors.textMuted,
                       ),
                     ),
                   ],
@@ -1013,8 +1018,8 @@ class _PaletteTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isSelected
-                            ? YageColors.primary
-                            : YageColors.surfaceLight,
+                            ? colors.primary
+                            : colors.surfaceLight,
                         width: isSelected ? 2.5 : 1,
                       ),
                     ),
@@ -1042,8 +1047,8 @@ class _PaletteTile extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 3),
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? YageColors.primary.withValues(alpha: 0.15)
-                                : YageColors.surface,
+                                ? colors.primary.withValues(alpha: 0.15)
+                                : colors.surface,
                             borderRadius: const BorderRadius.vertical(
                               bottom: Radius.circular(10),
                             ),
@@ -1057,8 +1062,8 @@ class _PaletteTile extends StatelessWidget {
                                   ? FontWeight.bold
                                   : FontWeight.normal,
                               color: isSelected
-                                  ? YageColors.primary
-                                  : YageColors.textMuted,
+                                  ? colors.primary
+                                  : colors.textMuted,
                             ),
                           ),
                         ),
@@ -1086,12 +1091,13 @@ class _ThemePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: YageColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: YageColors.surfaceLight,
+          color: colors.surfaceLight,
           width: 1,
         ),
       ),
@@ -1101,7 +1107,7 @@ class _ThemePicker extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.color_lens, color: YageColors.accent, size: 20),
+              Icon(Icons.color_lens, color: colors.accent, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1111,14 +1117,14 @@ class _ThemePicker extends StatelessWidget {
                       'App Theme',
                       style: TextStyle(
                         fontSize: 14,
-                        color: YageColors.textPrimary,
+                        color: colors.textPrimary,
                       ),
                     ),
                     Text(
                       'Choose your vibe',
                       style: TextStyle(
                         fontSize: 12,
-                        color: YageColors.textMuted,
+                        color: colors.textMuted,
                       ),
                     ),
                   ],
@@ -1140,10 +1146,10 @@ class _ThemePicker extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? theme.primary.withAlpha(30)
-                        : YageColors.backgroundLight,
+                        : colors.backgroundLight,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? theme.primary : YageColors.surfaceLight,
+                      color: isSelected ? theme.primary : colors.surfaceLight,
                       width: isSelected ? 2 : 1,
                     ),
                   ),
@@ -1184,7 +1190,7 @@ class _ThemePicker extends StatelessWidget {
                                     : FontWeight.w500,
                                 color: isSelected
                                     ? theme.primary
-                                    : YageColors.textPrimary,
+                                    : colors.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -1247,6 +1253,7 @@ class _GamepadSkinTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -1254,13 +1261,13 @@ class _GamepadSkinTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.brush, color: YageColors.accent, size: 20),
+              Icon(Icons.brush, color: colors.accent, size: 20),
               const SizedBox(width: 12),
               Text(
                 'Button Skin',
                 style: TextStyle(
                   fontSize: 14,
-                  color: YageColors.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
             ],
@@ -1271,7 +1278,7 @@ class _GamepadSkinTile extends StatelessWidget {
             runSpacing: 8,
             children: GamepadSkinType.values.map((skin) {
               final isSelected = skin == selected;
-              final skinData = GamepadSkinData.resolve(skin);
+              final skinData = GamepadSkinData.resolve(skin, colors);
               return TvFocusable(
                 onTap: () => onChanged(skin),
                 borderRadius: BorderRadius.circular(12),
@@ -1283,13 +1290,13 @@ class _GamepadSkinTile extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? YageColors.primary.withAlpha(40)
-                        : YageColors.surface.withAlpha(120),
+                        ? colors.primary.withAlpha(40)
+                        : colors.surface.withAlpha(120),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected
-                          ? YageColors.primary
-                          : YageColors.surfaceLight,
+                          ? colors.primary
+                          : colors.surfaceLight,
                       width: isSelected ? 2 : 1,
                     ),
                   ),
@@ -1323,8 +1330,8 @@ class _GamepadSkinTile extends StatelessWidget {
                           fontWeight:
                               isSelected ? FontWeight.bold : FontWeight.normal,
                           color: isSelected
-                              ? YageColors.primary
-                              : YageColors.textSecondary,
+                              ? colors.primary
+                              : colors.textSecondary,
                         ),
                       ),
                     ],
@@ -1370,179 +1377,6 @@ class _MiniButtonPreview extends StatelessWidget {
   }
 }
 
-/// Game frame / shell picker — horizontal chips with console color preview
-class _GameFrameTile extends StatelessWidget {
-  final GameFrameType selected;
-  final ValueChanged<GameFrameType> onChanged;
-
-  const _GameFrameTile({
-    required this.selected,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.phone_android, color: YageColors.accent, size: 20),
-              const SizedBox(width: 12),
-              Text(
-                'Console Frame',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: YageColors.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Decorative Game Boy shell around the screen',
-            style: TextStyle(fontSize: 11, color: YageColors.textMuted),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: GameFrameType.values.map((frame) {
-              final isSelected = frame == selected;
-              return TvFocusable(
-                onTap: () => onChanged(frame),
-                borderRadius: BorderRadius.circular(12),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? YageColors.primary.withAlpha(40)
-                        : YageColors.surface.withAlpha(120),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected
-                          ? YageColors.primary
-                          : YageColors.surfaceLight,
-                      width: isSelected ? 2 : 1,
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Mini console preview
-                      _MiniFramePreview(
-                        frame: frame,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        frame.label,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                          color: isSelected
-                              ? YageColors.primary
-                              : YageColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Tiny console silhouette for the frame picker chips
-class _MiniFramePreview extends StatelessWidget {
-  final GameFrameType frame;
-
-  const _MiniFramePreview({required this.frame});
-
-  @override
-  Widget build(BuildContext context) {
-    if (frame == GameFrameType.none) {
-      return Container(
-        width: 28,
-        height: 22,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(3),
-          border: Border.all(
-            color: YageColors.textMuted.withAlpha(60),
-            width: 1,
-          ),
-        ),
-        child: Icon(Icons.crop_free,
-            size: 14, color: YageColors.textMuted.withAlpha(80)),
-      );
-    }
-
-    final isLandscape = frame == GameFrameType.advance;
-    final w = isLandscape ? 32.0 : 20.0;
-    final h = isLandscape ? 20.0 : 28.0;
-    final screenW = isLandscape ? 16.0 : 14.0;
-    final screenH = isLandscape ? 10.0 : 10.0;
-
-    return SizedBox(
-      width: w,
-      height: h,
-      child: CustomPaint(
-        painter: _MiniFramePainter(
-          bodyColor: frame.previewColor,
-          screenRect: Rect.fromCenter(
-            center: Offset(w / 2, h * (isLandscape ? 0.45 : 0.35)),
-            width: screenW,
-            height: screenH,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MiniFramePainter extends CustomPainter {
-  final Color bodyColor;
-  final Rect screenRect;
-
-  _MiniFramePainter({required this.bodyColor, required this.screenRect});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Body
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.width, size.height),
-        const Radius.circular(3),
-      ),
-      Paint()..color = bodyColor,
-    );
-    // Screen cutout (dark)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(screenRect, const Radius.circular(1.5)),
-      Paint()..color = const Color(0xFF1A1A24),
-    );
-    // Tiny green "screen" glow
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(screenRect.deflate(1), const Radius.circular(1)),
-      Paint()..color = const Color(0xFF4A6A4A).withAlpha(120),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_MiniFramePainter old) => old.bodyColor != bodyColor;
-}
-
 // ─────────────────────────────────────────────────────────
 //  RetroAchievements account tile
 // ─────────────────────────────────────────────────────────
@@ -1550,6 +1384,7 @@ class _MiniFramePainter extends CustomPainter {
 class _RetroAchievementsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Consumer<RetroAchievementsService>(
       builder: (context, raService, _) {
         if (raService.isLoading) {
@@ -1563,7 +1398,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                     height: 24,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: YageColors.accent,
+                      color: colors.accent,
                     ),
                   ),
                 ),
@@ -1578,12 +1413,12 @@ class _RetroAchievementsTile extends StatelessWidget {
             children: [
               ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: YageColors.primary,
+                  backgroundColor: colors.primary,
                   backgroundImage: profile != null
                       ? NetworkImage(profile.profileImageUrl)
                       : null,
                   child: profile == null
-                      ? Icon(Icons.person, color: YageColors.textPrimary)
+                      ? Icon(Icons.person, color: colors.textPrimary)
                       : null,
                 ),
                 title: Text(
@@ -1591,14 +1426,14 @@ class _RetroAchievementsTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: YageColors.textPrimary,
+                    color: colors.textPrimary,
                   ),
                 ),
                 subtitle: Text(
                   '${profile?.totalPoints ?? 0} points',
                   style: TextStyle(
                     fontSize: 11,
-                    color: YageColors.textMuted,
+                    color: colors.textMuted,
                   ),
                 ),
               ),
@@ -1610,14 +1445,14 @@ class _RetroAchievementsTile extends StatelessWidget {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      backgroundColor: YageColors.surface,
+                      backgroundColor: colors.surface,
                       title: Text(
                         'Sign out of RetroAchievements?',
-                        style: TextStyle(color: YageColors.textPrimary),
+                        style: TextStyle(color: colors.textPrimary),
                       ),
                       content: Text(
                         'You will no longer earn achievements until you sign in again.',
-                        style: TextStyle(color: YageColors.textSecondary),
+                        style: TextStyle(color: colors.textSecondary),
                       ),
                       actions: [
                         TextButton(
@@ -1628,7 +1463,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                           onPressed: () => Navigator.pop(ctx, true),
                           child: Text(
                             'Sign Out',
-                            style: TextStyle(color: YageColors.error),
+                            style: TextStyle(color: colors.error),
                           ),
                         ),
                       ],
@@ -1653,7 +1488,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: YageColors.error.withAlpha(20),
+                  color: colors.error.withAlpha(20),
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(16),
                   ),
@@ -1664,7 +1499,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                     Icon(
                       Icons.warning_amber_rounded,
                       size: 18,
-                      color: YageColors.error,
+                      color: colors.error,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -1672,7 +1507,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                         raService.lastError!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: YageColors.error,
+                          color: colors.error,
                           height: 1.4,
                         ),
                       ),
@@ -1682,7 +1517,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                       child: Icon(
                         Icons.close,
                         size: 16,
-                        color: YageColors.error.withAlpha(160),
+                        color: colors.error.withAlpha(160),
                       ),
                     ),
                   ],
@@ -1695,14 +1530,14 @@ class _RetroAchievementsTile extends StatelessWidget {
                   Icon(
                     Icons.emoji_events_outlined,
                     size: 40,
-                    color: YageColors.textMuted,
+                    color: colors.textMuted,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Sign in to track achievements',
                     style: TextStyle(
                       fontSize: 13,
-                      color: YageColors.textSecondary,
+                      color: colors.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -1818,8 +1653,9 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return AlertDialog(
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
@@ -1828,15 +1664,15 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
                 ? Icons.error_outline
                 : (_done ? Icons.check_circle : Icons.archive),
             color: _error
-                ? YageColors.error
-                : (_done ? YageColors.accent : YageColors.textSecondary),
+                ? colors.error
+                : (_done ? colors.accent : colors.textSecondary),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               widget.title,
               style: TextStyle(
-                color: YageColors.textPrimary,
+                color: colors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -1850,14 +1686,14 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
           if (!_done) ...[
             LinearProgressIndicator(
               value: _progress > 0 ? _progress : null,
-              backgroundColor: YageColors.surfaceLight,
-              valueColor: AlwaysStoppedAnimation(YageColors.accent),
+              backgroundColor: colors.surfaceLight,
+              valueColor: AlwaysStoppedAnimation(colors.accent),
             ),
             const SizedBox(height: 12),
           ],
           Text(
             _status,
-            style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+            style: TextStyle(color: colors.textSecondary, fontSize: 13),
           ),
         ],
       ),
@@ -1893,7 +1729,7 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
           onPressed: () => Navigator.pop(context),
           child: Text(
             _done ? 'Close' : 'Cancel',
-            style: TextStyle(color: YageColors.textSecondary),
+            style: TextStyle(color: colors.textSecondary),
           ),
         ),
       ],
@@ -1993,8 +1829,9 @@ class _DriveBackupDialogState extends State<_DriveBackupDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return AlertDialog(
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
@@ -2003,15 +1840,15 @@ class _DriveBackupDialogState extends State<_DriveBackupDialog> {
                 ? Icons.error_outline
                 : (_done ? Icons.cloud_done : Icons.cloud_upload),
             color: _error
-                ? YageColors.error
-                : (_done ? YageColors.accent : YageColors.textSecondary),
+                ? colors.error
+                : (_done ? colors.accent : colors.textSecondary),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Google Drive Backup',
               style: TextStyle(
-                color: YageColors.textPrimary,
+                color: colors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -2029,7 +1866,7 @@ class _DriveBackupDialogState extends State<_DriveBackupDialog> {
           Text(
             _status,
             style: TextStyle(
-              color: _error ? YageColors.error : YageColors.textSecondary,
+              color: _error ? colors.error : colors.textSecondary,
               fontSize: 13,
             ),
             textAlign: TextAlign.center,
@@ -2041,7 +1878,7 @@ class _DriveBackupDialogState extends State<_DriveBackupDialog> {
           onPressed: () => Navigator.pop(context),
           child: Text(
             _done ? 'Close' : 'Cancel',
-            style: TextStyle(color: YageColors.textSecondary),
+            style: TextStyle(color: colors.textSecondary),
           ),
         ),
       ],
@@ -2166,21 +2003,22 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return AlertDialog(
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
           Icon(
             _error ? Icons.error_outline : Icons.cloud_download,
-            color: _error ? YageColors.error : YageColors.accent,
+            color: _error ? colors.error : colors.accent,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Restore from Drive',
               style: TextStyle(
-                color: YageColors.textPrimary,
+                color: colors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -2200,7 +2038,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
             Text(
               _status,
               style: TextStyle(
-                color: _error ? YageColors.error : YageColors.textSecondary,
+                color: _error ? colors.error : colors.textSecondary,
                 fontSize: 13,
               ),
               textAlign: TextAlign.center,
@@ -2229,7 +2067,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
                         backup.name ?? 'Backup',
                         style: TextStyle(
                           fontSize: 12,
-                          color: YageColors.textPrimary,
+                          color: colors.textPrimary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -2238,7 +2076,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
                         '$dateStr · $sizeMb MB',
                         style: TextStyle(
                           fontSize: 11,
-                          color: YageColors.textMuted,
+                          color: colors.textMuted,
                         ),
                       ),
                       onTap: () => _restore(backup),
@@ -2255,7 +2093,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
           onPressed: _restoring ? null : () => Navigator.pop(context),
           child: Text(
             'Close',
-            style: TextStyle(color: YageColors.textSecondary),
+            style: TextStyle(color: colors.textSecondary),
           ),
         ),
       ],

@@ -57,6 +57,7 @@ class _AchievementsScreenState extends State<AchievementsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final total = _allAchievements.length;
     final earnedCount = widget.isHardcore
         ? _earnedHardcore.length
@@ -68,9 +69,9 @@ class _AchievementsScreenState extends State<AchievementsScreen>
     final progress = total > 0 ? earnedCount / total : 0.0;
 
     return Scaffold(
-      backgroundColor: YageColors.backgroundDark,
+      backgroundColor: colors.backgroundDark,
       appBar: AppBar(
-        backgroundColor: YageColors.surface,
+        backgroundColor: colors.surface,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -83,7 +84,7 @@ class _AchievementsScreenState extends State<AchievementsScreen>
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: YageColors.textPrimary,
+                color: colors.textPrimary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -93,7 +94,7 @@ class _AchievementsScreenState extends State<AchievementsScreen>
               '$earnedPts / $totalPts pts',
               style: TextStyle(
                 fontSize: 12,
-                color: YageColors.textSecondary,
+                color: colors.textSecondary,
               ),
             ),
           ],
@@ -111,10 +112,10 @@ class _AchievementsScreenState extends State<AchievementsScreen>
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 4,
-                    backgroundColor: YageColors.backgroundDark,
+                    backgroundColor: colors.backgroundDark,
                     color: widget.isHardcore
                         ? Colors.amber
-                        : YageColors.accent,
+                        : colors.accent,
                   ),
                 ),
               ),
@@ -122,9 +123,9 @@ class _AchievementsScreenState extends State<AchievementsScreen>
                 controller: _tabController,
                 indicatorColor: widget.isHardcore
                     ? Colors.amber
-                    : YageColors.accent,
-                labelColor: YageColors.textPrimary,
-                unselectedLabelColor: YageColors.textMuted,
+                    : colors.accent,
+                labelColor: colors.textPrimary,
+                unselectedLabelColor: colors.textMuted,
                 labelStyle: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -158,19 +159,20 @@ class _AchievementsScreenState extends State<AchievementsScreen>
   }
 
   Widget _buildList(List<RAAchievement> achievements) {
+    final colors = AppColorTheme.of(context);
     if (achievements.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.emoji_events_outlined,
-                size: 48, color: YageColors.textMuted),
+                size: 48, color: colors.textMuted),
             const SizedBox(height: 12),
             Text(
               'No achievements',
               style: TextStyle(
                 fontSize: 16,
-                color: YageColors.textMuted,
+                color: colors.textMuted,
               ),
             ),
           ],
@@ -211,6 +213,7 @@ class _AchievementTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final isHcEarned = achievement.isEarnedHardcore;
     final isSoftOnly = achievement.isEarned && !achievement.isEarnedHardcore;
 
@@ -221,14 +224,14 @@ class _AchievementTile extends StatelessWidget {
             ? (isHcEarned
                 ? Colors.amber.withAlpha(15)
                 : Colors.green.withAlpha(15))
-            : YageColors.surface,
+            : colors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _isEarned
               ? (isHcEarned
                   ? Colors.amber.withAlpha(80)
                   : Colors.green.withAlpha(80))
-              : YageColors.surfaceLight,
+              : colors.surfaceLight,
           width: 1,
         ),
       ),
@@ -248,7 +251,7 @@ class _AchievementTile extends StatelessWidget {
                 height: 48,
                 fit: BoxFit.cover,
                 placeholder: (_, _) => Container(
-                  color: YageColors.backgroundLight,
+                  color: colors.backgroundLight,
                   child: const Center(
                     child: SizedBox(
                       width: 20,
@@ -258,13 +261,13 @@ class _AchievementTile extends StatelessWidget {
                   ),
                 ),
                 errorWidget: (_, _, _) => Container(
-                  color: YageColors.backgroundLight,
+                  color: colors.backgroundLight,
                   child: Icon(
                     _isEarned
                         ? Icons.emoji_events
                         : Icons.emoji_events_outlined,
                     size: 24,
-                    color: _isEarned ? Colors.amber : YageColors.textMuted,
+                    color: _isEarned ? Colors.amber : colors.textMuted,
                   ),
                 ),
               ),
@@ -287,8 +290,8 @@ class _AchievementTile extends StatelessWidget {
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: _isEarned
-                              ? YageColors.textPrimary
-                              : YageColors.textSecondary,
+                              ? colors.textPrimary
+                              : colors.textSecondary,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -304,7 +307,7 @@ class _AchievementTile extends StatelessWidget {
                             ? (isHcEarned
                                 ? Colors.amber.withAlpha(40)
                                 : Colors.green.withAlpha(40))
-                            : YageColors.backgroundLight,
+                            : colors.backgroundLight,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -314,7 +317,7 @@ class _AchievementTile extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                           color: _isEarned
                               ? (isHcEarned ? Colors.amber : Colors.green)
-                              : YageColors.textMuted,
+                              : colors.textMuted,
                         ),
                       ),
                     ),
@@ -328,8 +331,8 @@ class _AchievementTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     color: _isEarned
-                        ? YageColors.textSecondary
-                        : YageColors.textMuted,
+                        ? colors.textSecondary
+                        : colors.textMuted,
                   ),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
@@ -401,7 +404,7 @@ class _AchievementTile extends StatelessWidget {
                           _formatDate(_dateEarned!),
                           style: TextStyle(
                             fontSize: 10,
-                            color: YageColors.textMuted,
+                            color: colors.textMuted,
                           ),
                         ),
                     ],
@@ -416,7 +419,7 @@ class _AchievementTile extends StatelessWidget {
                     '${achievement.numAwarded} players earned',
                     style: TextStyle(
                       fontSize: 10,
-                      color: YageColors.textMuted.withAlpha(150),
+                      color: colors.textMuted.withAlpha(150),
                     ),
                   ),
                 ],

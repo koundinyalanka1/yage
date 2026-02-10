@@ -766,8 +766,7 @@ class EmulatorService extends ChangeNotifier {
     return _core?.getVideoBuffer();
   }
 
-  /// Get the save state file path for a slot — stored next to the ROM
-  /// Get the save state file path for a slot.
+  /// Get the save state file path for a slot — stored next to the ROM.
   /// Searches all known save directories for an existing file; if none found,
   /// returns a path in the primary save directory (for creating new saves).
   String? getStatePath(int slot) {
@@ -1074,12 +1073,9 @@ class EmulatorService extends ChangeNotifier {
         final sramPath =
             p.join(saveDir, '${p.basenameWithoutExtension(_currentRom!.path)}.sav');
         if (_useStub) {
-          final data = _stub?.getSaveData();
-          if (data != null && data.isNotEmpty) {
-            File(sramPath).writeAsBytesSync(data);
-          }
+          _stub?.saveSram(sramPath);
         } else {
-          _core?.saveSRAM(sramPath);
+          _core?.saveSram(sramPath);
         }
       }
     } catch (e) {

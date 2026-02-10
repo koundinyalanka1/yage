@@ -36,7 +36,7 @@ extension GamepadSkinTypeName on GamepadSkinType {
 
 /// Resolved visual parameters for a gamepad skin.
 /// Call [GamepadSkinData.resolve] at build time so it picks up the current
-/// [YageColors] theme automatically.
+/// theme automatically via the provided [AppColorTheme].
 class GamepadSkinData {
   // ── Button normal state ──
   final Color buttonFill;
@@ -95,39 +95,39 @@ class GamepadSkinData {
     required this.buttonRadius,
   });
 
-  /// Resolve a skin type into concrete paint parameters using the current theme.
-  static GamepadSkinData resolve(GamepadSkinType type) {
+  /// Resolve a skin type into concrete paint parameters using the given theme.
+  static GamepadSkinData resolve(GamepadSkinType type, AppColorTheme colors) {
     return switch (type) {
-      GamepadSkinType.classic => _classic(),
+      GamepadSkinType.classic => _classic(colors),
       GamepadSkinType.retro => _retro(),
-      GamepadSkinType.minimal => _minimal(),
-      GamepadSkinType.neon => _neon(),
+      GamepadSkinType.minimal => _minimal(colors),
+      GamepadSkinType.neon => _neon(colors),
     };
   }
 
   // ──────────────────────────────────────────────
   // Classic  — solid filled surfaces (current look)
   // ──────────────────────────────────────────────
-  static GamepadSkinData _classic() {
+  static GamepadSkinData _classic(AppColorTheme colors) {
     return GamepadSkinData(
-      buttonFill: YageColors.surface.withAlpha(220),
-      buttonBorder: YageColors.surfaceLight,
+      buttonFill: colors.surface.withAlpha(220),
+      buttonBorder: colors.surfaceLight,
       buttonBorderWidth: 1.5,
-      textNormal: YageColors.textSecondary,
-      buttonFillPressed: YageColors.primary.withAlpha(230),
-      buttonBorderPressed: YageColors.primary,
-      textPressed: YageColors.textPrimary,
-      dpadBackground: YageColors.surface.withAlpha(210),
-      dpadBorder: YageColors.surfaceLight,
+      textNormal: colors.textSecondary,
+      buttonFillPressed: colors.primary.withAlpha(230),
+      buttonBorderPressed: colors.primary,
+      textPressed: colors.textPrimary,
+      dpadBackground: colors.surface.withAlpha(210),
+      dpadBorder: colors.surfaceLight,
       dpadBorderWidth: 1.5,
-      dpadCenter: YageColors.backgroundMedium,
+      dpadCenter: colors.backgroundMedium,
       dpadRadius: 18,
-      joystickBg: YageColors.surface.withAlpha(200),
-      joystickBorder: YageColors.surfaceLight,
+      joystickBg: colors.surface.withAlpha(200),
+      joystickBorder: colors.surfaceLight,
       joystickBorderWidth: 2,
-      stickColor: YageColors.primary.withAlpha(230),
-      stickBorder: YageColors.primary,
-      stickHighlight: YageColors.backgroundLight.withAlpha(100),
+      stickColor: colors.primary.withAlpha(230),
+      stickBorder: colors.primary,
+      stickHighlight: colors.backgroundLight.withAlpha(100),
       buttonRadius: 12,
     );
   }
@@ -185,25 +185,25 @@ class GamepadSkinData {
   // ──────────────────────────────────────────────
   // Minimal  — outlines only, transparent fills
   // ──────────────────────────────────────────────
-  static GamepadSkinData _minimal() {
+  static GamepadSkinData _minimal(AppColorTheme colors) {
     return GamepadSkinData(
       buttonFill: Colors.transparent,
-      buttonBorder: YageColors.textSecondary.withAlpha(120),
+      buttonBorder: colors.textSecondary.withAlpha(120),
       buttonBorderWidth: 1.0,
-      textNormal: YageColors.textSecondary.withAlpha(140),
-      buttonFillPressed: YageColors.primary.withAlpha(60),
-      buttonBorderPressed: YageColors.primary.withAlpha(200),
-      textPressed: YageColors.textPrimary,
+      textNormal: colors.textSecondary.withAlpha(140),
+      buttonFillPressed: colors.primary.withAlpha(60),
+      buttonBorderPressed: colors.primary.withAlpha(200),
+      textPressed: colors.textPrimary,
       dpadBackground: Colors.transparent,
-      dpadBorder: YageColors.textSecondary.withAlpha(80),
+      dpadBorder: colors.textSecondary.withAlpha(80),
       dpadBorderWidth: 1.0,
-      dpadCenter: YageColors.textSecondary.withAlpha(40),
+      dpadCenter: colors.textSecondary.withAlpha(40),
       dpadRadius: 14,
       joystickBg: Colors.transparent,
-      joystickBorder: YageColors.textSecondary.withAlpha(100),
+      joystickBorder: colors.textSecondary.withAlpha(100),
       joystickBorderWidth: 1.0,
-      stickColor: YageColors.primary.withAlpha(100),
-      stickBorder: YageColors.primary.withAlpha(180),
+      stickColor: colors.primary.withAlpha(100),
+      stickBorder: colors.primary.withAlpha(180),
       stickHighlight: null,
       buttonRadius: 12,
     );
@@ -212,9 +212,9 @@ class GamepadSkinData {
   // ──────────────────────────────────────────────
   // Neon  — dark fills, bright borders, glow shadows
   // ──────────────────────────────────────────────
-  static GamepadSkinData _neon() {
-    final neonColor = YageColors.accent;
-    final neonAlt = YageColors.primary;
+  static GamepadSkinData _neon(AppColorTheme colors) {
+    final neonColor = colors.accent;
+    final neonAlt = colors.primary;
 
     return GamepadSkinData(
       buttonFill: Colors.black.withAlpha(160),

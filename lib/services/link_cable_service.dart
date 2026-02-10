@@ -68,6 +68,10 @@ class LinkCableService extends ChangeNotifier {
   // Ping timer
   Timer? _pingTimer;
 
+  // Host timeout timer — auto-disconnects if no peer connects within the limit
+  Timer? _hostTimeoutTimer;
+  static const Duration defaultHostTimeout = Duration(minutes: 5);
+
   // Error message
   String? _error;
   String? get error => _error;
@@ -93,7 +97,14 @@ class LinkCableService extends ChangeNotifier {
 
   /// Start hosting a link cable session.
   /// [romHash] should be a simple hash of the ROM for validation.
-  Future<bool> host({required int romHash, int port = defaultPort}) async {
+  /// [timeout] controls how long the server waits for a peer before
+  /// auto-disconnecting.  Defaults to [defaultHostTimeout] (5 minutes).
+  /// Pass `null` to wait indefinitely (not recommended).
+  Future<bool> host({
+    required int romHash,
+    int port = defaultPort,
+    Duration? timeout = defaultHostTimeout,
+  }) async {
     if (_state != LinkCableState.disconnected) {
       await disconnect();
     }
@@ -109,6 +120,18 @@ class LinkCableService extends ChangeNotifier {
 
       debugPrint('Link cable: hosting on port $port');
 
+      // Start host timeout — auto-disconnect if no peer connects in time
+      if (timeout != null) {
+        _hostTimeoutTimer?.cancel();
+        _hostTimeoutTimer = Timer(timeout, () {
+          if (_state == LinkCableState.hosting) {
+            debugPrint('Link cable: host timed out after $timeout');
+            _error = 'No one joined — timed out';
+            disconnect();
+          }
+        });
+      }
+
       // Wait for incoming connection
       _server!.listen(
         (Socket socket) {
@@ -117,6 +140,9 @@ class LinkCableService extends ChangeNotifier {
             socket.destroy();
             return;
           }
+          // Peer connected — cancel the timeout
+          _hostTimeoutTimer?.cancel();
+          _hostTimeoutTimer = null;
           _handleConnection(socket);
         },
         onError: (e) {
@@ -366,6 +392,8 @@ class LinkCableService extends ChangeNotifier {
   Future<void> disconnect() async {
     _pingTimer?.cancel();
     _pingTimer = null;
+    _hostTimeoutTimer?.cancel();
+    _hostTimeoutTimer = null;
 
     if (_socket != null && _state == LinkCableState.connected) {
       try {
@@ -395,27 +423,28 @@ class LinkCableService extends ChangeNotifier {
     if (wasConnected) notifyListeners();
   }
 
-  /// Generate a simple ROM hash from the file path and size.
+  /// Generate a ROM hash by streaming the **entire** file through FNV-1a.
   /// This is NOT a cryptographic hash — just enough to verify both
   /// players are running the same game.
+  ///
+  /// The file is read in chunks so large ROMs (up to 32 MB for GBA)
+  /// never need to be fully loaded into memory.
   static Future<int> computeRomHash(String romPath) async {
     try {
       final file = File(romPath);
       if (!file.existsSync()) return 0;
 
-      final size = await file.length();
-      final bytes = await file.openRead(0, 256.clamp(0, size)).fold<List<int>>(
-        [],
-        (prev, chunk) => prev..addAll(chunk),
-      );
-
-      // Simple FNV-1a hash of first 256 bytes + file size
+      // Stream the entire file through FNV-1a
       int hash = 0x811c9dc5;
-      for (final b in bytes) {
-        hash ^= b;
-        hash = (hash * 0x01000193) & 0xFFFFFFFF;
+      await for (final chunk in file.openRead()) {
+        for (final b in chunk) {
+          hash ^= b;
+          hash = (hash * 0x01000193) & 0xFFFFFFFF;
+        }
       }
-      // Mix in file size
+      // Mix in file size so identical-content files of different sizes
+      // (e.g. ROM + padding) still differ.
+      final size = await file.length();
       hash ^= size & 0xFFFFFFFF;
       hash = (hash * 0x01000193) & 0xFFFFFFFF;
       return hash;

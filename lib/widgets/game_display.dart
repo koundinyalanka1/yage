@@ -37,15 +37,10 @@ class _GameDisplayState extends State<GameDisplay> {
   @override
   void didUpdateWidget(GameDisplay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Always re-register callback to handle orientation changes
-    _registerCallback();
-  }
-  
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Re-register after orientation change
-    _registerCallback();
+    // Only re-register if the emulator instance changed
+    if (oldWidget.emulator != widget.emulator) {
+      _registerCallback();
+    }
   }
   
   void _registerCallback() {
@@ -162,9 +157,10 @@ class _GameDisplayState extends State<GameDisplay> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     // No borders or padding - maximize game display area
     return Container(
-      color: YageColors.backgroundDark,
+      color: colors.backgroundDark,
       child: widget.maintainAspectRatio
           ? AspectRatio(
               aspectRatio: widget.emulator.screenWidth / 
@@ -190,8 +186,9 @@ class _GameDisplayState extends State<GameDisplay> {
   }
 
   Widget _buildPlaceholder() {
+    final colors = AppColorTheme.of(context);
     return Container(
-      color: YageColors.backgroundDark,
+      color: colors.backgroundDark,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -199,7 +196,7 @@ class _GameDisplayState extends State<GameDisplay> {
             Icon(
               Icons.videogame_asset,
               size: 64,
-              color: YageColors.primary.withAlpha(128),
+              color: colors.primary.withAlpha(128),
             ),
             const SizedBox(height: 16),
             Text(
@@ -207,7 +204,7 @@ class _GameDisplayState extends State<GameDisplay> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: YageColors.textMuted.withAlpha(128),
+                color: colors.textMuted.withAlpha(128),
                 letterSpacing: 4,
               ),
             ),
@@ -297,17 +294,18 @@ class FpsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: YageColors.backgroundDark.withAlpha(204),
+        color: colors.backgroundDark.withAlpha(204),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
           color: fps >= 55 
-              ? YageColors.success 
+              ? colors.success 
               : fps >= 30 
-                  ? YageColors.warning 
-                  : YageColors.error,
+                  ? colors.warning 
+                  : colors.error,
           width: 1,
         ),
       ),
@@ -316,7 +314,7 @@ class FpsOverlay extends StatelessWidget {
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
       ),
     );

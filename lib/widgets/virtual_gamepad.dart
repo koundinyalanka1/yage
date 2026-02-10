@@ -51,10 +51,20 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
   static const Duration _hapticMinInterval = Duration(milliseconds: 60);
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Resolve the skin using the current theme from the widget tree.
+    // This runs after initState and whenever Theme changes.
+    _resolvedSkin = GamepadSkinData.resolve(
+      widget.skin,
+      AppColorTheme.of(context),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
     _editingLayout = widget.layout;
-    _resolvedSkin = GamepadSkinData.resolve(widget.skin);
   }
 
   @override
@@ -64,7 +74,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       _editingLayout = widget.layout;
     }
     if (oldWidget.skin != widget.skin) {
-      _resolvedSkin = GamepadSkinData.resolve(widget.skin);
+      _resolvedSkin = GamepadSkinData.resolve(
+        widget.skin,
+        AppColorTheme.of(context),
+      );
     }
   }
 
@@ -247,6 +260,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Opacity(
       opacity: widget.opacity,
       child: LayoutBuilder(
@@ -342,7 +356,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 childSize: Size(aSize, aSize),
                 child: _CircleButton(
                   label: 'A',
-                  color: YageColors.accentAlt,
+                  color: colors.accentAlt,
                   onChanged: (pressed) => _updateKey(GBAKey.a, pressed),
                   size: aSize,
                   editMode: widget.editMode,
@@ -358,7 +372,7 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
                 childSize: Size(bSize, bSize),
                 child: _CircleButton(
                   label: 'B',
-                  color: YageColors.accentYellow,
+                  color: colors.accentYellow,
                   onChanged: (pressed) => _updateKey(GBAKey.b, pressed),
                   size: bSize,
                   editMode: widget.editMode,
@@ -571,6 +585,7 @@ class _EditableButtonWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return GestureDetector(
       onTap: onTap,
       onPanUpdate: (details) => onDrag(details.delta),
@@ -583,7 +598,7 @@ class _EditableButtonWrapper extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: YageColors.accent,
+                    color: colors.accent,
                     width: 3,
                   ),
                   borderRadius: BorderRadius.circular(12),
@@ -606,7 +621,7 @@ class _EditableButtonWrapper extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: YageColors.primary,
+                    color: colors.primary,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),
@@ -624,7 +639,7 @@ class _EditableButtonWrapper extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: YageColors.error,
+                    color: colors.error,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),

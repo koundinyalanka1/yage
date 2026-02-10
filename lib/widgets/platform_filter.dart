@@ -17,6 +17,7 @@ class PlatformFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -25,28 +26,28 @@ class PlatformFilter extends StatelessWidget {
           _FilterChip(
             label: 'All',
             isSelected: selectedPlatform == null,
-            color: YageColors.primary,
+            color: colors.primary,
             onTap: () => onChanged(null),
           ),
           const SizedBox(width: 8),
           _FilterChip(
             label: 'GBA',
             isSelected: selectedPlatform == GamePlatform.gba,
-            color: YageColors.gbaColor,
+            color: colors.gbaColor,
             onTap: () => onChanged(GamePlatform.gba),
           ),
           const SizedBox(width: 8),
           _FilterChip(
             label: 'GBC',
             isSelected: selectedPlatform == GamePlatform.gbc,
-            color: YageColors.gbcColor,
+            color: colors.gbcColor,
             onTap: () => onChanged(GamePlatform.gbc),
           ),
           const SizedBox(width: 8),
           _FilterChip(
             label: 'GB',
             isSelected: selectedPlatform == GamePlatform.gb,
-            color: YageColors.gbColor,
+            color: colors.gbColor,
             onTap: () => onChanged(GamePlatform.gb),
           ),
         ],
@@ -70,6 +71,7 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return TvFocusable(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -83,10 +85,10 @@ class _FilterChip extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: isSelected ? color : YageColors.surface,
+              color: isSelected ? color : colors.surface,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: isSelected ? color : YageColors.surfaceLight,
+                color: isSelected ? color : colors.surfaceLight,
                 width: 2,
               ),
               boxShadow: isSelected
@@ -105,8 +107,8 @@ class _FilterChip extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 color: isSelected 
-                    ? YageColors.backgroundDark 
-                    : YageColors.textSecondary,
+                    ? colors.backgroundDark 
+                    : colors.textSecondary,
               ),
             ),
           ),

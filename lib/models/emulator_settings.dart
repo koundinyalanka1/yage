@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'game_frame.dart';
 import 'gamepad_layout.dart';
 import 'gamepad_skin.dart';
 
@@ -27,7 +26,6 @@ class EmulatorSettings {
   final bool useJoystick; // true = joystick, false = d-pad
   final bool enableExternalGamepad; // physical controller support
   final GamepadSkinType gamepadSkin; // visual theme for touch controls
-  final GameFrameType gameFrame; // decorative console shell overlay
   final String selectedTheme; // theme id string
   final bool enableRewind; // hold-to-rewind feature
   final int rewindBufferSeconds; // seconds of rewind history (1-10)
@@ -57,7 +55,6 @@ class EmulatorSettings {
     this.useJoystick = false,
     this.enableExternalGamepad = true,
     this.gamepadSkin = GamepadSkinType.classic,
-    this.gameFrame = GameFrameType.none,
     this.selectedTheme = 'neon_night',
     this.enableRewind = false,
     this.rewindBufferSeconds = 3,
@@ -89,7 +86,6 @@ class EmulatorSettings {
     bool? useJoystick,
     bool? enableExternalGamepad,
     GamepadSkinType? gamepadSkin,
-    GameFrameType? gameFrame,
     String? selectedTheme,
     bool? enableRewind,
     int? rewindBufferSeconds,
@@ -120,7 +116,6 @@ class EmulatorSettings {
       useJoystick: useJoystick ?? this.useJoystick,
       enableExternalGamepad: enableExternalGamepad ?? this.enableExternalGamepad,
       gamepadSkin: gamepadSkin ?? this.gamepadSkin,
-      gameFrame: gameFrame ?? this.gameFrame,
       selectedTheme: selectedTheme ?? this.selectedTheme,
       enableRewind: enableRewind ?? this.enableRewind,
       rewindBufferSeconds: rewindBufferSeconds ?? this.rewindBufferSeconds,
@@ -154,7 +149,6 @@ class EmulatorSettings {
       'useJoystick': useJoystick,
       'enableExternalGamepad': enableExternalGamepad,
       'gamepadSkin': gamepadSkin.index,
-      'gameFrame': gameFrame.index,
       'selectedTheme': selectedTheme,
       'enableRewind': enableRewind,
       'rewindBufferSeconds': rewindBufferSeconds,
@@ -194,9 +188,6 @@ class EmulatorSettings {
       gamepadSkin: GamepadSkinType.values.elementAtOrNull(
         json['gamepadSkin'] as int? ?? 0,
       ) ?? GamepadSkinType.classic,
-      gameFrame: GameFrameType.values.elementAtOrNull(
-        json['gameFrame'] as int? ?? 0,
-      ) ?? GameFrameType.none,
       selectedTheme: json['selectedTheme'] as String? ?? 'neon_night',
       enableRewind: json['enableRewind'] as bool? ?? false,
       rewindBufferSeconds: json['rewindBufferSeconds'] as int? ?? 3,
@@ -232,7 +223,6 @@ class EmulatorSettings {
           useJoystick == other.useJoystick &&
           enableExternalGamepad == other.enableExternalGamepad &&
           gamepadSkin == other.gamepadSkin &&
-          gameFrame == other.gameFrame &&
           selectedTheme == other.selectedTheme &&
           enableRewind == other.enableRewind &&
           rewindBufferSeconds == other.rewindBufferSeconds &&

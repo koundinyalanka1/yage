@@ -124,8 +124,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Scaffold(
-      backgroundColor: YageColors.backgroundDark,
+      backgroundColor: colors.backgroundDark,
       body: Center(
         child: FadeTransition(
           opacity: _fadeAnimation,
@@ -140,12 +141,12 @@ class _SplashScreenState extends State<SplashScreen>
                   borderRadius: BorderRadius.circular(32),
                   boxShadow: [
                     BoxShadow(
-                      color: YageColors.primary.withAlpha(120),
+                      color: colors.primary.withAlpha(120),
                       blurRadius: 40,
                       spreadRadius: 4,
                     ),
                     BoxShadow(
-                      color: YageColors.accent.withAlpha(60),
+                      color: colors.accent.withAlpha(60),
                       blurRadius: 60,
                       spreadRadius: 2,
                     ),
@@ -170,7 +171,7 @@ class _SplashScreenState extends State<SplashScreen>
                 style: TextStyle(
                   fontSize: 34,
                   fontWeight: FontWeight.bold,
-                  color: YageColors.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: 4,
                 ),
               ),
@@ -182,7 +183,7 @@ class _SplashScreenState extends State<SplashScreen>
                 'Classic GB · GBC · GBA Games',
                 style: TextStyle(
                   fontSize: 13,
-                  color: YageColors.textMuted,
+                  color: colors.textMuted,
                   letterSpacing: 1.5,
                 ),
               ),
@@ -195,7 +196,7 @@ class _SplashScreenState extends State<SplashScreen>
                 height: 28,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  color: YageColors.primary.withAlpha(180),
+                  color: colors.primary.withAlpha(180),
                 ),
               ),
             ],

@@ -21,11 +21,11 @@ class GameCard extends StatelessWidget {
     this.isSelected = false,
   });
 
-  Color get _platformColor => switch (game.platform) {
-    GamePlatform.gb => YageColors.gbColor,
-    GamePlatform.gbc => YageColors.gbcColor,
-    GamePlatform.gba => YageColors.gbaColor,
-    GamePlatform.unknown => YageColors.textMuted,
+  Color _platformColor(AppColorTheme colors) => switch (game.platform) {
+    GamePlatform.gb => colors.gbColor,
+    GamePlatform.gbc => colors.gbcColor,
+    GamePlatform.gba => colors.gbaColor,
+    GamePlatform.unknown => colors.textMuted,
   };
 
   IconData get _platformIcon => switch (game.platform) {
@@ -35,14 +35,15 @@ class GameCard extends StatelessWidget {
     GamePlatform.unknown => Icons.help_outline,
   };
 
-  Widget _buildPlaceholder() {
+  Widget _buildPlaceholder(AppColorTheme colors) {
+    final pColor = _platformColor(colors);
     return Stack(
       children: [
         // Decorative pattern
         Positioned.fill(
           child: CustomPaint(
             painter: _GridPatternPainter(
-              color: _platformColor.withAlpha(26),
+              color: pColor.withAlpha(26),
             ),
           ),
         ),
@@ -51,7 +52,7 @@ class GameCard extends StatelessWidget {
           child: Icon(
             _platformIcon,
             size: 48,
-            color: _platformColor.withAlpha(204),
+            color: pColor.withAlpha(204),
           ),
         ),
       ],
@@ -60,12 +61,14 @@ class GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
+    final pColor = _platformColor(colors);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: isSelected
-            ? Border.all(color: YageColors.accent, width: 2)
+            ? Border.all(color: colors.accent, width: 2)
             : null,
       ),
       child: Material(
@@ -80,14 +83,14 @@ class GameCard extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  YageColors.surface,
-                  YageColors.surface.withAlpha(204),
+                  colors.surface,
+                  colors.surface.withAlpha(204),
                 ],
               ),
               borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: _platformColor.withAlpha(26),
+                color: pColor.withAlpha(26),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -105,8 +108,8 @@ class GameCard extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          _platformColor.withAlpha(77),
-                          _platformColor.withAlpha(26),
+                          pColor.withAlpha(77),
+                          pColor.withAlpha(26),
                         ],
                       ),
                       borderRadius: const BorderRadius.vertical(
@@ -125,12 +128,12 @@ class GameCard extends StatelessWidget {
                               child: Image.file(
                                 File(game.coverPath!),
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+                                errorBuilder: (context, error, stackTrace) => _buildPlaceholder(colors),
                               ),
                             ),
                           )
                         else
-                          _buildPlaceholder(),
+                          _buildPlaceholder(colors),
                         
                         // Platform badge
                         Positioned(
@@ -142,7 +145,7 @@ class GameCard extends StatelessWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: _platformColor,
+                              color: pColor,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -150,7 +153,7 @@ class GameCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: YageColors.backgroundDark,
+                                color: colors.backgroundDark,
                               ),
                             ),
                           ),
@@ -164,7 +167,7 @@ class GameCard extends StatelessWidget {
                             child: Icon(
                               Icons.favorite,
                               size: 20,
-                              color: YageColors.accentAlt,
+                              color: colors.accentAlt,
                             ),
                           ),
                       ],
@@ -190,7 +193,7 @@ class GameCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
-                                    color: YageColors.textPrimary,
+                                    color: colors.textPrimary,
                                   ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -206,7 +209,7 @@ class GameCard extends StatelessWidget {
                                     game.formattedSize,
                                     style: TextStyle(
                                       fontSize: 10,
-                                      color: YageColors.textMuted,
+                                      color: colors.textMuted,
                                     ),
                                   ),
                                   if (game.totalPlayTimeSeconds > 0) ...[
@@ -214,20 +217,20 @@ class GameCard extends StatelessWidget {
                                       '  •  ',
                                       style: TextStyle(
                                         fontSize: 10,
-                                        color: YageColors.textMuted,
+                                        color: colors.textMuted,
                                       ),
                                     ),
                                     Icon(
                                       Icons.timer_outlined,
                                       size: 11,
-                                      color: YageColors.textMuted,
+                                      color: colors.textMuted,
                                     ),
                                     const SizedBox(width: 2),
                                     Text(
                                       game.formattedPlayTime,
                                       style: TextStyle(
                                         fontSize: 10,
-                                        color: YageColors.textMuted,
+                                        color: colors.textMuted,
                                       ),
                                     ),
                                   ],
@@ -246,7 +249,7 @@ class GameCard extends StatelessWidget {
                               child: Icon(
                                 Icons.more_vert,
                                 size: 18,
-                                color: YageColors.textMuted.withAlpha(140),
+                                color: colors.textMuted.withAlpha(140),
                               ),
                             ),
                           ),
@@ -313,14 +316,14 @@ class GameListTile extends StatelessWidget {
     this.onLongPress,
   });
 
-  Color get _platformColor => switch (game.platform) {
-    GamePlatform.gb => YageColors.gbColor,
-    GamePlatform.gbc => YageColors.gbcColor,
-    GamePlatform.gba => YageColors.gbaColor,
-    GamePlatform.unknown => YageColors.textMuted,
+  Color _platformColor(AppColorTheme colors) => switch (game.platform) {
+    GamePlatform.gb => colors.gbColor,
+    GamePlatform.gbc => colors.gbcColor,
+    GamePlatform.gba => colors.gbaColor,
+    GamePlatform.unknown => colors.textMuted,
   };
 
-  Widget _buildLeading() {
+  Widget _buildLeading(AppColorTheme colors) {
     if (game.coverPath != null && File(game.coverPath!).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
@@ -329,22 +332,23 @@ class GameListTile extends StatelessWidget {
           width: 48,
           height: 48,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _buildPlatformBadge(),
+          errorBuilder: (context, error, stackTrace) => _buildPlatformBadge(colors),
         ),
       );
     }
-    return _buildPlatformBadge();
+    return _buildPlatformBadge(colors);
   }
 
-  Widget _buildPlatformBadge() {
+  Widget _buildPlatformBadge(AppColorTheme colors) {
+    final pColor = _platformColor(colors);
     return Container(
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: _platformColor.withAlpha(51),
+        color: pColor.withAlpha(51),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: _platformColor.withAlpha(128),
+          color: pColor.withAlpha(128),
           width: 1,
         ),
       ),
@@ -354,7 +358,7 @@ class GameListTile extends StatelessWidget {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: _platformColor,
+            color: pColor,
           ),
         ),
       ),
@@ -363,16 +367,17 @@ class GameListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return ListTile(
       onTap: onTap,
       onLongPress: onLongPress,
-      leading: _buildLeading(),
+      leading: _buildLeading(colors),
       title: Text(
         game.name,
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: YageColors.textPrimary,
+          color: colors.textPrimary,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -383,7 +388,7 @@ class GameListTile extends StatelessWidget {
             : '${game.platformName} • ${game.formattedSize}',
         style: TextStyle(
           fontSize: 12,
-          color: YageColors.textMuted,
+          color: colors.textMuted,
         ),
       ),
       trailing: Row(
@@ -395,7 +400,7 @@ class GameListTile extends StatelessWidget {
               child: Icon(
                 Icons.favorite,
                 size: 18,
-                color: YageColors.accentAlt,
+                color: colors.accentAlt,
               ),
             ),
           if (onLongPress != null)
@@ -407,18 +412,17 @@ class GameListTile extends StatelessWidget {
                 child: Icon(
                   Icons.more_vert,
                   size: 20,
-                  color: YageColors.textMuted,
+                  color: colors.textMuted,
                 ),
               ),
             )
           else
             Icon(
               Icons.chevron_right,
-              color: YageColors.textMuted,
+              color: colors.textMuted,
             ),
         ],
       ),
     );
   }
 }
-

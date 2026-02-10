@@ -80,6 +80,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('RetroAchievements'),
@@ -103,14 +104,14 @@ class _RALoginScreenState extends State<RALoginScreen> {
                   height: 72,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [YageColors.primary, YageColors.accent],
+                      colors: [colors.primary, colors.accent],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: YageColors.primary.withAlpha(80),
+                        color: colors.primary.withAlpha(80),
                         blurRadius: 16,
                         spreadRadius: 2,
                       ),
@@ -132,7 +133,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: YageColors.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -142,7 +143,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
-                  color: YageColors.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.4,
                 ),
               ),
@@ -158,7 +159,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                   hintText: 'Your RetroAchievements username',
                   prefixIcon: Icon(
                     Icons.person_outline,
-                    color: YageColors.accent,
+                    color: colors.accent,
                   ),
                 ),
                 validator: (value) {
@@ -182,14 +183,14 @@ class _RALoginScreenState extends State<RALoginScreen> {
                   hintText: 'Your RetroAchievements password',
                   prefixIcon: Icon(
                     Icons.lock_outline,
-                    color: YageColors.accent,
+                    color: colors.accent,
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
                           ? Icons.visibility_off
                           : Icons.visibility,
-                      color: YageColors.textMuted,
+                      color: colors.textMuted,
                     ),
                     onPressed: () {
                       setState(() => _obscurePassword = !_obscurePassword);
@@ -209,10 +210,10 @@ class _RALoginScreenState extends State<RALoginScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: YageColors.backgroundLight,
+                  color: colors.backgroundLight,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: YageColors.surfaceLight,
+                    color: colors.surfaceLight,
                     width: 1,
                   ),
                 ),
@@ -222,7 +223,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                     Icon(
                       Icons.info_outline,
                       size: 18,
-                      color: YageColors.accent,
+                      color: colors.accent,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -232,7 +233,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                         'and never sent to any third party.',
                         style: TextStyle(
                           fontSize: 12,
-                          color: YageColors.textSecondary,
+                          color: colors.textSecondary,
                           height: 1.5,
                         ),
                       ),
@@ -247,10 +248,10 @@ class _RALoginScreenState extends State<RALoginScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: YageColors.error.withAlpha(25),
+                    color: colors.error.withAlpha(25),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: YageColors.error.withAlpha(80),
+                      color: colors.error.withAlpha(80),
                       width: 1,
                     ),
                   ),
@@ -260,7 +261,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                       Icon(
                         Icons.error_outline,
                         size: 20,
-                        color: YageColors.error,
+                        color: colors.error,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -268,7 +269,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                           _errorMessage!,
                           style: TextStyle(
                             fontSize: 13,
-                            color: YageColors.error,
+                            color: colors.error,
                             height: 1.4,
                           ),
                         ),
@@ -285,9 +286,9 @@ class _RALoginScreenState extends State<RALoginScreen> {
                 child: ElevatedButton(
                   onPressed: _isSubmitting ? null : _submit,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: YageColors.primary,
+                    backgroundColor: colors.primary,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: YageColors.primary.withAlpha(100),
+                    disabledBackgroundColor: colors.primary.withAlpha(100),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -298,7 +299,7 @@ class _RALoginScreenState extends State<RALoginScreen> {
                           height: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
-                            color: YageColors.textPrimary,
+                            color: colors.textPrimary,
                           ),
                         )
                       : const Text(

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/emulator_settings.dart';
-import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
 import '../models/gamepad_skin.dart';
 
@@ -219,11 +218,6 @@ class SettingsService extends ChangeNotifier {
   /// Set gamepad visual skin
   Future<void> setGamepadSkin(GamepadSkinType skin) async {
     await update((s) => s.copyWith(gamepadSkin: skin));
-  }
-
-  /// Set game frame overlay
-  Future<void> setGameFrame(GameFrameType frame) async {
-    await update((s) => s.copyWith(gameFrame: frame));
   }
 
   /// Toggle rewind feature

@@ -9,7 +9,6 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../core/mgba_bindings.dart';
 import '../core/rcheevos_bindings.dart';
 import '../models/game_rom.dart';
-import '../models/game_frame.dart';
 import '../models/gamepad_layout.dart';
 import '../models/ra_achievement.dart';
 import '../services/emulator_service.dart';
@@ -23,7 +22,6 @@ import '../services/gamepad_input.dart';
 import '../utils/tv_detector.dart';
 import '../widgets/game_display.dart';
 import 'achievements_screen.dart';
-import '../widgets/game_frame_overlay.dart';
 import '../widgets/tv_focusable.dart';
 import '../widgets/virtual_gamepad.dart';
 import '../utils/theme.dart';
@@ -225,6 +223,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// Handle events from the native rcheevos client.
   void _onRcheevosEvent(RcEvent event) {
     if (!mounted) return;
+    final colors = AppColorTheme.of(context);
 
     switch (event.type) {
       case RcEventType.achievementTriggered:
@@ -244,7 +243,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ? Colors.teal
               : (_rcheevosClientRef?.isHardcoreEnabled ?? false)
                   ? Colors.amber
-                  : YageColors.accent,
+                  : colors.accent,
           duration: const Duration(seconds: 5),
         );
         break;
@@ -357,8 +356,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final emulator = context.read<EmulatorService>();
-    
+    if (!mounted || _emulatorRef == null) return;
+    final emulator = _emulatorRef!;
+
     if (state == AppLifecycleState.paused) {
       emulator.pause();
       _flushPlayTime();
@@ -800,6 +800,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<bool> _showExitDialog() async {
+    final colors = AppColorTheme.of(context);
     final emulator = context.read<EmulatorService>();
     final wasRunning = emulator.state == EmulatorState.running;
     
@@ -812,25 +813,25 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: YageColors.surface,
+        backgroundColor: colors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: YageColors.primary.withAlpha(77),
+            color: colors.primary.withAlpha(77),
             width: 2,
           ),
         ),
         title: Text(
           'Exit Game?',
           style: TextStyle(
-            color: YageColors.textPrimary,
+            color: colors.textPrimary,
             fontWeight: FontWeight.bold,
           ),
         ),
         content: Text(
           'Your battery save data will be preserved.',
           style: TextStyle(
-            color: YageColors.textSecondary,
+            color: colors.textSecondary,
           ),
         ),
         actions: [
@@ -838,18 +839,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
               'Cancel',
-              style: TextStyle(color: YageColors.textMuted),
+              style: TextStyle(color: colors.textMuted),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: TextButton.styleFrom(
-              backgroundColor: YageColors.error.withAlpha(51),
+              backgroundColor: colors.error.withAlpha(51),
             ),
             child: Text(
               'Exit',
               style: TextStyle(
-                color: YageColors.error,
+                color: colors.error,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -902,6 +903,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final emulator = context.watch<EmulatorService>();
     final settings = context.watch<SettingsService>().settings;
     
@@ -924,7 +926,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         autofocus: true,
         onKeyEvent: _onKeyEvent,
         child: Scaffold(
-          backgroundColor: YageColors.backgroundDark,
+          backgroundColor: colors.backgroundDark,
           body: OrientationBuilder(
         builder: (context, orientation) {
           _isLandscape = orientation == Orientation.landscape;
@@ -938,8 +940,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     center: Alignment.center,
                     radius: 1.5,
                     colors: [
-                      YageColors.backgroundLight,
-                      YageColors.backgroundDark,
+                      colors.backgroundLight,
+                      colors.backgroundDark,
                     ],
                   ),
                 ),
@@ -1000,7 +1002,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: YageColors.warning.withAlpha(200),
+                      color: colors.warning.withAlpha(200),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -1008,7 +1010,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: YageColors.backgroundDark,
+                        color: colors.backgroundDark,
                       ),
                     ),
                   ),
@@ -1035,21 +1037,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
                     if (isLoading) {
                       label = 'Checking...';
-                      bgColor = YageColors.textMuted.withAlpha(180);
+                      bgColor = colors.textMuted.withAlpha(180);
                       icon = Icons.sync;
                     } else if (!hasAchievements && session != null) {
                       label = 'No achievements';
-                      bgColor = YageColors.textMuted.withAlpha(180);
+                      bgColor = colors.textMuted.withAlpha(180);
                       icon = Icons.block;
                     } else if (hasAchievements && gameData != null) {
                       final earned = gameData.achievements.where((a) => a.isEarned).length;
                       final total = gameData.achievements.length;
                       label = '$earned/$total';
-                      bgColor = YageColors.accent.withAlpha(200);
+                      bgColor = colors.accent.withAlpha(200);
                       icon = Icons.emoji_events;
                     } else if (hasAchievements) {
                       label = 'RA';
-                      bgColor = YageColors.accent.withAlpha(200);
+                      bgColor = colors.accent.withAlpha(200);
                       icon = Icons.emoji_events;
                     } else {
                       return const SizedBox.shrink();
@@ -1360,24 +1362,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Proportional overlap (5% of screen height)
     final overlapAmount = screenSize.height * 0.05;
     
-    final gameRectPortrait = Rect.fromLTWH(
-      (screenSize.width - gameWidth) / 2,
-      gameTop,
-      gameWidth,
-      gameHeight,
-    );
-
     return Stack(
       children: [
-        // Console frame overlay (behind game display)
-        if (settings.gameFrame != GameFrameType.none)
-          Positioned.fill(
-            child: GameFrameOverlay(
-              frame: settings.gameFrame,
-              gameRect: gameRectPortrait,
-            ),
-          ),
-
         // Game display at top - FULL WIDTH, NO PADDING
         Positioned(
           top: gameTop,
@@ -1441,24 +1427,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       gameHeight = gameWidth / aspectRatio;
     }
     
-    final gameRectLandscape = Rect.fromLTWH(
-      (screenSize.width - gameWidth) / 2,
-      (screenSize.height - gameHeight) / 2,
-      gameWidth,
-      gameHeight,
-    );
-
     return Stack(
       children: [
-        // Console frame overlay (behind game display)
-        if (settings.gameFrame != GameFrameType.none)
-          Positioned.fill(
-            child: GameFrameOverlay(
-              frame: settings.gameFrame,
-              gameRect: gameRectLandscape,
-            ),
-          ),
-
         // Game display - centered and FULLY MAXIMIZED
         Center(
           child: SizedBox(
@@ -1564,22 +1534,23 @@ class _MenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: YageColors.surface.withAlpha(204),
+          color: colors.surface.withAlpha(204),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: YageColors.surfaceLight,
+            color: colors.surfaceLight,
             width: 1,
           ),
         ),
         child: Icon(
           Icons.menu,
-          color: YageColors.textSecondary,
+          color: colors.textSecondary,
           size: 24,
         ),
       ),
@@ -1595,22 +1566,23 @@ class _RotationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: YageColors.surface.withAlpha(204),
+          color: colors.surface.withAlpha(204),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: YageColors.surfaceLight,
+            color: colors.surfaceLight,
             width: 1,
           ),
         ),
         child: Icon(
           Icons.screen_rotation,
-          color: YageColors.textSecondary,
+          color: colors.textSecondary,
           size: 22,
         ),
       ),
@@ -1631,18 +1603,19 @@ class _LayoutEditorToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: YageColors.surface.withAlpha(240),
+        color: colors.surface.withAlpha(240),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: YageColors.accent,
+          color: colors.accent,
           width: 2,
         ),
         boxShadow: [
           BoxShadow(
-            color: YageColors.accent.withAlpha(50),
+            color: colors.accent.withAlpha(50),
             blurRadius: 20,
             spreadRadius: 2,
           ),
@@ -1654,7 +1627,7 @@ class _LayoutEditorToolbar extends StatelessWidget {
           // Header
           Row(
             children: [
-              Icon(Icons.tune, color: YageColors.accent, size: 20),
+              Icon(Icons.tune, color: colors.accent, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1662,7 +1635,7 @@ class _LayoutEditorToolbar extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: YageColors.accent,
+                    color: colors.accent,
                     letterSpacing: 2,
                   ),
                 ),
@@ -1670,7 +1643,7 @@ class _LayoutEditorToolbar extends StatelessWidget {
               // Close button
               GestureDetector(
                 onTap: onCancel,
-                child: Icon(Icons.close, color: YageColors.textMuted, size: 20),
+                child: Icon(Icons.close, color: colors.textMuted, size: 20),
               ),
             ],
           ),
@@ -1681,7 +1654,7 @@ class _LayoutEditorToolbar extends StatelessWidget {
             'Drag buttons to move • Tap to select • Use +/- to resize',
             style: TextStyle(
               fontSize: 11,
-              color: YageColors.textMuted,
+              color: colors.textMuted,
             ),
             textAlign: TextAlign.center,
           ),
@@ -1697,21 +1670,21 @@ class _LayoutEditorToolbar extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: YageColors.backgroundLight,
+                      color: colors.backgroundLight,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: YageColors.surfaceLight),
+                      border: Border.all(color: colors.surfaceLight),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.restart_alt, color: YageColors.textSecondary, size: 18),
+                        Icon(Icons.restart_alt, color: colors.textSecondary, size: 18),
                         SizedBox(width: 6),
                         Text(
                           'Reset',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: YageColors.textSecondary,
+                            color: colors.textSecondary,
                           ),
                         ),
                       ],
@@ -1728,20 +1701,20 @@ class _LayoutEditorToolbar extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: YageColors.primary,
+                      color: colors.primary,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.check, color: YageColors.textPrimary, size: 18),
+                        Icon(Icons.check, color: colors.textPrimary, size: 18),
                         SizedBox(width: 6),
                         Text(
                           'Save',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: YageColors.textPrimary,
+                            color: colors.textPrimary,
                           ),
                         ),
                       ],
@@ -1802,6 +1775,7 @@ class _InGameMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return FocusTraversalGroup(
       policy: OrderedTraversalPolicy(),
       child: GestureDetector(
@@ -1816,15 +1790,15 @@ class _InGameMenu extends StatelessWidget {
               margin: const EdgeInsets.all(20),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: YageColors.surface,
+                color: colors.surface,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: YageColors.primary.withAlpha(77),
+                  color: colors.primary.withAlpha(77),
                   width: 2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: YageColors.primary.withAlpha(51),
+                    color: colors.primary.withAlpha(51),
                     blurRadius: 30,
                     spreadRadius: 5,
                   ),
@@ -1840,7 +1814,7 @@ class _InGameMenu extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: YageColors.accent,
+                        color: colors.accent,
                         letterSpacing: 4,
                       ),
                     ),
@@ -1849,7 +1823,7 @@ class _InGameMenu extends StatelessWidget {
                       game.name,
                       style: TextStyle(
                         fontSize: 14,
-                        color: YageColors.textSecondary,
+                        color: colors.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1857,7 +1831,7 @@ class _InGameMenu extends StatelessWidget {
 
                     // Achievement progress section
                     if (raService != null && raService!.isLoggedIn)
-                      _buildAchievementSection(),
+                      _buildAchievementSection(context),
 
                     // View Achievements button
                     if (raService != null &&
@@ -1982,7 +1956,8 @@ class _InGameMenu extends StatelessWidget {
     );
   }
 
-  Widget _buildAchievementSection() {
+  Widget _buildAchievementSection(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final session = raService?.activeSession;
     final gameData = raService?.gameData;
     final isResolving = raService?.isResolvingGame ?? false;
@@ -1999,13 +1974,13 @@ class _InGameMenu extends StatelessWidget {
               width: 14, height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: YageColors.textMuted,
+                color: colors.textMuted,
               ),
             ),
             const SizedBox(width: 8),
             Text(
               'Checking achievements...',
-              style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+              style: TextStyle(fontSize: 12, color: colors.textMuted),
             ),
           ],
         ),
@@ -2019,20 +1994,20 @@ class _InGameMenu extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: YageColors.backgroundLight,
+            color: colors.backgroundLight,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: YageColors.textMuted.withAlpha(60)),
+            border: Border.all(color: colors.textMuted.withAlpha(60)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.block, size: 14, color: YageColors.textMuted),
+              Icon(Icons.block, size: 14, color: colors.textMuted),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   'No RetroAchievements for this ROM',
-                  style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+                  style: TextStyle(fontSize: 11, color: colors.textMuted),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -2059,7 +2034,7 @@ class _InGameMenu extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               'Loading achievements...',
-              style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+              style: TextStyle(fontSize: 12, color: colors.textMuted),
             ),
           ],
         ),
@@ -2080,12 +2055,12 @@ class _InGameMenu extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: YageColors.backgroundLight,
+          color: colors.backgroundLight,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isHardcore
                 ? Colors.redAccent.withAlpha(80)
-                : YageColors.accent.withAlpha(80),
+                : colors.accent.withAlpha(80),
           ),
         ),
         child: Column(
@@ -2095,14 +2070,14 @@ class _InGameMenu extends StatelessWidget {
               children: [
                 Icon(Icons.emoji_events,
                     size: 16,
-                    color: isHardcore ? Colors.amber : YageColors.accent),
+                    color: isHardcore ? Colors.amber : colors.accent),
                 const SizedBox(width: 6),
                 Text(
                   'Achievements',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: YageColors.textPrimary,
+                    color: colors.textPrimary,
                   ),
                 ),
                 if (isHardcore) ...[
@@ -2131,7 +2106,7 @@ class _InGameMenu extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: isHardcore ? Colors.amber : YageColors.accent,
+                    color: isHardcore ? Colors.amber : colors.accent,
                   ),
                 ),
               ],
@@ -2143,8 +2118,8 @@ class _InGameMenu extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 6,
-                backgroundColor: YageColors.backgroundDark,
-                color: isHardcore ? Colors.amber : YageColors.accent,
+                backgroundColor: colors.backgroundDark,
+                color: isHardcore ? Colors.amber : colors.accent,
               ),
             ),
             const SizedBox(height: 6),
@@ -2154,7 +2129,7 @@ class _InGameMenu extends StatelessWidget {
               children: [
                 Text(
                   '$earnedPts / $totalPts points',
-                  style: TextStyle(fontSize: 11, color: YageColors.textSecondary),
+                  style: TextStyle(fontSize: 11, color: colors.textSecondary),
                 ),
                 if (total > 0)
                   Text(
@@ -2162,7 +2137,7 @@ class _InGameMenu extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: YageColors.textSecondary,
+                      color: colors.textSecondary,
                     ),
                   ),
               ],
@@ -2271,12 +2246,13 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return AlertDialog(
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: YageColors.primary.withAlpha(77),
+          color: colors.primary.withAlpha(77),
           width: 2,
         ),
       ),
@@ -2285,14 +2261,14 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
         children: [
           Icon(
             widget.isSave ? Icons.save : Icons.upload_file,
-            color: YageColors.accent,
+            color: colors.accent,
             size: 22,
           ),
           const SizedBox(width: 10),
           Text(
             widget.isSave ? 'Save State' : 'Load State',
             style: TextStyle(
-              color: YageColors.textPrimary,
+              color: colors.textPrimary,
               fontWeight: FontWeight.bold,
               fontSize: 18,
             ),
@@ -2327,7 +2303,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
           onPressed: () => Navigator.pop(context),
           child: Text(
             'Cancel',
-            style: TextStyle(color: YageColors.textMuted),
+            style: TextStyle(color: colors.textMuted),
           ),
         ),
       ],
@@ -2335,6 +2311,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
   }
 
   Widget _buildSlot(int index) {
+    final colors = AppColorTheme.of(context);
     final hasState = _hasState[index] == true;
     final hasScreenshot = _screenshotFiles.containsKey(index);
     final timestamp = _timestamps[index];
@@ -2355,12 +2332,12 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
             opacity: isDisabled ? 0.4 : 1.0,
             child: Container(
               decoration: BoxDecoration(
-                color: YageColors.backgroundLight,
+                color: colors.backgroundLight,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: hasState
-                      ? YageColors.primary.withAlpha(120)
-                      : YageColors.surfaceLight,
+                      ? colors.primary.withAlpha(120)
+                      : colors.surfaceLight,
                   width: hasState ? 1.5 : 1,
                 ),
               ),
@@ -2399,7 +2376,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
-                              color: YageColors.textPrimary,
+                              color: colors.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 3),
@@ -2410,8 +2387,8 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
                             style: TextStyle(
                               fontSize: 11,
                               color: hasState
-                                  ? YageColors.textSecondary
-                                  : YageColors.textMuted,
+                                  ? colors.textSecondary
+                                  : colors.textMuted,
                             ),
                           ),
                         ],
@@ -2424,7 +2401,7 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
                       padding: const EdgeInsets.only(right: 12),
                       child: Icon(
                         Icons.chevron_right,
-                        color: YageColors.textMuted,
+                        color: colors.textMuted,
                         size: 20,
                       ),
                     ),
@@ -2439,12 +2416,13 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
   }
 
   Widget _placeholderWidget(bool hasState) {
+    final colors = AppColorTheme.of(context);
     return Container(
-      color: YageColors.backgroundDark,
+      color: colors.backgroundDark,
       child: Center(
         child: Icon(
           hasState ? Icons.image_outlined : Icons.add_photo_alternate_outlined,
-          color: YageColors.textMuted.withAlpha(60),
+          color: colors.textMuted.withAlpha(60),
           size: 24,
         ),
       ),
@@ -2484,17 +2462,18 @@ class _MenuActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final bgColor = isPrimary 
-        ? YageColors.primary 
+        ? colors.primary 
         : isDestructive 
-            ? YageColors.error.withAlpha(51) 
-            : YageColors.backgroundLight;
+            ? colors.error.withAlpha(51) 
+            : colors.backgroundLight;
     
     final fgColor = isPrimary 
-        ? YageColors.textPrimary 
+        ? colors.textPrimary 
         : isDestructive 
-            ? YageColors.error 
-            : YageColors.textSecondary;
+            ? colors.error 
+            : colors.textSecondary;
 
     return TvFocusable(
       onTap: onTap,
@@ -2507,7 +2486,7 @@ class _MenuActionButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: isPrimary 
               ? null 
-              : Border.all(color: YageColors.surfaceLight, width: 1),
+              : Border.all(color: colors.surfaceLight, width: 1),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -2540,6 +2519,7 @@ class _RewindButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return GestureDetector(
       onTapDown: (_) => onHoldChanged(true),
       onTapUp: (_) => onHoldChanged(false),
@@ -2549,17 +2529,17 @@ class _RewindButton extends StatelessWidget {
         height: 44,
         decoration: BoxDecoration(
           color: isActive 
-              ? YageColors.accent.withAlpha(230)
-              : YageColors.surface.withAlpha(204),
+              ? colors.accent.withAlpha(230)
+              : colors.surface.withAlpha(204),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isActive ? YageColors.accent : YageColors.surfaceLight,
+            color: isActive ? colors.accent : colors.surfaceLight,
             width: 1,
           ),
         ),
         child: Icon(
           Icons.fast_rewind,
-          color: isActive ? YageColors.backgroundDark : YageColors.textSecondary,
+          color: isActive ? colors.backgroundDark : colors.textSecondary,
           size: 22,
         ),
       ),
@@ -2580,6 +2560,7 @@ class _FastForwardButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -2587,11 +2568,11 @@ class _FastForwardButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: isActive 
-              ? YageColors.accent.withAlpha(230)
-              : YageColors.surface.withAlpha(204),
+              ? colors.accent.withAlpha(230)
+              : colors.surface.withAlpha(204),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isActive ? YageColors.accent : YageColors.surfaceLight,
+            color: isActive ? colors.accent : colors.surfaceLight,
             width: 1,
           ),
         ),
@@ -2600,7 +2581,7 @@ class _FastForwardButton extends StatelessWidget {
           children: [
             Icon(
               Icons.fast_forward,
-              color: isActive ? YageColors.backgroundDark : YageColors.textSecondary,
+              color: isActive ? colors.backgroundDark : colors.textSecondary,
               size: 20,
             ),
             if (isActive) ...[
@@ -2610,7 +2591,7 @@ class _FastForwardButton extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: YageColors.backgroundDark,
+                  color: colors.backgroundDark,
                 ),
               ),
             ],
@@ -2646,26 +2627,27 @@ class _SpeedSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: YageColors.backgroundLight,
+        color: colors.backgroundLight,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: YageColors.surfaceLight, width: 1),
+        border: Border.all(color: colors.surfaceLight, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.speed, color: YageColors.textSecondary, size: 18),
+              Icon(Icons.speed, color: colors.textSecondary, size: 18),
               const SizedBox(width: 8),
               Text(
                 'Speed',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: YageColors.textSecondary,
+                  color: colors.textSecondary,
                 ),
               ),
               const Spacer(),
@@ -2674,7 +2656,7 @@ class _SpeedSelector extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
-                  color: YageColors.accent,
+                  color: colors.accent,
                 ),
               ),
             ],
@@ -2694,12 +2676,12 @@ class _SpeedSelector extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
                       color: isSelected 
-                          ? YageColors.primary 
-                          : YageColors.surface,
+                          ? colors.primary 
+                          : colors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: isSelected 
                           ? null 
-                          : Border.all(color: YageColors.surfaceLight),
+                          : Border.all(color: colors.surfaceLight),
                     ),
                     child: Center(
                       child: Text(
@@ -2708,8 +2690,8 @@ class _SpeedSelector extends StatelessWidget {
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: isSelected 
-                              ? YageColors.textPrimary 
-                              : YageColors.textMuted,
+                              ? colors.textPrimary 
+                              : colors.textMuted,
                         ),
                       ),
                     ),
@@ -2739,6 +2721,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     // Wrap in Focus so ANY key press (gamepad, remote, keyboard) dismisses it.
     // Also wrap in GestureDetector so tapping anywhere outside the card works.
     return Focus(
@@ -2751,23 +2734,23 @@ class _ShortcutsHelpDialog extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: () => _dismiss(context),
         child: AlertDialog(
-          backgroundColor: YageColors.surface,
+          backgroundColor: colors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
             side: BorderSide(
-              color: YageColors.accent.withAlpha(100),
+              color: colors.accent.withAlpha(100),
               width: 2,
             ),
           ),
           contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           title: Row(
             children: [
-              Icon(Icons.keyboard, color: YageColors.accent, size: 22),
+              Icon(Icons.keyboard, color: colors.accent, size: 22),
               const SizedBox(width: 10),
               Text(
                 'Shortcuts',
                 style: TextStyle(
-                  color: YageColors.textPrimary,
+                  color: colors.textPrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                 ),
@@ -2781,32 +2764,32 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _sectionHeader(Icons.gamepad, 'Gamepad combos  (hold Select +)'),
-                  _shortcutRow('Select + Start', 'Pause menu'),
-                  _shortcutRow('Select + A', 'Quick save (slot 1)'),
-                  _shortcutRow('Select + B', 'Quick load (slot 1)'),
-                  _shortcutRow('Select + R1', 'Fast forward'),
-                  _shortcutRow('Select (tap)', 'GBA Select button'),
+                  _sectionHeader(context, Icons.gamepad, 'Gamepad combos  (hold Select +)'),
+                  _shortcutRow(context, 'Select + Start', 'Pause menu'),
+                  _shortcutRow(context, 'Select + A', 'Quick save (slot 1)'),
+                  _shortcutRow(context, 'Select + B', 'Quick load (slot 1)'),
+                  _shortcutRow(context, 'Select + R1', 'Fast forward'),
+                  _shortcutRow(context, 'Select (tap)', 'GBA Select button'),
                   const SizedBox(height: 14),
-                  _sectionHeader(Icons.keyboard_alt_outlined, 'Keyboard'),
-                  _shortcutRow('F1', 'Pause menu'),
-                  _shortcutRow('F5', 'Quick save (slot 1)'),
-                  _shortcutRow('F9', 'Quick load (slot 1)'),
-                  _shortcutRow('Tab', 'Fast forward'),
-                  _shortcutRow('Esc', 'Toggle pause menu'),
+                  _sectionHeader(context, Icons.keyboard_alt_outlined, 'Keyboard'),
+                  _shortcutRow(context, 'F1', 'Pause menu'),
+                  _shortcutRow(context, 'F5', 'Quick save (slot 1)'),
+                  _shortcutRow(context, 'F9', 'Quick load (slot 1)'),
+                  _shortcutRow(context, 'Tab', 'Fast forward'),
+                  _shortcutRow(context, 'Esc', 'Toggle pause menu'),
                   const SizedBox(height: 14),
-                  _sectionHeader(Icons.tv, 'TV / Remote'),
-                  _shortcutRow('Back', 'Pause menu'),
-                  _shortcutRow('L1 / R1', 'Switch tabs (home)'),
+                  _sectionHeader(context, Icons.tv, 'TV / Remote'),
+                  _shortcutRow(context, 'Back', 'Pause menu'),
+                  _shortcutRow(context, 'L1 / R1', 'Switch tabs (home)'),
                   const SizedBox(height: 8),
-                  Divider(color: YageColors.surfaceLight),
+                  Divider(color: colors.surfaceLight),
                   const SizedBox(height: 4),
                   Text(
                     'Press any button to dismiss.  '
                     'Open anytime from pause menu → Shortcuts.',
                     style: TextStyle(
                       fontSize: 11,
-                      color: YageColors.textMuted,
+                      color: colors.textMuted,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
@@ -2819,12 +2802,13 @@ class _ShortcutsHelpDialog extends StatelessWidget {
     );
   }
 
-  Widget _sectionHeader(IconData icon, String text) {
+  Widget _sectionHeader(BuildContext context, IconData icon, String text) {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Icon(icon, color: YageColors.accent.withAlpha(180), size: 16),
+          Icon(icon, color: colors.accent.withAlpha(180), size: 16),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
@@ -2832,7 +2816,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: YageColors.accent,
+                color: colors.accent,
                 letterSpacing: 0.5,
               ),
             ),
@@ -2842,7 +2826,8 @@ class _ShortcutsHelpDialog extends StatelessWidget {
     );
   }
 
-  Widget _shortcutRow(String keys, String action) {
+  Widget _shortcutRow(BuildContext context, String keys, String action) {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -2850,9 +2835,9 @@ class _ShortcutsHelpDialog extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: YageColors.backgroundLight,
+              color: colors.backgroundLight,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: YageColors.surfaceLight),
+              border: Border.all(color: colors.surfaceLight),
             ),
             child: Text(
               keys,
@@ -2860,7 +2845,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 fontFamily: 'monospace',
-                color: YageColors.textPrimary,
+                color: colors.textPrimary,
               ),
             ),
           ),
@@ -2870,7 +2855,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
               action,
               style: TextStyle(
                 fontSize: 12,
-                color: YageColors.textSecondary,
+                color: colors.textSecondary,
               ),
             ),
           ),
@@ -2891,26 +2876,27 @@ class _InputTypeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: YageColors.backgroundLight,
+        color: colors.backgroundLight,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: YageColors.surfaceLight, width: 1),
+        border: Border.all(color: colors.surfaceLight, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.gamepad, color: YageColors.textSecondary, size: 18),
+              Icon(Icons.gamepad, color: colors.textSecondary, size: 18),
               const SizedBox(width: 8),
               Text(
                 'Input Type',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: YageColors.textSecondary,
+                  color: colors.textSecondary,
                 ),
               ),
             ],
@@ -2928,12 +2914,12 @@ class _InputTypeSelector extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: !useJoystick 
-                          ? YageColors.primary 
-                          : YageColors.surface,
+                          ? colors.primary 
+                          : colors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: !useJoystick 
                           ? null 
-                          : Border.all(color: YageColors.surfaceLight),
+                          : Border.all(color: colors.surfaceLight),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -2942,8 +2928,8 @@ class _InputTypeSelector extends StatelessWidget {
                           Icons.control_camera,
                           size: 18,
                           color: !useJoystick 
-                              ? YageColors.textPrimary 
-                              : YageColors.textMuted,
+                              ? colors.textPrimary 
+                              : colors.textMuted,
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -2952,8 +2938,8 @@ class _InputTypeSelector extends StatelessWidget {
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: !useJoystick 
-                                ? YageColors.textPrimary 
-                                : YageColors.textMuted,
+                                ? colors.textPrimary 
+                                : colors.textMuted,
                           ),
                         ),
                       ],
@@ -2970,12 +2956,12 @@ class _InputTypeSelector extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: useJoystick 
-                          ? YageColors.primary 
-                          : YageColors.surface,
+                          ? colors.primary 
+                          : colors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: useJoystick 
                           ? null 
-                          : Border.all(color: YageColors.surfaceLight),
+                          : Border.all(color: colors.surfaceLight),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -2984,8 +2970,8 @@ class _InputTypeSelector extends StatelessWidget {
                           Icons.radio_button_checked,
                           size: 18,
                           color: useJoystick 
-                              ? YageColors.textPrimary 
-                              : YageColors.textMuted,
+                              ? colors.textPrimary 
+                              : colors.textMuted,
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -2994,8 +2980,8 @@ class _InputTypeSelector extends StatelessWidget {
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: useJoystick 
-                                ? YageColors.textPrimary 
-                                : YageColors.textMuted,
+                                ? colors.textPrimary 
+                                : colors.textMuted,
                           ),
                         ),
                       ],
@@ -3110,27 +3096,28 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final state = widget.linkCable.state;
     final isConnected = state == LinkCableState.connected;
 
     return AlertDialog(
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: YageColors.primary.withAlpha(77),
+          color: colors.primary.withAlpha(77),
           width: 2,
         ),
       ),
       contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       title: Row(
         children: [
-          Icon(Icons.cable, color: YageColors.accent, size: 22),
+          Icon(Icons.cable, color: colors.accent, size: 22),
           const SizedBox(width: 10),
           Text(
             'Link Cable',
             style: TextStyle(
-              color: YageColors.textPrimary,
+              color: colors.textPrimary,
               fontWeight: FontWeight.bold,
               fontSize: 18,
             ),
@@ -3181,8 +3168,8 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
                   widget.linkCable.error ?? _statusMessage ?? '',
                   style: TextStyle(
                     color: widget.linkCable.error != null
-                        ? YageColors.error
-                        : YageColors.accent,
+                        ? colors.error
+                        : colors.accent,
                     fontSize: 13,
                   ),
                 ),
@@ -3206,14 +3193,14 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
             onPressed: _isBusy ? null : _disconnect,
             child: Text(
               'Disconnect',
-              style: TextStyle(color: YageColors.error),
+              style: TextStyle(color: colors.error),
             ),
           ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(
             isConnected ? 'Done' : 'Close',
-            style: TextStyle(color: YageColors.textMuted),
+            style: TextStyle(color: colors.textMuted),
           ),
         ),
       ],
@@ -3221,6 +3208,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
   }
 
   Widget _buildDisconnectedView() {
+    final colors = AppColorTheme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3228,7 +3216,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
           'Connect two devices over Wi-Fi to trade, battle, or play '
           'multiplayer games using the virtual link cable.',
           style: TextStyle(
-            color: YageColors.textSecondary,
+            color: colors.textSecondary,
             fontSize: 13,
           ),
         ),
@@ -3242,8 +3230,8 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
             icon: const Icon(Icons.wifi_tethering, size: 18),
             label: const Text('Host Game'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: YageColors.primary,
-              foregroundColor: YageColors.textPrimary,
+              backgroundColor: colors.primary,
+              foregroundColor: colors.textPrimary,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -3256,14 +3244,14 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
         // OR divider
         Row(
           children: [
-            Expanded(child: Divider(color: YageColors.surfaceLight)),
+            Expanded(child: Divider(color: colors.surfaceLight)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text('OR',
-                style: TextStyle(color: YageColors.textMuted, fontSize: 12),
+                style: TextStyle(color: colors.textMuted, fontSize: 12),
               ),
             ),
-            Expanded(child: Divider(color: YageColors.surfaceLight)),
+            Expanded(child: Divider(color: colors.surfaceLight)),
           ],
         ),
         const SizedBox(height: 12),
@@ -3271,12 +3259,12 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
         // Join section
         TextField(
           controller: _ipController,
-          style: TextStyle(color: YageColors.textPrimary),
+          style: TextStyle(color: colors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Host IP address (e.g. 192.168.1.5)',
-            hintStyle: TextStyle(color: YageColors.textMuted, fontSize: 13),
+            hintStyle: TextStyle(color: colors.textMuted, fontSize: 13),
             filled: true,
-            fillColor: YageColors.backgroundLight,
+            fillColor: colors.backgroundLight,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
@@ -3295,8 +3283,8 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
             icon: const Icon(Icons.link, size: 18),
             label: const Text('Join Game'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: YageColors.accent,
-              foregroundColor: YageColors.textPrimary,
+              backgroundColor: colors.accent,
+              foregroundColor: colors.textPrimary,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -3310,13 +3298,14 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
   }
 
   Widget _buildHostingView() {
+    final colors = AppColorTheme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Your IP Address:',
-          style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+          style: TextStyle(color: colors.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 6),
         for (final ip in _localIPs)
@@ -3326,13 +3315,13 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: YageColors.backgroundLight,
+                color: colors.backgroundLight,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: SelectableText(
                 '$ip : ${LinkCableService.defaultPort}',
                 style: TextStyle(
-                  color: YageColors.accent,
+                  color: colors.accent,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'monospace',
@@ -3343,7 +3332,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
         if (_localIPs.isEmpty)
           Text(
             'Unable to detect IP address',
-            style: TextStyle(color: YageColors.error, fontSize: 13),
+            style: TextStyle(color: colors.error, fontSize: 13),
           ),
         const SizedBox(height: 12),
         Center(
@@ -3353,13 +3342,13 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
               SizedBox(
                 width: 16, height: 16,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2, color: YageColors.accent,
+                  strokeWidth: 2, color: colors.accent,
                 ),
               ),
               const SizedBox(width: 10),
               Text(
                 'Waiting for player 2 to join...',
-                style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+                style: TextStyle(color: colors.textSecondary, fontSize: 13),
               ),
             ],
           ),
@@ -3370,6 +3359,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
   }
 
   Widget _buildJoiningView() {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 20),
       child: Center(
@@ -3378,13 +3368,13 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
             SizedBox(
               width: 24, height: 24,
               child: CircularProgressIndicator(
-                strokeWidth: 2.5, color: YageColors.accent,
+                strokeWidth: 2.5, color: colors.accent,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               'Connecting...',
-              style: TextStyle(color: YageColors.textSecondary, fontSize: 14),
+              style: TextStyle(color: colors.textSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -3393,6 +3383,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
   }
 
   Widget _buildConnectedView() {
+    final colors = AppColorTheme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3419,7 +3410,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
               const SizedBox(height: 4),
               Text(
                 'Connected to ${widget.linkCable.peerAddress}',
-                style: TextStyle(color: YageColors.textSecondary, fontSize: 12),
+                style: TextStyle(color: colors.textSecondary, fontSize: 12),
               ),
             ],
           ),
@@ -3427,7 +3418,7 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
         const SizedBox(height: 12),
         Text(
           'Resume the game to use link cable features like trading and battling.',
-          style: TextStyle(color: YageColors.textSecondary, fontSize: 13),
+          style: TextStyle(color: colors.textSecondary, fontSize: 13),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
@@ -3513,6 +3504,7 @@ class _RATopToastState extends State<_RATopToast>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final safeTop = MediaQuery.of(context).padding.top;
     final hasImage = widget.imageUrl != null && widget.imageUrl!.isNotEmpty;
 
@@ -3529,7 +3521,7 @@ class _RATopToastState extends State<_RATopToast>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: YageColors.surface.withAlpha(240),
+                color: colors.surface.withAlpha(240),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: widget.accentColor.withAlpha(120),
@@ -3581,7 +3573,7 @@ class _RATopToastState extends State<_RATopToast>
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: YageColors.textPrimary,
+                            color: colors.textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -3592,7 +3584,7 @@ class _RATopToastState extends State<_RATopToast>
                             widget.subtitle!,
                             style: TextStyle(
                               fontSize: 11,
-                              color: YageColors.textMuted,
+                              color: colors.textMuted,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,

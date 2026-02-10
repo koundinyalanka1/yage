@@ -324,12 +324,13 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final canConfirm = widget.mode == TvBrowseMode.folder || _selected.isNotEmpty;
 
     return Focus(
       onKeyEvent: _onKeyEvent,
       child: Scaffold(
-        backgroundColor: YageColors.backgroundDark,
+        backgroundColor: colors.backgroundDark,
         appBar: _buildAppBar(canConfirm),
         body: Column(
           children: [
@@ -355,8 +356,9 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   // ─────────────── app bar ───────────────
 
   PreferredSizeWidget _buildAppBar(bool canConfirm) {
+    final colors = AppColorTheme.of(context);
     return AppBar(
-      backgroundColor: YageColors.backgroundMedium,
+      backgroundColor: colors.backgroundMedium,
       leading: TvFocusable(
         borderRadius: BorderRadius.circular(24),
         onTap: () => Navigator.of(context).pop(null),
@@ -380,8 +382,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
               onTap: _confirmSelection,
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(
-                  backgroundColor: YageColors.primary,
-                  foregroundColor: YageColors.textPrimary,
+                  backgroundColor: colors.primary,
+                  foregroundColor: colors.textPrimary,
                 ),
                 onPressed: _confirmSelection,
                 icon: const Icon(Icons.check, size: 18),
@@ -401,11 +403,12 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   // ─────────────── breadcrumb bar ───────────────
 
   Widget _buildBreadcrumbBar() {
+    final colors = AppColorTheme.of(context);
     final segments = _breadcrumbs;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: YageColors.backgroundMedium.withAlpha(160),
+      color: colors.backgroundMedium.withAlpha(160),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         reverse: true, // keep the rightmost (current) segment visible
@@ -417,7 +420,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Icon(Icons.chevron_right,
-                      size: 16, color: YageColors.textMuted),
+                      size: 16, color: colors.textMuted),
                 ),
               TvFocusable(
                 borderRadius: BorderRadius.circular(6),
@@ -434,8 +437,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                         fontSize: 13,
                         fontFamily: 'monospace',
                         color: i == segments.length - 1
-                            ? YageColors.accent
-                            : YageColors.textSecondary,
+                            ? colors.accent
+                            : colors.textSecondary,
                         fontWeight: i == segments.length - 1
                             ? FontWeight.bold
                             : FontWeight.normal,
@@ -498,6 +501,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   // ─────────────── status bar (counts + select all) ───────────────
 
   Widget _buildStatusBar() {
+    final colors = AppColorTheme.of(context);
     final showSelectAll =
         widget.mode == TvBrowseMode.files && widget.allowMultiple && _fileCount > 0;
     final allSelected = showSelectAll &&
@@ -505,22 +509,22 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: YageColors.surface.withAlpha(80),
+      color: colors.surface.withAlpha(80),
       child: Row(
         children: [
-          Icon(Icons.folder, size: 14, color: YageColors.textMuted),
+          Icon(Icons.folder, size: 14, color: colors.textMuted),
           const SizedBox(width: 4),
           Text(
             '$_dirCount folder${_dirCount == 1 ? '' : 's'}',
-            style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+            style: TextStyle(fontSize: 11, color: colors.textMuted),
           ),
           if (_fileCount > 0) ...[
             const SizedBox(width: 12),
-            Icon(Icons.insert_drive_file, size: 14, color: YageColors.textMuted),
+            Icon(Icons.insert_drive_file, size: 14, color: colors.textMuted),
             const SizedBox(width: 4),
             Text(
               '$_fileCount file${_fileCount == 1 ? '' : 's'}',
-              style: TextStyle(fontSize: 11, color: YageColors.textMuted),
+              style: TextStyle(fontSize: 11, color: colors.textMuted),
             ),
           ],
           if (_selected.isNotEmpty) ...[
@@ -528,16 +532,16 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: YageColors.primary.withAlpha(50),
+                color: colors.primary.withAlpha(50),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: YageColors.primary.withAlpha(100)),
+                border: Border.all(color: colors.primary.withAlpha(100)),
               ),
               child: Text(
                 '${_selected.length} selected',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
-                  color: YageColors.primary,
+                  color: colors.primary,
                 ),
               ),
             ),
@@ -561,14 +565,14 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                             ? Icons.deselect
                             : Icons.select_all,
                         size: 14,
-                        color: YageColors.accent,
+                        color: colors.accent,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         allSelected ? 'Deselect all' : 'Select all',
                         style: TextStyle(
                           fontSize: 11,
-                          color: YageColors.accent,
+                          color: colors.accent,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -585,6 +589,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   // ─────────────── main body (list / loading / error / empty) ───────────────
 
   Widget _buildBody() {
+    final colors = AppColorTheme.of(context);
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -597,14 +602,14 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.folder_off, size: 64,
-                  color: YageColors.textMuted.withAlpha(100)),
+                  color: colors.textMuted.withAlpha(100)),
               const SizedBox(height: 16),
               Text(
                 'File Browsing Unavailable',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: YageColors.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -615,7 +620,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
-                  color: YageColors.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.5,
                 ),
               ),
@@ -629,8 +634,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                     onTap: _retryPermission,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: YageColors.primary,
-                        foregroundColor: YageColors.textPrimary,
+                        backgroundColor: colors.primary,
+                        foregroundColor: colors.textPrimary,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 24, vertical: 14),
                       ),
@@ -661,9 +666,9 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock, size: 48, color: YageColors.textMuted),
+            Icon(Icons.lock, size: 48, color: colors.textMuted),
             const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: YageColors.textMuted)),
+            Text(_error!, style: TextStyle(color: colors.textMuted)),
             const SizedBox(height: 16),
             TvFocusable(
               autofocus: true,
@@ -685,7 +690,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.folder_open, size: 56, color: YageColors.textMuted.withAlpha(80)),
+            Icon(Icons.folder_open, size: 56, color: colors.textMuted.withAlpha(80)),
             const SizedBox(height: 12),
             Text(
               widget.mode == TvBrowseMode.files
@@ -693,13 +698,13 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                   : 'This folder is empty',
               style: TextStyle(
                 fontSize: 15,
-                color: YageColors.textMuted,
+                color: colors.textMuted,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               'Press Back to go up',
-              style: TextStyle(fontSize: 12, color: YageColors.textMuted.withAlpha(120)),
+              style: TextStyle(fontSize: 12, color: colors.textMuted.withAlpha(120)),
             ),
             const SizedBox(height: 16),
             TvFocusable(
@@ -737,15 +742,15 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: YageColors.accent.withAlpha(30),
+                    color: colors.accent.withAlpha(30),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(Icons.arrow_upward,
-                      color: YageColors.accent, size: 20),
+                      color: colors.accent, size: 20),
                 ),
                 title: Text(
                   '.. (Parent folder)',
-                  style: TextStyle(color: YageColors.textSecondary),
+                  style: TextStyle(color: colors.textSecondary),
                 ),
                 onTap: _goUp,
               ),
@@ -853,35 +858,36 @@ class _FileListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      color: isSelected ? YageColors.primary.withAlpha(25) : Colors.transparent,
+      color: isSelected ? colors.primary.withAlpha(25) : Colors.transparent,
       child: ListTile(
         leading: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
             color: isDir
-                ? YageColors.accent.withAlpha(30)
+                ? colors.accent.withAlpha(30)
                 : isSelected
-                    ? YageColors.primary.withAlpha(40)
-                    : YageColors.surface,
+                    ? colors.primary.withAlpha(40)
+                    : colors.surface,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             icon,
             size: 20,
             color: isDir
-                ? YageColors.accent
+                ? colors.accent
                 : isSelected
-                    ? YageColors.primary
-                    : YageColors.textMuted,
+                    ? colors.primary
+                    : colors.textMuted,
           ),
         ),
         title: Text(
           name,
           style: TextStyle(
-            color: isSelected ? YageColors.primary : YageColors.textPrimary,
+            color: isSelected ? colors.primary : colors.textPrimary,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
           maxLines: 1,
@@ -890,20 +896,20 @@ class _FileListTile extends StatelessWidget {
         subtitle: subtitle.isNotEmpty
             ? Text(
                 subtitle,
-                style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+                style: TextStyle(fontSize: 12, color: colors.textMuted),
               )
             : null,
         trailing: isDir
-            ? Icon(Icons.chevron_right, color: YageColors.textMuted)
+            ? Icon(Icons.chevron_right, color: colors.textMuted)
             : AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
                 child: isSelected
                     ? Icon(Icons.check_circle,
                         key: const ValueKey('checked'),
-                        color: YageColors.primary)
+                        color: colors.primary)
                     : Icon(Icons.radio_button_unchecked,
                         key: const ValueKey('unchecked'),
-                        color: YageColors.surfaceLight),
+                        color: colors.surfaceLight),
               ),
         onTap: onTap,
       ),
@@ -932,6 +938,7 @@ class _QuickNavChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
     final exists = Directory(path).existsSync();
     if (!exists) return const SizedBox.shrink();
 
@@ -944,7 +951,7 @@ class _QuickNavChip extends StatelessWidget {
           avatar: Icon(
             icon,
             size: 16,
-            color: isCurrent ? YageColors.backgroundDark : YageColors.textMuted,
+            color: isCurrent ? colors.backgroundDark : colors.textMuted,
           ),
           label: Text(
             label,
@@ -952,14 +959,14 @@ class _QuickNavChip extends StatelessWidget {
               fontSize: 12,
               fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
               color: isCurrent
-                  ? YageColors.backgroundDark
-                  : YageColors.textSecondary,
+                  ? colors.backgroundDark
+                  : colors.textSecondary,
             ),
           ),
           backgroundColor:
-              isCurrent ? YageColors.accent : YageColors.surface,
+              isCurrent ? colors.accent : colors.surface,
           side: BorderSide(
-            color: isCurrent ? YageColors.accent : YageColors.surfaceLight,
+            color: isCurrent ? colors.accent : colors.surfaceLight,
           ),
           onPressed: onTap,
         ),

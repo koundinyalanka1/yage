@@ -224,10 +224,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         allowMultiple: true,
       );
       paths = result?.files
-          .where((f) =>
-              f.path != null &&
-              _allowedExtensions.contains(
-                  f.path!.toLowerCase().substring(f.path!.lastIndexOf('.'))))
+          .where((f) {
+              if (f.path == null) return false;
+              final dot = f.path!.lastIndexOf('.');
+              if (dot == -1) return false;
+              return _allowedExtensions.contains(
+                  f.path!.toLowerCase().substring(dot));
+          })
           .map((f) => f.path!)
           .toList();
     } catch (_) {
@@ -338,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load ${game.name}'),
-          backgroundColor: YageColors.error,
+          backgroundColor: AppColorTheme.of(context).error,
         ),
       );
     }
@@ -404,6 +407,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   
   /// Compact header for landscape mode - combines logo, search, filter in one row
   Widget _buildCompactHeader() {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -430,10 +434,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 decoration: InputDecoration(
                   hintText: 'Search...',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  prefixIcon: Icon(Icons.search, color: YageColors.textMuted, size: 20),
+                  prefixIcon: Icon(Icons.search, color: colors.textMuted, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: Icon(Icons.clear, color: YageColors.textMuted, size: 18),
+                          icon: Icon(Icons.clear, color: colors.textMuted, size: 18),
                           onPressed: () {
                             _searchDebounce?.cancel();
                             _searchController.clear();
@@ -452,15 +456,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: YageColors.surface,
+              color: colors.surface,
               borderRadius: BorderRadius.circular(8),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<GamePlatform?>(
                 value: _selectedPlatform,
                 hint: const Text('All', style: TextStyle(fontSize: 12)),
-                style: TextStyle(fontSize: 12, color: YageColors.textPrimary),
-                dropdownColor: YageColors.surface,
+                style: TextStyle(fontSize: 12, color: colors.textPrimary),
+                dropdownColor: colors.surface,
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All')),
                   const DropdownMenuItem(value: GamePlatform.gba, child: Text('GBA')),
@@ -475,11 +479,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           
           // Sort button
           PopupMenuButton<GameSortOption>(
-            icon: Icon(Icons.swap_vert, color: YageColors.textSecondary, size: 20),
+            icon: Icon(Icons.swap_vert, color: colors.textSecondary, size: 20),
             tooltip: 'Sort by',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            color: YageColors.surface,
+            color: colors.surface,
             onSelected: (value) {
               setState(() => _sortOption = value);
               context.read<SettingsService>().setSortOption(value.name);
@@ -492,17 +496,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   leading: Icon(
                     opt.icon,
                     size: 20,
-                    color: isSelected ? YageColors.accent : null,
+                    color: isSelected ? colors.accent : null,
                   ),
                   title: Text(
                     opt.label,
                     style: TextStyle(
-                      color: isSelected ? YageColors.accent : null,
+                      color: isSelected ? colors.accent : null,
                       fontWeight: isSelected ? FontWeight.bold : null,
                     ),
                   ),
                   trailing: isSelected
-                      ? Icon(Icons.check, size: 18, color: YageColors.accent)
+                      ? Icon(Icons.check, size: 18, color: colors.accent)
                       : null,
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -515,7 +519,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           IconButton(
             icon: Icon(
               _isGridView ? Icons.view_list : Icons.grid_view,
-              color: YageColors.textSecondary,
+              color: colors.textSecondary,
               size: 20,
             ),
             onPressed: () {
@@ -532,7 +536,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               borderRadius: BorderRadius.circular(8),
               onTap: _addRomFile,
               child: IconButton(
-                icon: Icon(Icons.add, color: YageColors.accent, size: 20),
+                icon: Icon(Icons.add, color: colors.accent, size: 20),
                 tooltip: 'Add ROMs',
                 onPressed: _addRomFile,
                 padding: EdgeInsets.zero,
@@ -543,7 +547,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               borderRadius: BorderRadius.circular(8),
               onTap: _addRomFolder,
               child: IconButton(
-                icon: Icon(Icons.create_new_folder, color: YageColors.accent, size: 20),
+                icon: Icon(Icons.create_new_folder, color: colors.accent, size: 20),
                 tooltip: 'Add Folder',
                 onPressed: _addRomFolder,
                 padding: EdgeInsets.zero,
@@ -556,7 +560,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               ),
               child: IconButton(
-                icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary, size: 20),
+                icon: Icon(Icons.settings_outlined, color: colors.textSecondary, size: 20),
                 tooltip: 'Settings',
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -570,7 +574,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           IconButton(
             icon: Icon(
               Icons.settings_outlined,
-              color: YageColors.textSecondary,
+              color: colors.textSecondary,
               size: 20,
             ),
             tooltip: 'Settings',
@@ -586,6 +590,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildHeader() {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
       child: Row(
@@ -601,7 +606,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: YageColors.primary.withAlpha(102),
+                        color: colors.primary.withAlpha(102),
                         blurRadius: 12,
                         spreadRadius: 1,
                       ),
@@ -625,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: YageColors.textPrimary,
+                        color: colors.textPrimary,
                         letterSpacing: 2,
                       ),
                     ),
@@ -633,7 +638,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       'Classic GB/GBC/GBA Games',
                       style: TextStyle(
                         fontSize: 10,
-                        color: YageColors.textMuted,
+                        color: colors.textMuted,
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -645,9 +650,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           
           // Sort button
           PopupMenuButton<GameSortOption>(
-            icon: Icon(Icons.swap_vert, color: YageColors.textSecondary),
+            icon: Icon(Icons.swap_vert, color: colors.textSecondary),
             tooltip: 'Sort by',
-            color: YageColors.surface,
+            color: colors.surface,
             onSelected: (value) {
               setState(() => _sortOption = value);
               context.read<SettingsService>().setSortOption(value.name);
@@ -660,17 +665,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   leading: Icon(
                     opt.icon,
                     size: 20,
-                    color: isSelected ? YageColors.accent : null,
+                    color: isSelected ? colors.accent : null,
                   ),
                   title: Text(
                     opt.label,
                     style: TextStyle(
-                      color: isSelected ? YageColors.accent : null,
+                      color: isSelected ? colors.accent : null,
                       fontWeight: isSelected ? FontWeight.bold : null,
                     ),
                   ),
                   trailing: isSelected
-                      ? Icon(Icons.check, size: 18, color: YageColors.accent)
+                      ? Icon(Icons.check, size: 18, color: colors.accent)
                       : null,
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -683,7 +688,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           IconButton(
             icon: Icon(
               _isGridView ? Icons.view_list : Icons.grid_view,
-              color: YageColors.textSecondary,
+              color: colors.textSecondary,
             ),
             onPressed: () {
               setState(() => _isGridView = !_isGridView);
@@ -697,7 +702,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               borderRadius: BorderRadius.circular(8),
               onTap: _addRomFile,
               child: IconButton(
-                icon: Icon(Icons.add, color: YageColors.accent),
+                icon: Icon(Icons.add, color: colors.accent),
                 tooltip: 'Add ROMs',
                 onPressed: _addRomFile,
               ),
@@ -706,7 +711,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               borderRadius: BorderRadius.circular(8),
               onTap: _addRomFolder,
               child: IconButton(
-                icon: Icon(Icons.create_new_folder, color: YageColors.accent),
+                icon: Icon(Icons.create_new_folder, color: colors.accent),
                 tooltip: 'Add Folder',
                 onPressed: _addRomFolder,
               ),
@@ -717,7 +722,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               ),
               child: IconButton(
-                icon: Icon(Icons.settings_outlined, color: YageColors.textSecondary),
+                icon: Icon(Icons.settings_outlined, color: colors.textSecondary),
                 tooltip: 'Settings',
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -729,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           IconButton(
             icon: Icon(
               Icons.settings_outlined,
-              color: YageColors.textSecondary,
+              color: colors.textSecondary,
             ),
             tooltip: 'Settings',
             onPressed: () => Navigator.of(context).push(
@@ -742,6 +747,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildSearchBar() {
+    final colors = AppColorTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(
@@ -749,10 +755,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         onChanged: _onSearchChanged,
         decoration: InputDecoration(
           hintText: 'Search games...',
-          prefixIcon: Icon(Icons.search, color: YageColors.textMuted),
+          prefixIcon: Icon(Icons.search, color: colors.textMuted),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.clear, color: YageColors.textMuted),
+                  icon: Icon(Icons.clear, color: colors.textMuted),
                   onPressed: () {
                     _searchDebounce?.cancel();
                     _searchController.clear();
@@ -778,10 +784,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildTabBar() {
+    final colors = AppColorTheme.of(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: YageColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Consumer<GameLibraryService>(
@@ -792,13 +799,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           return TabBar(
             controller: _tabController,
             indicator: BoxDecoration(
-              color: YageColors.primary,
+              color: colors.primary,
               borderRadius: BorderRadius.circular(10),
             ),
             indicatorSize: TabBarIndicatorSize.tab,
             indicatorPadding: const EdgeInsets.all(4),
-            labelColor: YageColors.textPrimary,
-            unselectedLabelColor: YageColors.textMuted,
+            labelColor: colors.textPrimary,
+            unselectedLabelColor: colors.textMuted,
             labelStyle: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -815,6 +822,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildAllGames() {
+    final colors = AppColorTheme.of(context);
     return Consumer<GameLibraryService>(
       builder: (context, library, _) {
         if (library.isLoading) {
@@ -846,7 +854,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     '${games.length} result${games.length == 1 ? '' : 's'} for \'$_searchQuery\'',
                     style: TextStyle(
                       fontSize: 12,
-                      color: YageColors.textMuted,
+                      color: colors.textMuted,
                     ),
                   ),
                 ),
@@ -959,6 +967,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     String title = 'No Games Found',
     String subtitle = 'Add ROM files or folders to get started',
   }) {
+    final colors = AppColorTheme.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -967,13 +976,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               width: 100,
               height: 100,
               decoration: BoxDecoration(
-                color: YageColors.surface,
+                color: colors.surface,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 icon,
                 size: 48,
-                color: YageColors.primary.withAlpha(128),
+                color: colors.primary.withAlpha(128),
               ),
             ),
           const SizedBox(height: 24),
@@ -982,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: YageColors.textPrimary,
+              color: colors.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -990,7 +999,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             subtitle,
             style: TextStyle(
               fontSize: 14,
-              color: YageColors.textMuted,
+              color: colors.textMuted,
             ),
             textAlign: TextAlign.center,
           ),
@@ -1132,11 +1141,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   void _showGameOptions(GameRom game) {
+    final colors = AppColorTheme.of(context);
     final library = context.read<GameLibraryService>();
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: YageColors.surface,
+      backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1152,7 +1162,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: YageColors.surfaceLight,
+                    color: colors.surfaceLight,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1166,7 +1176,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: YageColors.textPrimary,
+                      color: colors.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1209,7 +1219,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         ListTile(
                           leading: Icon(
                             game.isFavorite ? Icons.favorite : Icons.favorite_border,
-                            color: game.isFavorite ? YageColors.accentAlt : null,
+                            color: game.isFavorite ? colors.accentAlt : null,
                           ),
                           title: Text(
                             game.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
@@ -1244,7 +1254,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             'Backup .sav & save states to ZIP',
                             style: TextStyle(
                               fontSize: 12,
-                              color: YageColors.textMuted,
+                              color: colors.textMuted,
                             ),
                           ),
                           onTap: () {
@@ -1253,16 +1263,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           },
                         ),
                         ListTile(
-                          leading: Icon(Icons.delete_sweep, color: YageColors.warning),
+                          leading: Icon(Icons.delete_sweep, color: colors.warning),
                           title: Text(
                             'Delete Save Data',
-                            style: TextStyle(color: YageColors.warning),
+                            style: TextStyle(color: colors.warning),
                           ),
                           subtitle: Text(
                             'Remove .sav, save states & screenshots',
                             style: TextStyle(
                               fontSize: 12,
-                              color: YageColors.textMuted,
+                              color: colors.textMuted,
                             ),
                           ),
                           onTap: () {
@@ -1271,10 +1281,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           },
                         ),
                         ListTile(
-                          leading: Icon(Icons.delete_outline, color: YageColors.error),
+                          leading: Icon(Icons.delete_outline, color: colors.error),
                           title: Text(
                             'Remove from Library',
-                            style: TextStyle(color: YageColors.error),
+                            style: TextStyle(color: colors.error),
                           ),
                           onTap: () {
                             library.removeRom(game);
@@ -1294,6 +1304,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _exportGameSaves(GameRom game) async {
+    final colors = AppColorTheme.of(context);
     final emulator = context.read<EmulatorService>();
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1319,7 +1330,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       // Clean up the temp ZIP when the sheet is dismissed.
       showModalBottomSheet(
         context: context,
-        backgroundColor: YageColors.surface,
+        backgroundColor: colors.surface,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -1334,7 +1345,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: YageColors.surfaceLight,
+                      color: colors.surfaceLight,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1346,7 +1357,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: YageColors.textPrimary,
+                        color: colors.textPrimary,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -1357,7 +1368,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     title: const Text('Share'),
                     subtitle: Text(
                       'Send via Google Drive, email, etc.',
-                      style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+                      style: TextStyle(fontSize: 12, color: colors.textMuted),
                     ),
                     onTap: () {
                       Navigator.pop(context);
@@ -1369,7 +1380,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     title: const Text('Save to…'),
                     subtitle: Text(
                       'Choose a folder on this device',
-                      style: TextStyle(fontSize: 12, color: YageColors.textMuted),
+                      style: TextStyle(fontSize: 12, color: colors.textMuted),
                     ),
                     onTap: () async {
                       final messenger = ScaffoldMessenger.of(context);
@@ -1403,23 +1414,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _confirmDeleteSaveData(GameRom game) async {
+    final colors = AppColorTheme.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: YageColors.surface,
+        backgroundColor: colors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: YageColors.warning.withAlpha(80), width: 2),
+          side: BorderSide(color: colors.warning.withAlpha(80), width: 2),
         ),
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: YageColors.warning, size: 24),
+            Icon(Icons.warning_amber_rounded, color: colors.warning, size: 24),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Delete Save Data?',
                 style: TextStyle(
-                  color: YageColors.textPrimary,
+                  color: colors.textPrimary,
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                 ),
@@ -1433,13 +1445,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           children: [
             Text(
               'This will permanently delete all save data for:',
-              style: TextStyle(color: YageColors.textSecondary, fontSize: 14),
+              style: TextStyle(color: colors.textSecondary, fontSize: 14),
             ),
             const SizedBox(height: 8),
             Text(
               game.name,
               style: TextStyle(
-                color: YageColors.textPrimary,
+                color: colors.textPrimary,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
               ),
@@ -1450,13 +1462,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               '• All save states (slots 0-5)\n'
               '• Save state thumbnails\n'
               '• In-game screenshots',
-              style: TextStyle(color: YageColors.textMuted, fontSize: 13),
+              style: TextStyle(color: colors.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 12),
             Text(
               'This cannot be undone.',
               style: TextStyle(
-                color: YageColors.warning,
+                color: colors.warning,
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
@@ -1468,18 +1480,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               'Cancel',
-              style: TextStyle(color: YageColors.textSecondary),
+              style: TextStyle(color: colors.textSecondary),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(
-              backgroundColor: YageColors.warning.withAlpha(30),
+              backgroundColor: colors.warning.withAlpha(30),
             ),
             child: Text(
               'Delete',
               style: TextStyle(
-                color: YageColors.warning,
+                color: colors.warning,
                 fontWeight: FontWeight.bold,
               ),
             ),
