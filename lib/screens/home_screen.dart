@@ -1315,7 +1315,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         return;
       }
 
-      // Let the user choose: share or save
+      // Let the user choose: share or save.
+      // Clean up the temp ZIP when the sheet is dismissed.
       showModalBottomSheet(
         context: context,
         backgroundColor: YageColors.surface,
@@ -1387,7 +1388,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           );
         },
-      );
+      ).whenComplete(() {
+        // Delete the temp ZIP after the bottom sheet is dismissed,
+        // regardless of whether the user shared, saved, or cancelled.
+        SaveBackupService.deleteTempZip(zipPath);
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

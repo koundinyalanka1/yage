@@ -368,16 +368,17 @@ class RetroAchievementsService extends ChangeNotifier {
   /// The Connect token is used for all RA API calls (startsession,
   /// ping, awardachievement, patch, gameid).
   Future<bool> _obtainConnectToken(String username, String password) async {
-    final uri = Uri.parse(
-      'https://retroachievements.org/dorequest.php',
-    ).replace(queryParameters: {
-      'r': 'login2',
-      'u': username,
-      'p': password,
-    });
+    final uri = Uri.parse('https://retroachievements.org/dorequest.php');
 
     try {
-      final response = await http.get(uri).timeout(
+      // Use POST so the password travels in the request body instead of
+      // the URL.  Passwords in query strings are logged by web servers,
+      // proxies, and may appear in Crashlytics crash reports.
+      final response = await http.post(uri, body: {
+        'r': 'login2',
+        'u': username,
+        'p': password,
+      }).timeout(
         const Duration(seconds: 10),
       );
 
@@ -533,8 +534,9 @@ class RetroAchievementsService extends ChangeNotifier {
         return cached;
       }
 
-      // Cache miss → compute in background isolate
-      final hash = await compute(_computeMd5, romPath);
+      // Cache miss → stream through MD5 to avoid loading the entire ROM
+      // into memory at once (GBA ROMs can be up to 32 MB).
+      final hash = await computeRAHash(romPath);
       if (hash != null) {
         _romHashCache[cacheKey] = hash;
         _persistLookupCaches(); // fire-and-forget
@@ -542,17 +544,6 @@ class RetroAchievementsService extends ChangeNotifier {
       return hash;
     } catch (e) {
       debugPrint('RA hash error: $e');
-      return null;
-    }
-  }
-
-  /// Top-level-compatible function that runs in a background isolate.
-  /// Reads the file and returns its MD5 hex string.
-  static String? _computeMd5(String romPath) {
-    try {
-      final bytes = File(romPath).readAsBytesSync();
-      return md5.convert(bytes).toString();
-    } catch (_) {
       return null;
     }
   }

@@ -208,7 +208,8 @@ class GameLibraryService extends ChangeNotifier {
   /// Remove a ROM directory
   Future<void> removeRomDirectory(String path) async {
     _romDirectories.remove(path);
-    _games.removeWhere((g) => g.path.startsWith(path));
+    final prefix = path.endsWith(p.separator) ? path : '$path${p.separator}';
+    _games.removeWhere((g) => g.path.startsWith(prefix));
     await _saveLibrary();
     notifyListeners();
   }
@@ -266,36 +267,70 @@ class GameLibraryService extends ChangeNotifier {
     }
   }
 
-  /// Refresh library by rescanning all directories
+  /// Refresh library by rescanning all directories.
+  ///
+  /// Builds a fresh game list without clearing the existing one first,
+  /// then swaps atomically — so a disk error or permission failure
+  /// during scanning never causes data loss.
   Future<void> refresh() async {
     _isLoading = true;
     notifyListeners();
 
-    // Keep favorites, play history, and play time
+    // Preserve metadata (favorites, play history, cover art, etc.)
     final gameData = Map.fromEntries(
-      _games.map((g) => MapEntry(g.path, (g.isFavorite, g.lastPlayed, g.totalPlayTimeSeconds))),
+      _games.map((g) => MapEntry(g.path, g)),
     );
 
-    _games.clear();
+    // Build a new list independently — _games stays intact until the
+    // scan completes successfully.
+    final freshGames = <GameRom>[];
 
     for (final dir in _romDirectories) {
-      await scanDirectory(dir);
+      try {
+        final dirObj = Directory(dir);
+        if (!dirObj.existsSync()) continue;
+
+        final entities = dirObj.listSync(recursive: true);
+        for (final entity in entities) {
+          if (entity is File) {
+            final ext = p.extension(entity.path).toLowerCase();
+            if (['.gba', '.gb', '.gbc', '.sgb'].contains(ext)) {
+              final game = GameRom.fromPath(entity.path);
+              if (game != null &&
+                  !freshGames.any((g) => g.path == entity.path)) {
+                freshGames.add(game);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Refresh: failed to scan "$dir" — $e');
+        // Continue scanning other directories
+      }
     }
 
-    // Restore metadata
-    for (int i = 0; i < _games.length; i++) {
-      final data = gameData[_games[i].path];
-      if (data != null) {
-        _games[i] = _games[i].copyWith(
-          isFavorite: data.$1,
-          lastPlayed: data.$2,
-          totalPlayTimeSeconds: data.$3,
+    // Restore metadata from the previous library onto the freshly
+    // scanned entries.
+    for (int i = 0; i < freshGames.length; i++) {
+      final prev = gameData[freshGames[i].path];
+      if (prev != null) {
+        freshGames[i] = freshGames[i].copyWith(
+          isFavorite: prev.isFavorite,
+          lastPlayed: prev.lastPlayed,
+          totalPlayTimeSeconds: prev.totalPlayTimeSeconds,
+          coverPath: prev.coverPath,
         );
       }
     }
 
+    // Atomic swap — old library is only replaced after scanning succeeds
+    _games
+      ..clear()
+      ..addAll(freshGames);
+
     await _saveLibrary();
     _isLoading = false;
+    _error = null;
     notifyListeners();
   }
 

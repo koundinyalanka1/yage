@@ -67,9 +67,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   // ── Saved references for safe disposal ──
   // Provider lookups are unsafe in dispose(), so we capture these early.
+  EmulatorService? _emulatorRef;
+  LinkCableService? _linkCableRef;
   RetroAchievementsService? _raServiceRef;
   RcheevosClient? _rcheevosClientRef;
   StreamSubscription<RcEvent>? _rcheevosEventSub;
+  SettingsService? _settingsServiceRef;
 
   @override
   void initState() {
@@ -104,11 +107,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     
     // Start emulation, then show shortcuts help on first launch
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final emulator = context.read<EmulatorService>();
-      // Wire link cable service to emulator
-      emulator.linkCable = context.read<LinkCableService>();
-      // Wire native rcheevos client for per-frame achievement processing
+      // Capture provider references early so they are available in dispose()
+      // where context.read() is unsafe (widget tree may already be torn down).
+      _emulatorRef = context.read<EmulatorService>();
+      _linkCableRef = context.read<LinkCableService>();
       _rcheevosClientRef = context.read<RcheevosClient>();
+
+      final emulator = _emulatorRef!;
+      // Wire link cable service to emulator
+      emulator.linkCable = _linkCableRef;
+      // Wire native rcheevos client for per-frame achievement processing
       emulator.rcheevosClient = _rcheevosClientRef;
       emulator.start();
       _maybeShowShortcutsHelp();
@@ -116,6 +124,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // Detect RetroAchievements game ID in the background.
       // This does NOT block gameplay — achievements are enabled async.
       _detectRetroAchievements();
+
+      // Listen for settings changes and forward them to the emulator.
+      // This avoids calling updateSettings() inside build(), which could
+      // trigger notifyListeners() → infinite rebuild loops.
+      _settingsServiceRef = context.read<SettingsService>();
+      _settingsServiceRef!.addListener(_onSettingsChanged);
+      // Apply initial settings immediately
+      emulator.updateSettings(_settingsServiceRef!.settings);
 
       // Listen for achievement data loading to show notification
       _raServiceRef = context.read<RetroAchievementsService>();
@@ -163,6 +179,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     _raToastEntry = entry;
     overlay.insert(entry);
+  }
+
+  /// Called when SettingsService changes.  Pushes the new settings to the
+  /// emulator service outside of build() so that any resulting
+  /// notifyListeners() calls don't trigger an infinite rebuild loop.
+  void _onSettingsChanged() {
+    if (!mounted) return;
+    final emulator = context.read<EmulatorService>();
+    emulator.updateSettings(_settingsServiceRef!.settings);
   }
 
   /// Called when RetroAchievementsService state changes.
@@ -287,6 +312,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     try {
       WidgetsBinding.instance.removeObserver(this);
       // Remove RA listeners (using saved references — safe in dispose)
+      _settingsServiceRef?.removeListener(_onSettingsChanged);
+      _settingsServiceRef = null;
       _raServiceRef?.removeListener(_onRetroAchievementsChanged);
       _raServiceRef = null;
       _rcheevosEventSub?.cancel();
@@ -297,21 +324,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _focusNode.dispose();
 
       // Disconnect link cable and clean up emulator references
-      try {
-        final lc = context.read<LinkCableService>();
-        lc.disconnect();
-        final emulator = context.read<EmulatorService>();
-        emulator.linkCable = null;
-        emulator.rcheevosClient = null;
-      } catch (_) {}
+      // Uses saved refs — context.read() is unsafe in dispose().
+      _linkCableRef?.disconnect();
+      _emulatorRef?.linkCable = null;
+      _emulatorRef?.rcheevosClient = null;
 
       // Fully shut down the native rcheevos client so it re-initialises
       // cleanly when the user enters a game again.  Without this, the
       // singleton stays in _initialized=true / _gameLoaded=false limbo
       // and the next session never loads the game → no achievement events.
-      try {
-        context.read<RcheevosClient>().shutdown();
-      } catch (_) {}
+      _rcheevosClientRef?.shutdown();
+
+      _emulatorRef = null;
+      _linkCableRef = null;
 
       // Allow screen to sleep again
       WakelockPlus.disable();
@@ -879,9 +904,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final emulator = context.watch<EmulatorService>();
     final settings = context.watch<SettingsService>().settings;
-    
-    // Push audio settings to the native core whenever they change
-    emulator.updateSettings(settings);
     
     // Create the game display once with a key to preserve it across rebuilds
     final gameDisplay = GameDisplay(

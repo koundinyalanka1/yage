@@ -58,11 +58,25 @@ class SaveBackupService {
       // Copy temp file to chosen location
       final destPath = result.endsWith('.zip') ? result : '$result.zip';
       await File(tempZipPath).copy(destPath);
+      // Clean up the temp source now that it has been saved
+      try {
+        await File(tempZipPath).delete();
+      } catch (_) {}
       return destPath;
     } catch (e) {
       debugPrint('Error saving ZIP: $e');
       return null;
     }
+  }
+
+  /// Delete a temp ZIP file if it exists.  Call this when the temp file
+  /// is no longer needed (e.g. after sharing or when a dialog closes).
+  static void deleteTempZip(String? path) {
+    if (path == null) return;
+    try {
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {}
   }
 
   /// Share the ZIP via the system share sheet (Google Drive, email, etc.).
@@ -211,17 +225,34 @@ class SaveBackupService {
       // Find or create "RetroPal" folder
       final folderId = await _getOrCreateDriveFolder(driveApi, 'RetroPal');
 
-      // Upload file
+      // Check for an existing file with the same name and update it
+      // instead of creating a duplicate.
       final fileName = p.basename(zipPath);
+      final existing = await driveApi.files.list(
+        q: "'$folderId' in parents and name='$fileName' and trashed=false",
+        $fields: 'files(id)',
+      );
+
       final media = drive.Media(
         File(zipPath).openRead(),
         File(zipPath).lengthSync(),
       );
-      final driveFile = drive.File()
-        ..name = fileName
-        ..parents = [folderId];
 
-      final result = await driveApi.files.create(driveFile, uploadMedia: media);
+      final drive.File result;
+      if (existing.files != null && existing.files!.isNotEmpty) {
+        // Update the existing file's content in place
+        result = await driveApi.files.update(
+          drive.File()..name = fileName,
+          existing.files!.first.id!,
+          uploadMedia: media,
+        );
+      } else {
+        // No existing file — create a new one
+        final driveFile = drive.File()
+          ..name = fileName
+          ..parents = [folderId];
+        result = await driveApi.files.create(driveFile, uploadMedia: media);
+      }
       httpClient.close();
       return result.id;
     } catch (e) {

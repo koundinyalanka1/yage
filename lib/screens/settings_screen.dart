@@ -1760,6 +1760,13 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
   bool _error = false;
 
   @override
+  void dispose() {
+    // Clean up temp ZIP when the dialog is dismissed
+    SaveBackupService.deleteTempZip(_zipPath);
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _export();

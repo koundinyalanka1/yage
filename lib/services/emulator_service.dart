@@ -914,7 +914,7 @@ class EmulatorService extends ChangeNotifier {
   /// Update settings — applies audio/palette changes to the native core immediately.
   /// Only notifies listeners if settings actually changed.
   void updateSettings(EmulatorSettings newSettings) {
-    if (identical(_settings, newSettings)) return;
+    if (_settings == newSettings) return;
     
     final oldSettings = _settings;
     _settings = newSettings;
@@ -1029,8 +1029,10 @@ class EmulatorService extends ChangeNotifier {
     _playTimeStopwatch.stop();
     _stopAutoSaveTimer();
     
-    // Save SRAM before stopping
+    // Save SRAM before stopping, then reset the lock so any previously
+    // queued saves don't execute against the destroyed core.
     await saveSram();
+    _sramSaveLock = Future.value();
     
     // Reset rewind state
     _isRewinding = false;
@@ -1054,10 +1056,36 @@ class EmulatorService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Synchronously flush SRAM before disposing the native core.
+  ///
+  /// [dispose] cannot be async, so we call the synchronous save path
+  /// directly.  This ensures save data is never lost when the service
+  /// is disposed without an explicit [stop] call.
   @override
   void dispose() {
+    _frameLoopActive = false;
     _frameTimer?.cancel();
     _autoSaveTimer?.cancel();
+
+    // Best-effort SRAM flush — must be sync because dispose() is void.
+    try {
+      if (_currentRom != null) {
+        final saveDir = _getRomSaveDir(_currentRom!);
+        final sramPath =
+            p.join(saveDir, '${p.basenameWithoutExtension(_currentRom!.path)}.sav');
+        if (_useStub) {
+          final data = _stub?.getSaveData();
+          if (data != null && data.isNotEmpty) {
+            File(sramPath).writeAsBytesSync(data);
+          }
+        } else {
+          _core?.saveSRAM(sramPath);
+        }
+      }
+    } catch (e) {
+      debugPrint('dispose: SRAM flush failed — $e');
+    }
+
     _stub?.dispose();
     _core?.dispose();
     super.dispose();

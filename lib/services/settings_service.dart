@@ -101,11 +101,6 @@ class SettingsService extends ChangeNotifier {
     await update((s) => s.copyWith(enableSound: !s.enableSound));
   }
 
-  /// Set frame skip
-  Future<void> setFrameSkip(int skip) async {
-    await update((s) => s.copyWith(frameSkip: skip.clamp(0, 4)));
-  }
-
   /// Toggle FPS display
   Future<void> toggleShowFps() async {
     await update((s) => s.copyWith(showFps: !s.showFps));

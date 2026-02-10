@@ -126,7 +126,7 @@ class GameRom {
       'path': path,
       'name': name,
       'extension': extension,
-      'platform': platform.index,
+      'platform': platform.name,
       'sizeBytes': sizeBytes,
       'lastPlayed': lastPlayed?.toIso8601String(),
       'coverPath': coverPath,
@@ -140,7 +140,7 @@ class GameRom {
       path: json['path'] as String,
       name: json['name'] as String,
       extension: json['extension'] as String,
-      platform: GamePlatform.values[json['platform'] as int],
+      platform: _parsePlatform(json['platform']),
       sizeBytes: json['sizeBytes'] as int,
       lastPlayed: json['lastPlayed'] != null
           ? DateTime.parse(json['lastPlayed'] as String)
@@ -149,6 +149,21 @@ class GameRom {
       isFavorite: json['isFavorite'] as bool? ?? false,
       totalPlayTimeSeconds: json['totalPlayTimeSeconds'] as int? ?? 0,
     );
+  }
+
+  /// Parse platform from JSON, supporting both the current string format
+  /// (.name) and the legacy int index format for backwards compatibility.
+  static GamePlatform _parsePlatform(dynamic value) {
+    if (value is String) {
+      return GamePlatform.values.firstWhere(
+        (e) => e.name == value,
+        orElse: () => GamePlatform.unknown,
+      );
+    }
+    if (value is int && value >= 0 && value < GamePlatform.values.length) {
+      return GamePlatform.values[value];
+    }
+    return GamePlatform.unknown;
   }
 }
 

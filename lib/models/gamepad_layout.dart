@@ -24,6 +24,17 @@ class ButtonLayout {
     );
   }
 
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ButtonLayout &&
+          x == other.x &&
+          y == other.y &&
+          size == other.size;
+
+  @override
+  int get hashCode => Object.hash(x, y, size);
+
   Map<String, dynamic> toJson() => {'x': x, 'y': y, 'size': size};
 
   factory ButtonLayout.fromJson(Map<String, dynamic> json) {
@@ -207,6 +218,22 @@ class GamepadLayout {
 
 
 
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GamepadLayout &&
+          dpad == other.dpad &&
+          aButton == other.aButton &&
+          bButton == other.bButton &&
+          lButton == other.lButton &&
+          rButton == other.rButton &&
+          startButton == other.startButton &&
+          selectButton == other.selectButton;
+
+  @override
+  int get hashCode => Object.hash(
+        dpad, aButton, bButton, lButton, rButton, startButton, selectButton);
 
   GamepadLayout copyWith({
     ButtonLayout? dpad,

@@ -8,7 +8,6 @@ import 'gamepad_skin.dart';
 class EmulatorSettings {
   final double volume;
   final bool enableSound;
-  final int frameSkip;
   final bool showFps;
   final bool enableVibration;
   final double gamepadOpacity;
@@ -39,7 +38,6 @@ class EmulatorSettings {
   const EmulatorSettings({
     this.volume = 0.8,
     this.enableSound = true,
-    this.frameSkip = 0,
     this.showFps = false,
     this.enableVibration = true,
     this.gamepadOpacity = 0.7,
@@ -72,7 +70,6 @@ class EmulatorSettings {
   EmulatorSettings copyWith({
     double? volume,
     bool? enableSound,
-    int? frameSkip,
     bool? showFps,
     bool? enableVibration,
     double? gamepadOpacity,
@@ -104,7 +101,6 @@ class EmulatorSettings {
     return EmulatorSettings(
       volume: volume ?? this.volume,
       enableSound: enableSound ?? this.enableSound,
-      frameSkip: frameSkip ?? this.frameSkip,
       showFps: showFps ?? this.showFps,
       enableVibration: enableVibration ?? this.enableVibration,
       gamepadOpacity: gamepadOpacity ?? this.gamepadOpacity,
@@ -139,7 +135,6 @@ class EmulatorSettings {
     return {
       'volume': volume,
       'enableSound': enableSound,
-      'frameSkip': frameSkip,
       'showFps': showFps,
       'enableVibration': enableVibration,
       'gamepadOpacity': gamepadOpacity,
@@ -174,7 +169,6 @@ class EmulatorSettings {
     return EmulatorSettings(
       volume: (json['volume'] as num?)?.toDouble() ?? 0.8,
       enableSound: json['enableSound'] as bool? ?? true,
-      frameSkip: json['frameSkip'] as int? ?? 0,
       showFps: json['showFps'] as bool? ?? false,
       enableVibration: json['enableVibration'] as bool? ?? true,
       gamepadOpacity: (json['gamepadOpacity'] as num?)?.toDouble() ?? 0.7,
@@ -212,6 +206,50 @@ class EmulatorSettings {
       raHardcoreMode: json['raHardcoreMode'] as bool? ?? false,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EmulatorSettings &&
+          volume == other.volume &&
+          enableSound == other.enableSound &&
+          showFps == other.showFps &&
+          enableVibration == other.enableVibration &&
+          gamepadOpacity == other.gamepadOpacity &&
+          gamepadScale == other.gamepadScale &&
+          enableTurbo == other.enableTurbo &&
+          turboSpeed == other.turboSpeed &&
+          biosPathGba == other.biosPathGba &&
+          biosPathGb == other.biosPathGb &&
+          biosPathGbc == other.biosPathGbc &&
+          skipBios == other.skipBios &&
+          selectedColorPalette == other.selectedColorPalette &&
+          enableFiltering == other.enableFiltering &&
+          maintainAspectRatio == other.maintainAspectRatio &&
+          autoSaveInterval == other.autoSaveInterval &&
+          gamepadLayoutPortrait == other.gamepadLayoutPortrait &&
+          gamepadLayoutLandscape == other.gamepadLayoutLandscape &&
+          useJoystick == other.useJoystick &&
+          enableExternalGamepad == other.enableExternalGamepad &&
+          gamepadSkin == other.gamepadSkin &&
+          gameFrame == other.gameFrame &&
+          selectedTheme == other.selectedTheme &&
+          enableRewind == other.enableRewind &&
+          rewindBufferSeconds == other.rewindBufferSeconds &&
+          sortOption == other.sortOption &&
+          isGridView == other.isGridView &&
+          raEnabled == other.raEnabled &&
+          raHardcoreMode == other.raHardcoreMode;
+
+  @override
+  int get hashCode => Object.hash(
+        volume, enableSound, showFps, enableVibration,
+        gamepadOpacity, gamepadScale, enableTurbo, turboSpeed,
+        biosPathGba, biosPathGb, biosPathGbc, skipBios,
+        selectedColorPalette, enableFiltering, maintainAspectRatio,
+        autoSaveInterval, gamepadLayoutPortrait, gamepadLayoutLandscape,
+        useJoystick, enableExternalGamepad,
+      );
 
   String toJsonString() => jsonEncode(toJson());
   
