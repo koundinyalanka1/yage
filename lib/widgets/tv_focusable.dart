@@ -17,6 +17,15 @@ class TvFocusable extends StatefulWidget {
   final FocusNode? focusNode;
   final BorderRadius borderRadius;
 
+  /// Whether to animate the focus glow. When `false`, a static highlight
+  /// ring is shown instead of the pulsing glow — better for dialog buttons
+  /// where the pulse can look like a distracting blink.
+  final bool animate;
+
+  /// Called when the focus state changes. Useful for tracking which widget
+  /// in a list/grid was last focused so focus can be restored later.
+  final ValueChanged<bool>? onFocusChanged;
+
   const TvFocusable({
     super.key,
     required this.child,
@@ -26,6 +35,8 @@ class TvFocusable extends StatefulWidget {
     this.autofocus = false,
     this.focusNode,
     this.borderRadius = const BorderRadius.all(Radius.circular(16)),
+    this.animate = true,
+    this.onFocusChanged,
   });
 
   @override
@@ -72,7 +83,7 @@ class _TvFocusableState extends State<TvFocusable>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
+    );
     _pulseAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
@@ -109,7 +120,18 @@ class _TvFocusableState extends State<TvFocusable>
     return Focus(
       focusNode: _focusNode,
       autofocus: widget.autofocus,
-      onFocusChange: (focused) => setState(() => _focused = focused),
+      onFocusChange: (focused) {
+        setState(() => _focused = focused);
+        if (widget.animate) {
+          if (focused) {
+            _pulseController.repeat(reverse: true);
+          } else {
+            _pulseController.stop();
+            _pulseController.reset();
+          }
+        }
+        widget.onFocusChanged?.call(focused);
+      },
       onKeyEvent: _handleKey,
       child: GestureDetector(
         onTap: widget.onTap,
@@ -117,6 +139,9 @@ class _TvFocusableState extends State<TvFocusable>
         child: AnimatedBuilder(
           animation: _pulseAnimation,
           builder: (context, child) {
+            final glowAlpha = widget.animate
+                ? (_pulseAnimation.value * 120).toInt()
+                : (_focused ? 100 : 0);
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               decoration: _focused
@@ -124,8 +149,7 @@ class _TvFocusableState extends State<TvFocusable>
                       borderRadius: widget.borderRadius,
                       boxShadow: [
                         BoxShadow(
-                          color: colors.accent
-                              .withAlpha((_pulseAnimation.value * 120).toInt()),
+                          color: colors.accent.withAlpha(glowAlpha),
                           blurRadius: 12,
                           spreadRadius: 2,
                         ),

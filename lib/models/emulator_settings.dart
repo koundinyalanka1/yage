@@ -28,7 +28,7 @@ class EmulatorSettings {
   final GamepadSkinType gamepadSkin; // visual theme for touch controls
   final String selectedTheme; // theme id string
   final bool enableRewind; // hold-to-rewind feature
-  final int rewindBufferSeconds; // seconds of rewind history (1-10)
+  final int rewindBufferSeconds; // seconds of rewind history (1-60)
   final String sortOption; // persisted sort choice for the game library
   final bool isGridView; // grid vs list view on the home screen
   final bool raEnabled; // master toggle for RetroAchievements

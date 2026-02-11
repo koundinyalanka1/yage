@@ -227,7 +227,7 @@ class SettingsService extends ChangeNotifier {
 
   /// Set rewind buffer duration in seconds
   Future<void> setRewindBufferSeconds(int seconds) async {
-    await update((s) => s.copyWith(rewindBufferSeconds: seconds.clamp(1, 10)));
+    await update((s) => s.copyWith(rewindBufferSeconds: seconds.clamp(1, 60)));
   }
 
   /// Set the sort option for the game library (stored as enum name string)

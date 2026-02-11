@@ -121,24 +121,25 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       emulator.linkCable = _linkCableRef;
       // Wire native rcheevos client for per-frame achievement processing
       emulator.rcheevosClient = _rcheevosClientRef;
-      emulator.start();
-      _maybeShowShortcutsHelp();
 
-      // Detect RetroAchievements game ID in the background.
-      // This does NOT block gameplay — achievements are enabled async.
-      _detectRetroAchievements();
-
-      // Listen for settings changes and forward them to the emulator.
-      // This avoids calling updateSettings() inside build(), which could
-      // trigger notifyListeners() → infinite rebuild loops.
+      // Capture SettingsService early — _maybeShowShortcutsHelp() and
+      // _detectRetroAchievements() both read _settingsServiceRef!.
       _settingsServiceRef = context.read<SettingsService>();
       _settingsServiceRef!.addListener(_onSettingsChanged);
       // Apply initial settings immediately
       emulator.updateSettings(_settingsServiceRef!.settings);
 
-      // Listen for achievement data loading to show notification
+      emulator.start();
+      _maybeShowShortcutsHelp();
+
+      // Capture RetroAchievements service early — _detectRetroAchievements()
+      // reads _raServiceRef!.
       _raServiceRef = context.read<RetroAchievementsService>();
       _raServiceRef!.addListener(_onRetroAchievementsChanged);
+
+      // Detect RetroAchievements game ID in the background.
+      // This does NOT block gameplay — achievements are enabled async.
+      _detectRetroAchievements();
 
       // Listen for native rcheevos events (achievement unlocks, etc.)
       _rcheevosEventSub = _rcheevosClientRef!.events.listen(_onRcheevosEvent);
@@ -263,11 +264,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         break;
 
       case RcEventType.gameLoadSuccess:
-        // Update achievement count display
+        // Update achievement count display — only if the Dart-side
+        // RetroAchievementsService hasn't already shown the same toast.
         final client = _rcheevosClientRef;
-        if (client != null) {
+        if (client != null && !_hasShownAchievementNotification) {
           final summary = client.getAchievementSummary();
           if (summary.total > 0) {
+            _hasShownAchievementNotification = true;
             _showRAToast(
               title: client.gameTitle ?? 'Game Loaded',
               subtitle:
@@ -834,23 +837,39 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: colors.textMuted),
+          TvFocusable(
+            autofocus: true,
+            animate: true,
+            onTap: () => Navigator.of(context).pop(false),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: colors.textMuted.withAlpha(30),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: colors.textMuted),
+              ),
             ),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              backgroundColor: colors.error.withAlpha(51),
-            ),
-            child: Text(
-              'Exit',
-              style: TextStyle(
-                color: colors.error,
-                fontWeight: FontWeight.bold,
+          TvFocusable(
+            animate: true,
+            onTap: () => Navigator.of(context).pop(true),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: colors.error.withAlpha(51),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Exit',
+                style: TextStyle(
+                  color: colors.error,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -866,6 +885,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       if (wasRunning && !_showMenu) {
         emulator.start();
       }
+      // Restore focus so gamepad/keyboard input resumes on TV
+      if (mounted) _focusNode.requestFocus();
       return false;
     }
   }
@@ -882,7 +903,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         linkCable: linkCable,
         isSupported: emulator.isLinkSupported,
       ),
-    );
+    ).then((_) {
+      // Restore focus so gamepad/keyboard input resumes on TV
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   void _toggleOrientation() {
@@ -929,6 +953,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           body: OrientationBuilder(
         builder: (context, orientation) {
           _isLandscape = orientation == Orientation.landscape;
+
+          // ── Proportional HUD metrics ──
+          // All HUD element sizes & positions are derived from screen
+          // dimensions so the layout scales across phones and tablets.
+          final _sw = MediaQuery.of(context).size.width;
+          final _sh = MediaQuery.of(context).size.height;
+          final _safeTop = MediaQuery.of(context).padding.top;
+          final _safeBottom = MediaQuery.of(context).padding.bottom;
+          final hudBtn = (_sw * 0.107).clamp(36.0, 56.0);   // button size
+          final hudEdge = _sw * 0.02;                         // edge margin
+          final hudGap = _sw * 0.03;                          // gap between btns
+          final hudTop = _safeTop + _sh * 0.005;              // top offset
+          final hudStep = hudBtn + hudGap;                    // one btn + gap
           
           return Stack(
             children: [
@@ -955,20 +992,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // FPS overlay - positioned to the left of the rotation button
               if (settings.showFps)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  right: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.12 + 52  // left of rotate btn
-                      : 56,  // 8 (rotate btn right) + 44 (rotate btn width) + 4 (gap)
+                  top: hudTop,
+                  right: hudEdge + hudStep,
                   child: FpsOverlay(fps: emulator.currentFps),
                 ),
               
               // Link cable connection indicator
               if (context.watch<LinkCableService>().state == LinkCableState.connected)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  right: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.12 + 100
-                      : 104,
+                  top: hudTop,
+                  right: hudEdge + hudStep * 2,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
@@ -996,8 +1029,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Demo mode indicator
               if (emulator.isUsingStub)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
-                  left: 60,
+                  top: hudTop,
+                  left: hudEdge + hudStep,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -1057,8 +1090,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     }
 
                     return Positioned(
-                      bottom: MediaQuery.of(context).padding.bottom + 16,
-                      left: 16,
+                      bottom: _safeBottom + _sh * 0.02,
+                      left: _sw * 0.04,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -1093,8 +1126,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     if (!raRuntime.isHardcore) return const SizedBox.shrink();
 
                     return Positioned(
-                      bottom: MediaQuery.of(context).padding.bottom + 16,
-                      right: 16,
+                      bottom: _safeBottom + _sh * 0.02,
+                      right: _sw * 0.04,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -1126,36 +1159,32 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Menu button (hide in edit mode)
               if (!_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  left: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.12  // 12% from left
-                      : 8,
-                  child: _MenuButton(onTap: _toggleMenu),
+                  top: hudTop,
+                  left: hudEdge,
+                  child: _MenuButton(onTap: _toggleMenu, size: hudBtn),
                 ),
               
               // Rewind button (hold to rewind) - next to menu
               if (!_editingLayout && settings.enableRewind)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  left: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.18
-                      : 60,
+                  top: hudTop,
+                  left: hudEdge + hudStep,
                   child: _RewindButton(
                     isActive: emulator.isRewinding,
                     onHoldChanged: _onRewindHold,
+                    size: hudBtn,
                   ),
                 ),
 
               // Fast forward button (hide in edit mode) - next to menu/rewind
               if (!_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  left: _isLandscape 
-                      ? MediaQuery.of(context).size.width * (settings.enableRewind ? 0.24 : 0.18)
-                      : settings.enableRewind ? 108 : 60,
+                  top: hudTop,
+                  left: hudEdge + hudStep * (settings.enableRewind ? 2.5 : 1.5),
                   child: _FastForwardButton(
                     isActive: emulator.speedMultiplier > 1.0,
                     speed: emulator.speedMultiplier,
+                    size: hudBtn,
                     onTap: () {
                       final blocked = _raRuntimeRef!.checkAction('fastForward');
                       if (blocked != null) {
@@ -1175,13 +1204,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Rotation toggle button (hide in edit mode)
               if (!_editingLayout)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  right: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.12  // 12% from right
-                      : 8,
+                  top: hudTop,
+                  right: hudEdge,
                   child: _RotationButton(
                     isLandscape: _isLandscape,
                     onTap: () => _toggleOrientation(),
+                    size: hudBtn,
                   ),
                 ),
               
@@ -1189,14 +1217,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               if (_editingLayout)
                 Positioned(
                   top: _isLandscape 
-                      ? MediaQuery.of(context).size.height * 0.35
-                      : MediaQuery.of(context).padding.top + 60,
-                  left: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.30 
-                      : 16,
-                  right: _isLandscape 
-                      ? MediaQuery.of(context).size.width * 0.30 
-                      : 16,
+                      ? _sh * 0.35
+                      : _safeTop + hudBtn + hudGap * 2,
+                  left: _isLandscape ? _sw * 0.30 : _sw * 0.04,
+                  right: _isLandscape ? _sw * 0.30 : _sw * 0.04,
                   child: _LayoutEditorToolbar(
                     onSave: _saveLayout,
                     onCancel: _cancelEditLayout,
@@ -1278,7 +1302,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   showControls: _showControls,
                   onEditLayout: _enterEditMode,
                   currentSpeed: emulator.speedMultiplier,
-                  turboSpeed: settings.turboSpeed,
                   onSpeedChanged: (speed) {
                     emulator.setSpeed(speed);
                   },
@@ -1341,11 +1364,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final gameTopOffset = screenSize.height * 0.07;
     final gameTop = safeArea.top + gameTopOffset;
     
-    // Allow game to take maximum space - controls will overlay
-    // Only constrain if game would be taller than available space
-    final maxGameHeight = screenSize.height - safeArea.top;
+    // Cap game height so the gamepad area always has enough room.
+    // GB/GBC (160×144, ratio ~1.11) at full width would consume ~90% of
+    // the width as height, leaving almost no space for controls.
+    // Limit the game to at most 42% of screen height so controls get ≥50%.
+    final maxGameHeight = screenSize.height * 0.42;
     
-    // Constrain if too tall (shouldn't happen in portrait for GBA 3:2 ratio)
     if (gameHeight > maxGameHeight) {
       gameHeight = maxGameHeight;
       gameWidth = gameHeight * aspectRatio;
@@ -1353,6 +1377,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     
     // Proportional overlap (5% of screen height)
     final overlapAmount = screenSize.height * 0.05;
+    
+    // Shift ALL buttons slightly upward in portrait mode so they sit
+    // a bit higher in the control area, giving the thumb more room at
+    // the bottom of the screen.
+    const portraitUpShift = -0.06; // 6% of control-area height
+    final GamepadLayout shiftedLayout = layout.copyWith(
+      dpad: layout.dpad.copyWith(
+        y: (layout.dpad.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      aButton: layout.aButton.copyWith(
+        y: (layout.aButton.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      bButton: layout.bButton.copyWith(
+        y: (layout.bButton.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      lButton: layout.lButton.copyWith(
+        y: (layout.lButton.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      rButton: layout.rButton.copyWith(
+        y: (layout.rButton.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      startButton: layout.startButton.copyWith(
+        y: (layout.startButton.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      selectButton: layout.selectButton.copyWith(
+        y: (layout.selectButton.y + portraitUpShift).clamp(0.0, 1.0),
+      ),
+    );
     
     return Stack(
       children: [
@@ -1385,7 +1437,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               opacity: settings.gamepadOpacity,
               scale: settings.gamepadScale,
               enableVibration: settings.enableVibration,
-              layout: layout,
+              layout: shiftedLayout,
               editMode: _editingLayout,
               onLayoutChanged: (newLayout) {
                 setState(() => _tempLayout = newLayout);
@@ -1400,7 +1452,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Landscape layout: Game centered, controls overlay on sides - FULLY MAXIMIZED
   Widget _buildLandscapeLayout(EmulatorService emulator, settings, Widget gameDisplay) {
-    final layout = _tempLayout ?? settings.gamepadLayoutLandscape;
+    final baseLayout = _tempLayout ?? settings.gamepadLayoutLandscape;
     final screenSize = MediaQuery.of(context).size;
     
     // Calculate game size - MAXIMUM SIZE, NO PADDING
@@ -1417,6 +1469,31 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     if (gameWidth > screenSize.width) {
       gameWidth = screenSize.width;
       gameHeight = gameWidth / aspectRatio;
+    }
+    
+    // Cap game width so each side always has at least 15% of screen width
+    // for touch controls.  GB/GBC (nearly-square) would otherwise leave
+    // tiny side zones and button sizes scale with gameRect.width.
+    final maxGameWidth = screenSize.width * 0.64;
+    if (gameWidth > maxGameWidth) {
+      gameWidth = maxGameWidth;
+      gameHeight = gameWidth / aspectRatio;
+    }
+    
+    // For GB/GBC (nearly-square aspect ratio ≤ 1.2), the game is shorter
+    // in landscape so L/R shoulder buttons look too high up.  Nudge them
+    // slightly downward so they sit closer to the visible game area.
+    GamepadLayout layout = baseLayout;
+    if (aspectRatio <= 1.2) {
+      const lrShift = 0.08; // 8% of usable height
+      layout = layout.copyWith(
+        lButton: layout.lButton.copyWith(
+          y: (layout.lButton.y + lrShift).clamp(0.0, 1.0),
+        ),
+        rButton: layout.rButton.copyWith(
+          y: (layout.rButton.y + lrShift).clamp(0.0, 1.0),
+        ),
+      );
     }
     
     return Stack(
@@ -1521,20 +1598,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
 class _MenuButton extends StatelessWidget {
   final VoidCallback onTap;
+  final double size;
 
-  const _MenuButton({required this.onTap});
+  const _MenuButton({required this.onTap, this.size = 44});
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return GestureDetector(
+    return TvFocusable(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(size * 0.27),
       child: Container(
-        width: 44,
-        height: 44,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           color: colors.surface.withAlpha(204),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(size * 0.27),
           border: Border.all(
             color: colors.surfaceLight,
             width: 1,
@@ -1543,7 +1622,7 @@ class _MenuButton extends StatelessWidget {
         child: Icon(
           Icons.menu,
           color: colors.textSecondary,
-          size: 24,
+          size: size * 0.55,
         ),
       ),
     );
@@ -1553,20 +1632,22 @@ class _MenuButton extends StatelessWidget {
 class _RotationButton extends StatelessWidget {
   final bool isLandscape;
   final VoidCallback onTap;
+  final double size;
 
-  const _RotationButton({required this.isLandscape, required this.onTap});
+  const _RotationButton({required this.isLandscape, required this.onTap, this.size = 44});
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return GestureDetector(
+    return TvFocusable(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(size * 0.27),
       child: Container(
-        width: 44,
-        height: 44,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           color: colors.surface.withAlpha(204),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(size * 0.27),
           border: Border.all(
             color: colors.surfaceLight,
             width: 1,
@@ -1575,7 +1656,7 @@ class _RotationButton extends StatelessWidget {
         child: Icon(
           Icons.screen_rotation,
           color: colors.textSecondary,
-          size: 22,
+          size: size * 0.50,
         ),
       ),
     );
@@ -1732,7 +1813,6 @@ class _InGameMenu extends StatelessWidget {
   final bool showControls;
   final VoidCallback onEditLayout;
   final double currentSpeed;
-  final double turboSpeed;
   final void Function(double speed) onSpeedChanged;
   final VoidCallback onExit;
   final bool useJoystick;
@@ -1753,7 +1833,6 @@ class _InGameMenu extends StatelessWidget {
     required this.showControls,
     required this.onEditLayout,
     required this.currentSpeed,
-    this.turboSpeed = 2.0,
     required this.onSpeedChanged,
     required this.onExit,
     required this.useJoystick,
@@ -1777,8 +1856,10 @@ class _InGameMenu extends StatelessWidget {
         child: Center(
           child: GestureDetector(
             onTap: () {}, // Prevent tap through
-            child: Container(
-              width: 320,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Container(
+              width: MediaQuery.of(context).size.width * 0.78,
               margin: const EdgeInsets.all(20),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -1905,7 +1986,6 @@ class _InGameMenu extends StatelessWidget {
                     // Speed control
                     _SpeedSelector(
                       currentSpeed: currentSpeed,
-                      turboSpeed: turboSpeed,
                       onSpeedChanged: onSpeedChanged,
                     ),
                     const SizedBox(height: 10),
@@ -1941,6 +2021,7 @@ class _InGameMenu extends StatelessWidget {
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),
@@ -2171,7 +2252,12 @@ class _InGameMenu extends StatelessWidget {
           }
         },
       ),
-    );
+    ).then((_) {
+      // Restore focus to the pause menu so D-pad navigation works on TV
+      if (context.mounted) {
+        FocusScope.of(context).requestFocus();
+      }
+    });
   }
 }
 
@@ -2503,36 +2589,43 @@ class _MenuActionButton extends StatelessWidget {
 class _RewindButton extends StatelessWidget {
   final bool isActive;
   final void Function(bool held) onHoldChanged;
+  final double size;
 
   const _RewindButton({
     required this.isActive,
     required this.onHoldChanged,
+    this.size = 44,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return GestureDetector(
-      onTapDown: (_) => onHoldChanged(true),
-      onTapUp: (_) => onHoldChanged(false),
-      onTapCancel: () => onHoldChanged(false),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: isActive 
-              ? colors.accent.withAlpha(230)
-              : colors.surface.withAlpha(204),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isActive ? colors.accent : colors.surfaceLight,
-            width: 1,
+    final radius = size * 0.27;
+    return TvFocusable(
+      onTap: () => onHoldChanged(!isActive),
+      borderRadius: BorderRadius.circular(radius),
+      child: GestureDetector(
+        onTapDown: (_) => onHoldChanged(true),
+        onTapUp: (_) => onHoldChanged(false),
+        onTapCancel: () => onHoldChanged(false),
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: isActive 
+                ? colors.accent.withAlpha(230)
+                : colors.surface.withAlpha(204),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: isActive ? colors.accent : colors.surfaceLight,
+              width: 1,
+            ),
           ),
-        ),
-        child: Icon(
-          Icons.fast_rewind,
-          color: isActive ? colors.backgroundDark : colors.textSecondary,
-          size: 22,
+          child: Icon(
+            Icons.fast_rewind,
+            color: isActive ? colors.backgroundDark : colors.textSecondary,
+            size: size * 0.50,
+          ),
         ),
       ),
     );
@@ -2543,26 +2636,30 @@ class _FastForwardButton extends StatelessWidget {
   final bool isActive;
   final double speed;
   final VoidCallback onTap;
+  final double size;
 
   const _FastForwardButton({
     required this.isActive,
     required this.speed,
     required this.onTap,
+    this.size = 44,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return GestureDetector(
+    final radius = size * 0.27;
+    return TvFocusable(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(radius),
       child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        height: size,
+        padding: EdgeInsets.symmetric(horizontal: size * 0.27),
         decoration: BoxDecoration(
           color: isActive 
               ? colors.accent.withAlpha(230)
               : colors.surface.withAlpha(204),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(radius),
           border: Border.all(
             color: isActive ? colors.accent : colors.surfaceLight,
             width: 1,
@@ -2574,14 +2671,14 @@ class _FastForwardButton extends StatelessWidget {
             Icon(
               Icons.fast_forward,
               color: isActive ? colors.backgroundDark : colors.textSecondary,
-              size: 20,
+              size: size * 0.45,
             ),
             if (isActive) ...[
-              const SizedBox(width: 4),
+              SizedBox(width: size * 0.09),
               Text(
-                '${speed.toStringAsFixed(0)}x',
+                '${speed.truncateToDouble() == speed ? speed.toStringAsFixed(0) : speed.toString().replaceAll(RegExp(r'0+$'), '')}x',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: size * 0.27,
                   fontWeight: FontWeight.bold,
                   color: colors.backgroundDark,
                 ),
@@ -2596,26 +2693,14 @@ class _FastForwardButton extends StatelessWidget {
 
 class _SpeedSelector extends StatelessWidget {
   final double currentSpeed;
-  final double turboSpeed;
   final void Function(double speed) onSpeedChanged;
 
   const _SpeedSelector({
     required this.currentSpeed,
     required this.onSpeedChanged,
-    this.turboSpeed = 2.0,
   });
 
-  List<double> get speeds {
-    // Build speed list: always include 0.5, 1.0, and the configured turbo speed
-    final s = <double>{0.5, 1.0};
-    // Add 2.0 if turbo is higher
-    if (turboSpeed > 2.0) s.add(2.0);
-    s.add(turboSpeed);
-    // Add a higher step if turbo allows (e.g. 4x if turbo is 4+)
-    if (turboSpeed >= 4.0 && turboSpeed > 4.0) s.add(4.0);
-    final list = s.toList()..sort();
-    return list;
-  }
+  static const List<double> speeds = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
 
   @override
   Widget build(BuildContext context) {
@@ -2644,7 +2729,7 @@ class _SpeedSelector extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '${currentSpeed.toStringAsFixed(1)}x',
+                '${currentSpeed.truncateToDouble() == currentSpeed ? currentSpeed.toStringAsFixed(0) : currentSpeed.toString().replaceAll(RegExp(r'0+$'), '')}x',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -2656,30 +2741,30 @@ class _SpeedSelector extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: speeds.map((speed) {
-              final isSelected = (currentSpeed - speed).abs() < 0.1;
+              final isSelected = (currentSpeed - speed).abs() < 0.01;
               return Expanded(
                 child: TvFocusable(
                   onTap: () => onSpeedChanged(speed),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                   child: Container(
                     margin: EdgeInsets.only(
-                      right: speed != speeds.last ? 6 : 0,
+                      right: speed != speeds.last ? 4 : 0,
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 7),
                     decoration: BoxDecoration(
                       color: isSelected 
                           ? colors.primary 
                           : colors.surface,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                       border: isSelected 
                           ? null 
                           : Border.all(color: colors.surfaceLight),
                     ),
                     child: Center(
                       child: Text(
-                        '${speed == speed.roundToDouble() ? speed.toStringAsFixed(0) : speed.toStringAsFixed(1)}x',
+                        '${speed.truncateToDouble() == speed ? speed.toStringAsFixed(0) : speed.toString().replaceAll(RegExp(r'0+$'), '')}x',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: isSelected 
                               ? colors.textPrimary 

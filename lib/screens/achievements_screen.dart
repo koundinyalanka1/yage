@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/ra_achievement.dart';
 import '../utils/theme.dart';
+import '../widgets/tv_focusable.dart';
 
 /// Full-screen dialog/page showing all achievements for the current game.
 ///
@@ -68,13 +69,20 @@ class _AchievementsScreenState extends State<AchievementsScreen>
     final totalPts = widget.gameData.totalPoints;
     final progress = total > 0 ? earnedCount / total : 0.0;
 
+    final indicatorColor =
+        widget.isHardcore ? Colors.amber : colors.accent;
+
     return Scaffold(
       backgroundColor: colors.backgroundDark,
       appBar: AppBar(
         backgroundColor: colors.surface,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        leading: TvFocusable(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,61 +107,81 @@ class _AchievementsScreenState extends State<AchievementsScreen>
             ),
           ],
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Column(
-            children: [
-              // Progress bar
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 4,
-                    backgroundColor: colors.backgroundDark,
-                    color: widget.isHardcore
-                        ? Colors.amber
-                        : colors.accent,
-                  ),
-                ),
-              ),
-              TabBar(
-                controller: _tabController,
-                indicatorColor: widget.isHardcore
-                    ? Colors.amber
-                    : colors.accent,
-                labelColor: colors.textPrimary,
-                unselectedLabelColor: colors.textMuted,
-                labelStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-                tabs: [
-                  Tab(
-                    text: 'All ($total)',
-                  ),
-                  Tab(
-                    text:
-                        'Earned (${_earnedHardcore.length + _earnedSoftcore.length})',
-                  ),
-                  Tab(
-                    text: 'Locked (${_locked.length})',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildList(_allAchievements),
-          _buildList([..._earnedHardcore, ..._earnedSoftcore]),
-          _buildList(_locked),
-        ],
+      body: FocusTraversalGroup(
+        policy: OrderedTraversalPolicy(),
+        child: Column(
+          children: [
+            // ── Progress bar + Tab bar ──
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(0),
+              child: Material(
+                color: colors.surface,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 4,
+                          backgroundColor: colors.backgroundDark,
+                          color: indicatorColor,
+                        ),
+                      ),
+                    ),
+                    TabBar(
+                      controller: _tabController,
+                      indicatorColor: indicatorColor,
+                      labelColor: colors.textPrimary,
+                      unselectedLabelColor: colors.textMuted,
+                      labelStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overlayColor:
+                          WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return indicatorColor.withAlpha(50);
+                        }
+                        if (states.contains(WidgetState.hovered)) {
+                          return indicatorColor.withAlpha(25);
+                        }
+                        return null;
+                      }),
+                      splashBorderRadius: BorderRadius.circular(8),
+                      dividerHeight: 0,
+                      tabs: [
+                        Tab(text: 'All ($total)'),
+                        Tab(
+                          text:
+                              'Earned (${_earnedHardcore.length + _earnedSoftcore.length})',
+                        ),
+                        Tab(text: 'Locked (${_locked.length})'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // ── Tab content ──
+            Expanded(
+              child: FocusTraversalOrder(
+                order: const NumericFocusOrder(1),
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildList(_allAchievements),
+                    _buildList([..._earnedHardcore, ..._earnedSoftcore]),
+                    _buildList(_locked),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -186,9 +214,13 @@ class _AchievementsScreenState extends State<AchievementsScreen>
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final ach = achievements[index];
-        return _AchievementTile(
-          achievement: ach,
-          isHardcoreMode: widget.isHardcore,
+        return TvFocusable(
+          autofocus: index == 0,
+          borderRadius: BorderRadius.circular(12),
+          child: _AchievementTile(
+            achievement: ach,
+            isHardcoreMode: widget.isHardcore,
+          ),
         );
       },
     );

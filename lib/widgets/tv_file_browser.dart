@@ -347,7 +347,87 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
 
             // ── File list ──
             Expanded(child: _buildBody()),
+
+            // ── Gamepad hint bar ──
+            _buildHintBar(),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ─────────────── gamepad hint bar ───────────────
+
+  Widget _buildHintBar() {
+    final colors = AppColorTheme.of(context);
+    final showSelectAll = widget.mode == TvBrowseMode.files && widget.allowMultiple;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: BoxDecoration(
+        color: colors.backgroundMedium,
+        border: Border(
+          top: BorderSide(color: colors.surfaceLight, width: 0.5),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _hintChip(colors, 'A', 'Select'),
+          _hintDot(colors),
+          _hintChip(colors, 'B', 'Back'),
+          _hintDot(colors),
+          _hintChip(colors, 'Start', 'Confirm'),
+          if (showSelectAll) ...[
+            _hintDot(colors),
+            _hintChip(colors, 'L1', 'Select All'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _hintChip(AppColorTheme colors, String key, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: colors.surfaceLight),
+          ),
+          child: Text(
+            key,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+              color: colors.textSecondary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: colors.textMuted,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _hintDot(AppColorTheme colors) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Text(
+        '·',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: colors.textMuted,
         ),
       ),
     );

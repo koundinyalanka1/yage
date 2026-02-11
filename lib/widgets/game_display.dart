@@ -1,13 +1,25 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/emulator_service.dart';
 import '../utils/theme.dart';
 
-/// Widget for displaying the emulator game screen
+/// Method channel for texture creation/destruction (Android only).
+const _channel = MethodChannel('com.yourmateapps.retropal/device');
+
+/// Widget for displaying the emulator game screen.
+///
+/// On Android, uses a platform `Texture` widget backed by an ANativeWindow
+/// for zero-copy frame delivery — no `decodeImageFromPixels`, no `ui.Image`
+/// allocations, no GC pressure at 60 fps.
+///
+/// On other platforms (or if texture creation fails), falls back to the
+/// traditional `decodeImageFromPixels` → `CustomPaint` pipeline.
 class GameDisplay extends StatefulWidget {
   final EmulatorService emulator;
   final bool maintainAspectRatio;
@@ -25,27 +37,37 @@ class GameDisplay extends StatefulWidget {
 }
 
 class _GameDisplayState extends State<GameDisplay> {
+  // ── Texture rendering (Android zero-copy path) ──
+  int? _textureId;
+  bool _textureRequested = false;
+
+  // ── Fallback: decodeImageFromPixels path ──
   ui.Image? _frameImage;
   bool _isDisposed = false;
+
+  Uint8List? _pendingPixels;
+  int _pendingWidth = 0;
+  int _pendingHeight = 0;
+  bool _decoding = false;
+
+  // Double-buffer pool to avoid per-frame Uint8List allocations
+  Uint8List? _bufferA;
+  Uint8List? _bufferB;
+  bool _useBufferA = true;
 
   @override
   void initState() {
     super.initState();
-    _registerCallback();
+    _tryCreateTexture();
   }
 
   @override
   void didUpdateWidget(GameDisplay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only re-register if the emulator instance changed
     if (oldWidget.emulator != widget.emulator) {
-      _registerCallback();
+      // Emulator instance changed — re-register
+      _tryCreateTexture();
     }
-  }
-  
-  void _registerCallback() {
-    // Ensure our callback is always registered
-    widget.emulator.onFrame = _onFrame;
   }
 
   @override
@@ -56,22 +78,76 @@ class _GameDisplayState extends State<GameDisplay> {
       widget.emulator.onFrame = null;
     }
     _frameImage?.dispose();
+    _destroyTexture();
     super.dispose();
   }
 
-  Uint8List? _pendingPixels;
-  int _pendingWidth = 0;
-  int _pendingHeight = 0;
-  bool _decoding = false;
+  // ═══════════════════════════════════════════════════════════════════
+  //  Texture path (Android)
+  // ═══════════════════════════════════════════════════════════════════
 
-  // ── Double-buffer pool to avoid per-frame Uint8List allocations ──
-  Uint8List? _bufferA;
-  Uint8List? _bufferB;
-  bool _useBufferA = true;
+  Future<void> _tryCreateTexture() async {
+    if (!Platform.isAndroid) {
+      // Texture rendering not supported — use fallback
+      _registerFallbackCallback();
+      return;
+    }
+    if (_textureRequested) return;
+    _textureRequested = true;
 
-  /// Return a pre-allocated buffer of the given [size], creating or resizing
-  /// only when necessary.  Alternates between two buffers so the one handed
-  /// to `decodeImageFromPixels` is never overwritten while still in use.
+    try {
+      final w = widget.emulator.screenWidth;
+      final h = widget.emulator.screenHeight;
+
+      final id = await _channel.invokeMethod<int>('createGameTexture', {
+        'width': w,
+        'height': h,
+      });
+
+      if (_isDisposed) {
+        // Widget was disposed while we awaited
+        if (id != null) {
+          _channel.invokeMethod('destroyGameTexture');
+        }
+        return;
+      }
+
+      if (id != null) {
+        setState(() {
+          _textureId = id;
+        });
+        widget.emulator.setTextureRendering(true);
+        debugPrint('GameDisplay: Texture widget created (id=$id, ${w}x$h)');
+      } else {
+        // Fallback
+        debugPrint('GameDisplay: Texture creation returned null — falling back');
+        _registerFallbackCallback();
+      }
+    } catch (e) {
+      debugPrint('GameDisplay: Texture creation failed ($e) — falling back');
+      if (!_isDisposed) {
+        _registerFallbackCallback();
+      }
+    }
+  }
+
+  void _destroyTexture() {
+    if (_textureId != null) {
+      widget.emulator.setTextureRendering(false);
+      _channel.invokeMethod('destroyGameTexture');
+      _textureId = null;
+      _textureRequested = false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Fallback path (decodeImageFromPixels)
+  // ═══════════════════════════════════════════════════════════════════
+
+  void _registerFallbackCallback() {
+    widget.emulator.onFrame = _onFrame;
+  }
+
   Uint8List _acquireBuffer(int size) {
     if (_useBufferA) {
       if (_bufferA == null || _bufferA!.length != size) {
@@ -91,35 +167,27 @@ class _GameDisplayState extends State<GameDisplay> {
   void _onFrame(Uint8List pixels, int width, int height) {
     if (_isDisposed) return;
 
-    // Store latest frame data (skip if already decoding to prevent backup)
     _pendingPixels = pixels;
     _pendingWidth = width;
     _pendingHeight = height;
-    
+
     if (!_decoding) {
       _decodeFrame();
     }
   }
-  
+
   void _decodeFrame() async {
     if (_isDisposed || _pendingPixels == null) return;
-    
+
     _decoding = true;
     final pixels = _pendingPixels!;
     final width = _pendingWidth;
     final height = _pendingHeight;
     _pendingPixels = null;
 
-    // Copy into a pre-allocated buffer (avoids GC pressure from per-frame
-    // Uint8List.fromList allocations at 60 fps).
     final pixelsCopy = _acquireBuffer(pixels.length);
     pixelsCopy.setAll(0, pixels);
 
-    // Create image from pixel data
-    // Use targetWidth/targetHeight to let the GPU pre-scale to a larger
-    // resolution — this produces much sharper results than scaling a tiny
-    // 240×160 image in the paint phase. We use 3x which covers most
-    // phone screens (720p–1080p) without excessive memory.
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       pixelsCopy,
@@ -132,7 +200,7 @@ class _GameDisplayState extends State<GameDisplay> {
     );
 
     final newImage = await completer.future;
-    
+
     if (_isDisposed) {
       newImage.dispose();
       _decoding = false;
@@ -146,25 +214,28 @@ class _GameDisplayState extends State<GameDisplay> {
       });
     }
     oldImage?.dispose();
-    
+
     _decoding = false;
-    
-    // If another frame came in while decoding, process it
+
     if (_pendingPixels != null) {
       _decodeFrame();
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  Build
+  // ═══════════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    // No borders or padding - maximize game display area
+
     return Container(
       color: colors.backgroundDark,
       child: widget.maintainAspectRatio
           ? AspectRatio(
-              aspectRatio: widget.emulator.screenWidth / 
-                           widget.emulator.screenHeight,
+              aspectRatio: widget.emulator.screenWidth /
+                  widget.emulator.screenHeight,
               child: _buildDisplay(),
             )
           : _buildDisplay(),
@@ -172,6 +243,12 @@ class _GameDisplayState extends State<GameDisplay> {
   }
 
   Widget _buildDisplay() {
+    // ── Texture path (Android zero-copy) ──
+    if (_textureId != null) {
+      return _buildTextureDisplay();
+    }
+
+    // ── Fallback path (decodeImageFromPixels) ──
     if (_frameImage == null) {
       return _buildPlaceholder();
     }
@@ -182,6 +259,54 @@ class _GameDisplayState extends State<GameDisplay> {
         enableFiltering: widget.enableFiltering,
       ),
       size: Size.infinite,
+    );
+  }
+
+  Widget _buildTextureDisplay() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (widget.enableFiltering) {
+          // Bilinear/cubic scaling — fill the available space
+          return Texture(
+            textureId: _textureId!,
+            filterQuality: FilterQuality.medium,
+          );
+        }
+
+        // Pixel-perfect: snap to the nearest integer scale so every
+        // pixel has exactly the same size — eliminates shimmer.
+        final imgW = widget.emulator.screenWidth.toDouble();
+        final imgH = widget.emulator.screenHeight.toDouble();
+
+        final scaleX = (constraints.maxWidth / imgW).floor();
+        final scaleY = (constraints.maxHeight / imgH).floor();
+        final scale = scaleX < scaleY ? scaleX : scaleY;
+
+        if (scale >= 1) {
+          final destW = imgW * scale;
+          final destH = imgH * scale;
+
+          return Container(
+            color: const Color(0xFF000000),
+            child: Center(
+              child: SizedBox(
+                width: destW,
+                height: destH,
+                child: Texture(
+                  textureId: _textureId!,
+                  filterQuality: FilterQuality.none,
+                ),
+              ),
+            ),
+          );
+        }
+
+        // Screen too small for even 1× — just fill
+        return Texture(
+          textureId: _textureId!,
+          filterQuality: FilterQuality.none,
+        );
+      },
     );
   }
 
@@ -260,7 +385,7 @@ class _GamePainter extends CustomPainter {
         final destH = imgH * scale;
         final offsetX = (size.width - destW) / 2;
         final offsetY = (size.height - destH) / 2;
-        
+
         // Fill the letterbox bars with black
         if (offsetX > 0 || offsetY > 0) {
           canvas.drawRect(
@@ -268,7 +393,7 @@ class _GamePainter extends CustomPainter {
             Paint()..color = const Color(0xFF000000),
           );
         }
-        
+
         final destRect = Rect.fromLTWH(offsetX, offsetY, destW, destH);
         canvas.drawImageRect(image, srcRect, destRect, paint);
       } else {
@@ -282,7 +407,7 @@ class _GamePainter extends CustomPainter {
   @override
   bool shouldRepaint(_GamePainter oldDelegate) {
     return oldDelegate.image != image ||
-           oldDelegate.enableFiltering != enableFiltering;
+        oldDelegate.enableFiltering != enableFiltering;
   }
 }
 
@@ -301,10 +426,10 @@ class FpsOverlay extends StatelessWidget {
         color: colors.backgroundDark.withAlpha(204),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: fps >= 55 
-              ? colors.success 
-              : fps >= 30 
-                  ? colors.warning 
+          color: fps >= 55
+              ? colors.success
+              : fps >= 30
+                  ? colors.warning
                   : colors.error,
           width: 1,
         ),
@@ -320,4 +445,3 @@ class FpsOverlay extends StatelessWidget {
     );
   }
 }
-

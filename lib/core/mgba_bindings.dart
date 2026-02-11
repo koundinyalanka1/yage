@@ -128,6 +128,59 @@ typedef MgbaCoreReadMemory = int Function(
 typedef MgbaCoreGetMemorySizeNative = Int32 Function(NativeCore core, Int32 regionId);
 typedef MgbaCoreGetMemorySize = int Function(NativeCore core, int regionId);
 
+// ── Native Frame Loop functions ──────────────────────────────────────
+// Callback type: void callback(int32_t frames_run)
+typedef NativeFrameCallback = Void Function(Int32 framesRun);
+
+typedef YageFrameLoopStartNative = Int32 Function(
+    NativeCore core,
+    Pointer<NativeFunction<NativeFrameCallback>> callback);
+typedef YageFrameLoopStart = int Function(
+    NativeCore core,
+    Pointer<NativeFunction<NativeFrameCallback>> callback);
+
+typedef YageFrameLoopStopNative = Void Function(NativeCore core);
+typedef YageFrameLoopStop = void Function(NativeCore core);
+
+typedef YageFrameLoopSetSpeedNative = Void Function(
+    NativeCore core, Int32 speedPercent);
+typedef YageFrameLoopSetSpeed = void Function(
+    NativeCore core, int speedPercent);
+
+typedef YageFrameLoopSetRewindNative = Void Function(
+    NativeCore core, Int32 enabled, Int32 interval);
+typedef YageFrameLoopSetRewind = void Function(
+    NativeCore core, int enabled, int interval);
+
+typedef YageFrameLoopSetRcheevosNative = Void Function(
+    NativeCore core, Int32 enabled);
+typedef YageFrameLoopSetRcheevos = void Function(
+    NativeCore core, int enabled);
+
+typedef YageFrameLoopGetFpsX100Native = Int32 Function(NativeCore core);
+typedef YageFrameLoopGetFpsX100 = int Function(NativeCore core);
+
+typedef YageFrameLoopGetDisplayBufferNative = Pointer<Uint32> Function(
+    NativeCore core);
+typedef YageFrameLoopGetDisplayBuffer = Pointer<Uint32> Function(
+    NativeCore core);
+
+typedef YageFrameLoopGetDisplayWidthNative = Int32 Function(NativeCore core);
+typedef YageFrameLoopGetDisplayWidth = int Function(NativeCore core);
+
+typedef YageFrameLoopGetDisplayHeightNative = Int32 Function(NativeCore core);
+typedef YageFrameLoopGetDisplayHeight = int Function(NativeCore core);
+
+typedef YageFrameLoopIsRunningNative = Int32 Function(NativeCore core);
+typedef YageFrameLoopIsRunning = int Function(NativeCore core);
+
+// ── Android Texture Rendering functions ──────────────────────────────
+typedef YageTextureBlitNative = Int32 Function(NativeCore core);
+typedef YageTextureBlit = int Function(NativeCore core);
+
+typedef YageTextureIsAttachedNative = Int32 Function(NativeCore core);
+typedef YageTextureIsAttached = int Function(NativeCore core);
+
 /// Game Boy key codes matching mGBA's input format
 class GBAKey {
   static const int a = 1 << 0;
@@ -199,6 +252,26 @@ class MGBABindings {
   MgbaCoreGetMemorySize? coreGetMemorySize;
   bool _memoryReadLoaded = false;
   bool get isMemoryReadLoaded => _memoryReadLoaded;
+
+  // Native frame loop (optional — POSIX only, returns -1 on Windows)
+  YageFrameLoopStart? frameLoopStart;
+  YageFrameLoopStop? frameLoopStop;
+  YageFrameLoopSetSpeed? frameLoopSetSpeed;
+  YageFrameLoopSetRewind? frameLoopSetRewind;
+  YageFrameLoopSetRcheevos? frameLoopSetRcheevos;
+  YageFrameLoopGetFpsX100? frameLoopGetFpsX100;
+  YageFrameLoopGetDisplayBuffer? frameLoopGetDisplayBuffer;
+  YageFrameLoopGetDisplayWidth? frameLoopGetDisplayWidth;
+  YageFrameLoopGetDisplayHeight? frameLoopGetDisplayHeight;
+  YageFrameLoopIsRunning? frameLoopIsRunning;
+  bool _frameLoopLoaded = false;
+  bool get isFrameLoopLoaded => _frameLoopLoaded;
+
+  // Android texture rendering (optional — Android only via ANativeWindow)
+  YageTextureBlit? textureBlit;
+  YageTextureIsAttached? textureIsAttached;
+  bool _textureLoaded = false;
+  bool get isTextureLoaded => _textureLoaded;
 
   bool get isLoaded => _isLoaded;
 
@@ -402,6 +475,60 @@ class MGBABindings {
       } catch (e) {
         debugPrint('Memory read symbols not available (native lib rebuild needed): $e');
         _memoryReadLoaded = false;
+      }
+
+      // ── Optional: try to load native frame loop symbols ──
+      try {
+        frameLoopStart = lib
+            .lookup<NativeFunction<YageFrameLoopStartNative>>('yage_frame_loop_start')
+            .asFunction<YageFrameLoopStart>();
+        frameLoopStop = lib
+            .lookup<NativeFunction<YageFrameLoopStopNative>>('yage_frame_loop_stop')
+            .asFunction<YageFrameLoopStop>();
+        frameLoopSetSpeed = lib
+            .lookup<NativeFunction<YageFrameLoopSetSpeedNative>>('yage_frame_loop_set_speed')
+            .asFunction<YageFrameLoopSetSpeed>();
+        frameLoopSetRewind = lib
+            .lookup<NativeFunction<YageFrameLoopSetRewindNative>>('yage_frame_loop_set_rewind')
+            .asFunction<YageFrameLoopSetRewind>();
+        frameLoopSetRcheevos = lib
+            .lookup<NativeFunction<YageFrameLoopSetRcheevosNative>>('yage_frame_loop_set_rcheevos')
+            .asFunction<YageFrameLoopSetRcheevos>();
+        frameLoopGetFpsX100 = lib
+            .lookup<NativeFunction<YageFrameLoopGetFpsX100Native>>('yage_frame_loop_get_fps_x100')
+            .asFunction<YageFrameLoopGetFpsX100>();
+        frameLoopGetDisplayBuffer = lib
+            .lookup<NativeFunction<YageFrameLoopGetDisplayBufferNative>>('yage_frame_loop_get_display_buffer')
+            .asFunction<YageFrameLoopGetDisplayBuffer>();
+        frameLoopGetDisplayWidth = lib
+            .lookup<NativeFunction<YageFrameLoopGetDisplayWidthNative>>('yage_frame_loop_get_display_width')
+            .asFunction<YageFrameLoopGetDisplayWidth>();
+        frameLoopGetDisplayHeight = lib
+            .lookup<NativeFunction<YageFrameLoopGetDisplayHeightNative>>('yage_frame_loop_get_display_height')
+            .asFunction<YageFrameLoopGetDisplayHeight>();
+        frameLoopIsRunning = lib
+            .lookup<NativeFunction<YageFrameLoopIsRunningNative>>('yage_frame_loop_is_running')
+            .asFunction<YageFrameLoopIsRunning>();
+        _frameLoopLoaded = true;
+        debugPrint('Native frame loop symbols loaded successfully');
+      } catch (e) {
+        debugPrint('Native frame loop symbols not available: $e');
+        _frameLoopLoaded = false;
+      }
+
+      // ── Optional: try to load texture rendering symbols ──
+      try {
+        textureBlit = lib
+            .lookup<NativeFunction<YageTextureBlitNative>>('yage_texture_blit')
+            .asFunction<YageTextureBlit>();
+        textureIsAttached = lib
+            .lookup<NativeFunction<YageTextureIsAttachedNative>>('yage_texture_is_attached')
+            .asFunction<YageTextureIsAttached>();
+        _textureLoaded = true;
+        debugPrint('Texture rendering symbols loaded successfully');
+      } catch (e) {
+        debugPrint('Texture rendering symbols not available: $e');
+        _textureLoaded = false;
       }
 
       return true;
@@ -750,8 +877,115 @@ class MGBACore {
     return _bindings.coreGetMemorySize!(_corePtr as Pointer<Void>, regionId);
   }
 
+  // ── Native Frame Loop ──
+
+  /// Whether the native frame loop API is available.
+  bool get isFrameLoopSupported => _bindings.isFrameLoopLoaded && _corePtr != null;
+
+  /// Start the native frame loop thread.
+  /// [callbackPtr] is a `NativeCallable<NativeFrameCallback>.listener`
+  /// function pointer that will be invoked at ~60 Hz from the native thread.
+  /// Returns true on success.
+  bool startFrameLoop(Pointer<NativeFunction<NativeFrameCallback>> callbackPtr) {
+    if (_corePtr == null || !_bindings.isFrameLoopLoaded) return false;
+    final result = _bindings.frameLoopStart!(_corePtr as Pointer<Void>, callbackPtr);
+    return result == 0;
+  }
+
+  /// Stop the native frame loop (blocks until the thread exits).
+  void stopFrameLoop() {
+    if (_corePtr == null || !_bindings.isFrameLoopLoaded) return;
+    _bindings.frameLoopStop!(_corePtr as Pointer<Void>);
+  }
+
+  /// Set emulation speed for the native frame loop (100 = 1×, 800 = 8×).
+  void frameLoopSetSpeed(int speedPercent) {
+    if (_corePtr == null || _bindings.frameLoopSetSpeed == null) return;
+    _bindings.frameLoopSetSpeed!(_corePtr as Pointer<Void>, speedPercent);
+  }
+
+  /// Configure rewind capture on the native frame loop thread.
+  void frameLoopSetRewind({required bool enabled, int interval = 5}) {
+    if (_corePtr == null || _bindings.frameLoopSetRewind == null) return;
+    _bindings.frameLoopSetRewind!(
+        _corePtr as Pointer<Void>, enabled ? 1 : 0, interval);
+  }
+
+  /// Enable/disable rcheevos per-frame processing on the native thread.
+  void frameLoopSetRcheevos({required bool enabled}) {
+    if (_corePtr == null || _bindings.frameLoopSetRcheevos == null) return;
+    _bindings.frameLoopSetRcheevos!(
+        _corePtr as Pointer<Void>, enabled ? 1 : 0);
+  }
+
+  /// Get FPS from the native frame loop (returns fps × 100).
+  double getFrameLoopFps() {
+    if (_corePtr == null || _bindings.frameLoopGetFpsX100 == null) return 0;
+    return _bindings.frameLoopGetFpsX100!(_corePtr as Pointer<Void>) / 100.0;
+  }
+
+  /// Get the display buffer snapshot from the native frame loop.
+  /// Returns a Dart-owned copy of the pixel data, or null if unavailable.
+  Uint8List? getDisplayBuffer() {
+    if (_corePtr == null || !_bindings.isFrameLoopLoaded) return null;
+
+    final buffer = _bindings.frameLoopGetDisplayBuffer!(_corePtr as Pointer<Void>);
+    if (buffer == nullptr) return null;
+
+    final w = _bindings.frameLoopGetDisplayWidth!(_corePtr as Pointer<Void>);
+    final h = _bindings.frameLoopGetDisplayHeight!(_corePtr as Pointer<Void>);
+    if (w <= 0 || h <= 0) return null;
+
+    final byteCount = w * h * 4;
+    return Uint8List.fromList(buffer.cast<Uint8>().asTypedList(byteCount));
+  }
+
+  /// Display dimensions from the native frame loop (may differ from core
+  /// width/height during SGB mode transitions).
+  int get displayWidth {
+    if (_corePtr == null || _bindings.frameLoopGetDisplayWidth == null) return _width;
+    final w = _bindings.frameLoopGetDisplayWidth!(_corePtr as Pointer<Void>);
+    return w > 0 ? w : _width;
+  }
+
+  int get displayHeight {
+    if (_corePtr == null || _bindings.frameLoopGetDisplayHeight == null) return _height;
+    final h = _bindings.frameLoopGetDisplayHeight!(_corePtr as Pointer<Void>);
+    return h > 0 ? h : _height;
+  }
+
+  /// Whether the native frame loop is currently running.
+  bool get isFrameLoopRunning {
+    if (_corePtr == null || _bindings.frameLoopIsRunning == null) return false;
+    return _bindings.frameLoopIsRunning!(_corePtr as Pointer<Void>) != 0;
+  }
+
+  // ── Texture Rendering ──
+
+  /// Whether the texture rendering API is available.
+  bool get isTextureSupported => _bindings.isTextureLoaded && _corePtr != null;
+
+  /// Blit the current video buffer to the attached ANativeWindow surface.
+  /// Call from the Dart Timer frame loop path; the native frame loop
+  /// blits automatically when a surface is attached.
+  /// Returns true on success.
+  bool textureBlit() {
+    if (_corePtr == null || _bindings.textureBlit == null) return false;
+    return _bindings.textureBlit!(_corePtr as Pointer<Void>) == 0;
+  }
+
+  /// Whether a native texture surface is currently attached.
+  bool get isTextureAttached {
+    if (_corePtr == null || _bindings.textureIsAttached == null) return false;
+    return _bindings.textureIsAttached!(_corePtr as Pointer<Void>) != 0;
+  }
+
   /// Stop and clean up
   void dispose() {
+    // Stop native frame loop if running
+    if (isFrameLoopRunning) {
+      stopFrameLoop();
+    }
     if (_readBuf != null) {
       calloc.free(_readBuf!);
       _readBuf = null;

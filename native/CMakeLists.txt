@@ -71,9 +71,13 @@ endif()
 if(WIN32)
     # No additional libs needed - we load libretro dynamically
 elseif(ANDROID)
-    target_link_libraries(yage_core PRIVATE dl log OpenSLES)
+    # pthread is part of Bionic libc (no explicit link needed)
+    # 'android' provides ANativeWindow for zero-copy texture rendering
+    target_link_libraries(yage_core PRIVATE dl log OpenSLES android)
 else()
-    target_link_libraries(yage_core PRIVATE dl)
+    # Linux / macOS — link pthread for the native frame loop thread
+    find_package(Threads REQUIRED)
+    target_link_libraries(yage_core PRIVATE dl Threads::Threads)
 endif()
 
 # ── Output directory ──────────────────────────────────────────────────

@@ -57,6 +57,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
 
+  /// Index of the last focused game card so we can restore focus after
+  /// navigating away (settings, game screen) and coming back.
+  int _lastFocusedGameIndex = 0;
+
+  /// Whether we should restore focus to [_lastFocusedGameIndex] on the
+  /// next build (set to true after returning from a pushed route).
+  bool _shouldRestoreFocus = false;
+
   @override
   void initState() {
     super.initState();
@@ -208,6 +216,102 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         sorted.sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
     }
     return sorted;
+  }
+
+  /// Show a D-pad / TV-friendly sort dialog instead of PopupMenuButton.
+  void _showSortDialog() {
+    final colors = AppColorTheme.of(context);
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: colors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: colors.primary.withAlpha(77),
+              width: 2,
+            ),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.swap_vert, color: colors.accent, size: 22),
+              const SizedBox(width: 10),
+              Text(
+                'Sort by',
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
+          content: SizedBox(
+            width: 300,
+            child: FocusTraversalGroup(
+              policy: OrderedTraversalPolicy(),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: GameSortOption.values.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final opt = entry.value;
+                    final isSelected = _sortOption == opt;
+                    return TvFocusable(
+                      autofocus: isSelected || (index == 0 && !GameSortOption.values.contains(_sortOption)),
+                      onTap: () {
+                        setState(() => _sortOption = opt);
+                        context.read<SettingsService>().setSortOption(opt.name);
+                        Navigator.pop(dialogContext);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: ListTile(
+                        leading: Icon(
+                          opt.icon,
+                          size: 20,
+                          color: isSelected ? colors.accent : null,
+                        ),
+                        title: Text(
+                          opt.label,
+                          style: TextStyle(
+                            color: isSelected ? colors.accent : null,
+                            fontWeight: isSelected ? FontWeight.bold : null,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(Icons.check, size: 18, color: colors.accent)
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        dense: true,
+                        onTap: () {
+                          setState(() => _sortOption = opt);
+                          context.read<SettingsService>().setSortOption(opt.name);
+                          Navigator.pop(dialogContext);
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: colors.textMuted),
+              ),
+            ),
+          ],
+        );
+      },
+    ).then((_) {
+      // Restore focus to the game list on TV after dialog dismissal
+      if (mounted) _gameListFocusNode.requestFocus();
+    });
   }
 
   Future<void> _addRomFile() async {
@@ -364,6 +468,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  /// Navigate to settings and restore game list focus on return.
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    ).then((_) {
+      if (mounted) setState(() => _shouldRestoreFocus = true);
+    });
+  }
+
   void _launchGame(GameRom game) async {
     final emulator = context.read<EmulatorService>();
     final library = context.read<GameLibraryService>();
@@ -390,7 +503,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         MaterialPageRoute(
           builder: (_) => GameScreen(game: game),
         ),
-      );
+      ).then((_) {
+        if (mounted) setState(() => _shouldRestoreFocus = true);
+      });
     } else if (mounted) {
       ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
         SnackBar(
@@ -448,6 +563,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ),
                 ),
               ),
+              // TV bumper hint bar
+              if (TvDetector.isTV)
+                _buildTvHintBar(),
             ],
           ),
         ),
@@ -531,57 +649,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(width: 8),
           
-          // Sort button
-          PopupMenuButton<GameSortOption>(
-            icon: Icon(Icons.swap_vert, color: colors.textSecondary, size: 20),
-            tooltip: 'Sort by',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            color: colors.surface,
-            onSelected: (value) {
-              setState(() => _sortOption = value);
-              context.read<SettingsService>().setSortOption(value.name);
-            },
-            itemBuilder: (context) => GameSortOption.values.map((opt) {
-              final isSelected = _sortOption == opt;
-              return PopupMenuItem(
-                value: opt,
-                child: ListTile(
-                  leading: Icon(
-                    opt.icon,
-                    size: 20,
-                    color: isSelected ? colors.accent : null,
-                  ),
-                  title: Text(
-                    opt.label,
-                    style: TextStyle(
-                      color: isSelected ? colors.accent : null,
-                      fontWeight: isSelected ? FontWeight.bold : null,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? Icon(Icons.check, size: 18, color: colors.accent)
-                      : null,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              );
-            }).toList(),
+          // Sort button — uses dialog instead of PopupMenuButton for TV D-pad support
+          TvFocusable(
+            onTap: _showSortDialog,
+            borderRadius: BorderRadius.circular(8),
+            child: IconButton(
+              icon: Icon(Icons.swap_vert, color: colors.textSecondary, size: 20),
+              tooltip: 'Sort by',
+              onPressed: _showSortDialog,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
           ),
 
           // View toggle
-          IconButton(
-            icon: Icon(
-              _isGridView ? Icons.view_list : Icons.grid_view,
-              color: colors.textSecondary,
-              size: 20,
-            ),
-            onPressed: () {
+          TvFocusable(
+            onTap: () {
               setState(() => _isGridView = !_isGridView);
               context.read<SettingsService>().setGridView(_isGridView);
             },
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            borderRadius: BorderRadius.circular(8),
+            child: IconButton(
+              icon: Icon(
+                _isGridView ? Icons.view_list : Icons.grid_view,
+                color: colors.textSecondary,
+                size: 20,
+              ),
+              onPressed: () {
+                setState(() => _isGridView = !_isGridView);
+                context.read<SettingsService>().setGridView(_isGridView);
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
           ),
           
           // On TV: direct focusable buttons (popup menus are hard with D-pad)
@@ -610,15 +710,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
             TvFocusable(
               borderRadius: BorderRadius.circular(8),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ),
+              onTap: _openSettings,
               child: IconButton(
                 icon: Icon(Icons.settings_outlined, color: colors.textSecondary, size: 20),
                 tooltip: 'Settings',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                ),
+                onPressed: _openSettings,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
@@ -632,9 +728,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               size: 20,
             ),
             tooltip: 'Settings',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed: _openSettings,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
@@ -702,52 +796,34 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
           
-          // Sort button
-          PopupMenuButton<GameSortOption>(
-            icon: Icon(Icons.swap_vert, color: colors.textSecondary),
-            tooltip: 'Sort by',
-            color: colors.surface,
-            onSelected: (value) {
-              setState(() => _sortOption = value);
-              context.read<SettingsService>().setSortOption(value.name);
-            },
-            itemBuilder: (context) => GameSortOption.values.map((opt) {
-              final isSelected = _sortOption == opt;
-              return PopupMenuItem(
-                value: opt,
-                child: ListTile(
-                  leading: Icon(
-                    opt.icon,
-                    size: 20,
-                    color: isSelected ? colors.accent : null,
-                  ),
-                  title: Text(
-                    opt.label,
-                    style: TextStyle(
-                      color: isSelected ? colors.accent : null,
-                      fontWeight: isSelected ? FontWeight.bold : null,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? Icon(Icons.check, size: 18, color: colors.accent)
-                      : null,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              );
-            }).toList(),
+          // Sort button — uses dialog instead of PopupMenuButton for TV D-pad support
+          TvFocusable(
+            onTap: _showSortDialog,
+            borderRadius: BorderRadius.circular(8),
+            child: IconButton(
+              icon: Icon(Icons.swap_vert, color: colors.textSecondary),
+              tooltip: 'Sort by',
+              onPressed: _showSortDialog,
+            ),
           ),
 
           // View toggle
-          IconButton(
-            icon: Icon(
-              _isGridView ? Icons.view_list : Icons.grid_view,
-              color: colors.textSecondary,
-            ),
-            onPressed: () {
+          TvFocusable(
+            onTap: () {
               setState(() => _isGridView = !_isGridView);
               context.read<SettingsService>().setGridView(_isGridView);
             },
+            borderRadius: BorderRadius.circular(8),
+            child: IconButton(
+              icon: Icon(
+                _isGridView ? Icons.view_list : Icons.grid_view,
+                color: colors.textSecondary,
+              ),
+              onPressed: () {
+                setState(() => _isGridView = !_isGridView);
+                context.read<SettingsService>().setGridView(_isGridView);
+              },
+            ),
           ),
           
           // On TV: direct focusable buttons (popup menus are hard with D-pad)
@@ -772,15 +848,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
             TvFocusable(
               borderRadius: BorderRadius.circular(8),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ),
+              onTap: _openSettings,
               child: IconButton(
                 icon: Icon(Icons.settings_outlined, color: colors.textSecondary),
                 tooltip: 'Settings',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                ),
+                onPressed: _openSettings,
               ),
             ),
           ] else
@@ -791,9 +863,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               color: colors.textSecondary,
             ),
             tooltip: 'Settings',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed: _openSettings,
           ),
         ],
       ),
@@ -864,6 +934,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               fontSize: 12,
               fontWeight: FontWeight.bold,
             ),
+            // Visible focus ring for TV / D-pad navigation
+            overlayColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.focused)) {
+                return colors.accent.withAlpha(50);
+              }
+              if (states.contains(WidgetState.hovered)) {
+                return colors.accent.withAlpha(25);
+              }
+              return null;
+            }),
+            splashBorderRadius: BorderRadius.circular(10),
+            dividerHeight: 0,
             tabs: [
               Tab(text: 'All Games ($allCount)'),
               Tab(text: 'Recent ($recentCount)'),
@@ -871,6 +953,91 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildTvHintBar() {
+    final colors = AppColorTheme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      color: colors.backgroundDark,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: colors.surfaceLight),
+            ),
+            child: Text(
+              'L1',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '◄  Tabs  ►',
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.textMuted,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: colors.surfaceLight),
+            ),
+            child: Text(
+              'R1',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 24),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: colors.surfaceLight),
+            ),
+            child: Text(
+              'Select',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Text(
+              'Options',
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.textMuted,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -956,7 +1123,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  /// Determines which game card index should receive autofocus.
+  /// On TV: uses the last-focused index when restoring focus, otherwise
+  /// defaults to 0 on the initial build.
+  bool _shouldAutofocusIndex(int index, int itemCount) {
+    if (!TvDetector.isTV) return false;
+    if (_shouldRestoreFocus) {
+      return index == _lastFocusedGameIndex.clamp(0, itemCount - 1);
+    }
+    return index == 0;
+  }
+
   Widget _buildGameList(List<GameRom> games) {
+    // Clear the restore flag after this build frame so we don't keep
+    // autofocusing on subsequent rebuilds (e.g. from Consumer).
+    if (_shouldRestoreFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _shouldRestoreFocus = false;
+      });
+    }
+
     if (_isGridView) {
       // Adaptive column count: more columns on TV / large screens
       return LayoutBuilder(
@@ -980,9 +1166,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             itemBuilder: (context, index) {
               final game = games[index];
               return TvFocusable(
-                autofocus: TvDetector.isTV && index == 0,
+                autofocus: _shouldAutofocusIndex(index, games.length),
                 onTap: () => _launchGame(game),
                 onLongPress: () => _showGameOptions(game),
+                onFocusChanged: (focused) {
+                  if (focused) _lastFocusedGameIndex = index;
+                },
                 child: GameCard(
                   game: game,
                   onTap: () => _launchGame(game),
@@ -1002,10 +1191,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       itemBuilder: (context, index) {
         final game = games[index];
         return TvFocusable(
-          autofocus: TvDetector.isTV && index == 0,
+          autofocus: _shouldAutofocusIndex(index, games.length),
           borderRadius: BorderRadius.circular(12),
           onTap: () => _launchGame(game),
           onLongPress: () => _showGameOptions(game),
+          onFocusChanged: (focused) {
+            if (focused) _lastFocusedGameIndex = index;
+          },
           child: GameListTile(
             game: game,
             onTap: () => _launchGame(game),
@@ -1023,9 +1215,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }) {
     final colors = AppColorTheme.of(context);
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Container(
               width: 100,
               height: 100,
@@ -1039,51 +1233,52 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 color: colors.primary.withAlpha(128),
               ),
             ),
-          const SizedBox(height: 24),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: colors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 14,
-              color: colors.textMuted,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 32),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TvFocusable(
-                autofocus: TvDetector.isTV,
-                borderRadius: BorderRadius.circular(12),
-                onTap: _addRomFile,
-                child: OutlinedButton.icon(
-                  onPressed: _addRomFile,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add ROMs'),
-                ),
+            const SizedBox(height: 24),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: colors.textPrimary,
               ),
-              const SizedBox(width: 12),
-              TvFocusable(
-                borderRadius: BorderRadius.circular(12),
-                onTap: _addRomFolder,
-                child: ElevatedButton.icon(
-                  onPressed: _addRomFolder,
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Add Folder'),
-                ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 14,
+                color: colors.textMuted,
               ),
-            ],
-          ),
-        ],
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TvFocusable(
+                  autofocus: TvDetector.isTV,
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _addRomFile,
+                  child: OutlinedButton.icon(
+                    onPressed: _addRomFile,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add ROMs'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                TvFocusable(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _addRomFolder,
+                  child: ElevatedButton.icon(
+                    onPressed: _addRomFolder,
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('Add Folder'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1191,7 +1386,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           isHardcore: settings.raHardcoreMode,
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) setState(() => _shouldRestoreFocus = true);
+    });
   }
 
   void _showGameOptions(GameRom game) {
@@ -1240,112 +1437,172 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 
                 Flexible(
                   child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.play_arrow),
-                          title: const Text('Play'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _launchGame(game);
-                          },
-                        ),
-                        // Achievements (only if RA is logged in)
-                        Builder(
-                          builder: (ctx) {
-                            final raService = ctx.read<RetroAchievementsService>();
-                            final settings = ctx.read<SettingsService>();
-                            if (!settings.settings.raEnabled || !raService.isLoggedIn) {
-                              return const SizedBox.shrink();
-                            }
-                            return ListTile(
-                              leading: const Icon(Icons.emoji_events, color: Colors.amber),
-                              title: const Text('Achievements'),
-                              subtitle: const Text('View RetroAchievements'),
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                _showAchievementsForGame(game);
-                              },
-                            );
-                          },
-                        ),
-                        ListTile(
-                          leading: Icon(
-                            game.isFavorite ? Icons.favorite : Icons.favorite_border,
-                            color: game.isFavorite ? colors.accentAlt : null,
-                          ),
-                          title: Text(
-                            game.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
-                          ),
-                          onTap: () {
-                            library.toggleFavorite(game);
-                            Navigator.pop(context);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.image),
-                          title: const Text('Set Cover Art'),
-                          subtitle: const Text('Choose from gallery'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _selectCoverArt(game);
-                          },
-                        ),
-                        if (game.coverPath != null)
-                          ListTile(
-                            leading: const Icon(Icons.hide_image_outlined),
-                            title: const Text('Remove Cover Art'),
+                    child: FocusTraversalGroup(
+                      policy: OrderedTraversalPolicy(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TvFocusable(
+                            autofocus: true,
                             onTap: () {
-                              library.removeCoverArt(game);
                               Navigator.pop(context);
+                              _launchGame(game);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: const Icon(Icons.play_arrow),
+                              title: const Text('Play'),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _launchGame(game);
+                              },
+                            ),
+                          ),
+                          // Achievements (only if RA is logged in)
+                          Builder(
+                            builder: (ctx) {
+                              final raService = ctx.read<RetroAchievementsService>();
+                              final settings = ctx.read<SettingsService>();
+                              if (!settings.settings.raEnabled || !raService.isLoggedIn) {
+                                return const SizedBox.shrink();
+                              }
+                              return TvFocusable(
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _showAchievementsForGame(game);
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: ListTile(
+                                  leading: const Icon(Icons.emoji_events, color: Colors.amber),
+                                  title: const Text('Achievements'),
+                                  subtitle: const Text('View RetroAchievements'),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    _showAchievementsForGame(game);
+                                  },
+                                ),
+                              );
                             },
                           ),
-                        ListTile(
-                          leading: const Icon(Icons.archive_outlined),
-                          title: const Text('Export Save Data'),
-                          subtitle: Text(
-                            'Backup .sav & save states to ZIP',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.textMuted,
+                          TvFocusable(
+                            onTap: () {
+                              library.toggleFavorite(game);
+                              Navigator.pop(context);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: Icon(
+                                game.isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: game.isFavorite ? colors.accentAlt : null,
+                              ),
+                              title: Text(
+                                game.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+                              ),
+                              onTap: () {
+                                library.toggleFavorite(game);
+                                Navigator.pop(context);
+                              },
                             ),
                           ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _exportGameSaves(game);
-                          },
-                        ),
-                        ListTile(
-                          leading: Icon(Icons.delete_sweep, color: colors.warning),
-                          title: Text(
-                            'Delete Save Data',
-                            style: TextStyle(color: colors.warning),
-                          ),
-                          subtitle: Text(
-                            'Remove .sav, save states & screenshots',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.textMuted,
+                          TvFocusable(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _selectCoverArt(game);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: const Icon(Icons.image),
+                              title: const Text('Set Cover Art'),
+                              subtitle: const Text('Choose from gallery'),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _selectCoverArt(game);
+                              },
                             ),
                           ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _confirmDeleteSaveData(game);
-                          },
-                        ),
-                        ListTile(
-                          leading: Icon(Icons.delete_outline, color: colors.error),
-                          title: Text(
-                            'Remove from Library',
-                            style: TextStyle(color: colors.error),
+                          if (game.coverPath != null)
+                            TvFocusable(
+                              onTap: () {
+                                library.removeCoverArt(game);
+                                Navigator.pop(context);
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: ListTile(
+                                leading: const Icon(Icons.hide_image_outlined),
+                                title: const Text('Remove Cover Art'),
+                                onTap: () {
+                                  library.removeCoverArt(game);
+                                  Navigator.pop(context);
+                                },
+                              ),
+                            ),
+                          TvFocusable(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _exportGameSaves(game);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: const Icon(Icons.archive_outlined),
+                              title: const Text('Export Save Data'),
+                              subtitle: Text(
+                                'Backup .sav & save states to ZIP',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.textMuted,
+                                ),
+                              ),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _exportGameSaves(game);
+                              },
+                            ),
                           ),
-                          onTap: () {
-                            library.removeRom(game);
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ],
+                          TvFocusable(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _confirmDeleteSaveData(game);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: Icon(Icons.delete_sweep, color: colors.warning),
+                              title: Text(
+                                'Delete Save Data',
+                                style: TextStyle(color: colors.warning),
+                              ),
+                              subtitle: Text(
+                                'Remove .sav, save states & screenshots',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.textMuted,
+                                ),
+                              ),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _confirmDeleteSaveData(game);
+                              },
+                            ),
+                          ),
+                          TvFocusable(
+                            onTap: () {
+                              library.removeRom(game);
+                              Navigator.pop(context);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: Icon(Icons.delete_outline, color: colors.error),
+                              title: Text(
+                                'Remove from Library',
+                                style: TextStyle(color: colors.error),
+                              ),
+                              onTap: () {
+                                library.removeRom(game);
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1354,7 +1611,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         );
       },
-    );
+    ).then((_) {
+      // Restore focus to the game list on TV after bottom sheet dismissal
+      if (mounted) _gameListFocusNode.requestFocus();
+    });
   }
 
   Future<void> _exportGameSaves(GameRom game) async {
@@ -1417,38 +1677,70 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ListTile(
-                    leading: const Icon(Icons.share),
-                    title: const Text('Share'),
-                    subtitle: Text(
-                      'Send via Google Drive, email, etc.',
-                      style: TextStyle(fontSize: 12, color: colors.textMuted),
+                  FocusTraversalGroup(
+                    policy: OrderedTraversalPolicy(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TvFocusable(
+                          autofocus: true,
+                          onTap: () {
+                            Navigator.pop(context);
+                            SaveBackupService.shareZip(zipPath);
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: ListTile(
+                            leading: const Icon(Icons.share),
+                            title: const Text('Share'),
+                            subtitle: Text(
+                              'Send via Google Drive, email, etc.',
+                              style: TextStyle(fontSize: 12, color: colors.textMuted),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              SaveBackupService.shareZip(zipPath);
+                            },
+                          ),
+                        ),
+                        TvFocusable(
+                          onTap: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            Navigator.pop(context);
+                            final saved =
+                                await SaveBackupService.saveZipToUserLocation(zipPath);
+                            if (saved != null && mounted) {
+                              messenger
+                                ..clearSnackBars()
+                                ..showSnackBar(
+                                  SnackBar(content: Text('Saved to $saved')),
+                                );
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: ListTile(
+                            leading: const Icon(Icons.save_alt),
+                            title: const Text('Save to…'),
+                            subtitle: Text(
+                              'Choose a folder on this device',
+                              style: TextStyle(fontSize: 12, color: colors.textMuted),
+                            ),
+                            onTap: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              Navigator.pop(context);
+                              final saved =
+                                  await SaveBackupService.saveZipToUserLocation(zipPath);
+                              if (saved != null && mounted) {
+                                messenger
+                                  ..clearSnackBars()
+                                  ..showSnackBar(
+                                    SnackBar(content: Text('Saved to $saved')),
+                                  );
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      SaveBackupService.shareZip(zipPath);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.save_alt),
-                    title: const Text('Save to…'),
-                    subtitle: Text(
-                      'Choose a folder on this device',
-                      style: TextStyle(fontSize: 12, color: colors.textMuted),
-                    ),
-                    onTap: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      Navigator.pop(context);
-                      final saved =
-                          await SaveBackupService.saveZipToUserLocation(zipPath);
-                      if (saved != null && mounted) {
-                        messenger
-                          ..clearSnackBars()
-                          ..showSnackBar(
-                            SnackBar(content: Text('Saved to $saved')),
-                          );
-                      }
-                    },
                   ),
                 ],
               ),
@@ -1459,6 +1751,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         // Delete the temp ZIP after the bottom sheet is dismissed,
         // regardless of whether the user shared, saved, or cancelled.
         SaveBackupService.deleteTempZip(zipPath);
+        // Restore focus to the game list on TV
+        if (mounted) _gameListFocusNode.requestFocus();
       });
     } catch (e) {
       if (mounted) {
@@ -1572,6 +1866,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
       }
     }
+    // Restore focus to the game list on TV after dialog dismissal
+    if (mounted) _gameListFocusNode.requestFocus();
   }
 }
 

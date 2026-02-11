@@ -277,25 +277,53 @@ static void RC_CCONV event_handler(const rc_client_event_t* event,
         case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
             RC_LOGI("Achievement triggered: \"%s\" (%u pts)",
                     ev.achievement_title, ev.achievement_points);
+            enqueue_event(&ev);
             break;
         case RC_CLIENT_EVENT_GAME_COMPLETED:
             RC_LOGI("Game completed!");
+            enqueue_event(&ev);
             break;
         case RC_CLIENT_EVENT_SERVER_ERROR:
             RC_LOGE("Server error: %s", ev.error_message);
+            enqueue_event(&ev);
             break;
         case RC_CLIENT_EVENT_DISCONNECTED:
             RC_LOGI("Disconnected from server");
+            enqueue_event(&ev);
             break;
         case RC_CLIENT_EVENT_RECONNECTED:
             RC_LOGI("Reconnected to server");
+            enqueue_event(&ev);
             break;
+        case RC_CLIENT_EVENT_SUBSET_COMPLETED:
+            RC_LOGI("Subset completed!");
+            enqueue_event(&ev);
+            break;
+
+        /* ── Events we intentionally do NOT forward to Dart ──
+         * Challenge / progress indicators carry achievement data for
+         * UNEARNED achievements.  Forwarding them caused spurious
+         * "achievement unlocked" toasts on GB/GBC games. */
+        case RC_CLIENT_EVENT_ACHIEVEMENT_CHALLENGE_INDICATOR_SHOW:
+        case RC_CLIENT_EVENT_ACHIEVEMENT_CHALLENGE_INDICATOR_HIDE:
+        case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_SHOW:
+        case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_HIDE:
+        case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_UPDATE:
+        case RC_CLIENT_EVENT_LEADERBOARD_STARTED:
+        case RC_CLIENT_EVENT_LEADERBOARD_FAILED:
+        case RC_CLIENT_EVENT_LEADERBOARD_SUBMITTED:
+        case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_SHOW:
+        case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_HIDE:
+        case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_UPDATE:
+        case RC_CLIENT_EVENT_LEADERBOARD_SCOREBOARD:
+        case RC_CLIENT_EVENT_RESET:
+            RC_LOGI("Event (not forwarded): type=%u", event->type);
+            break;
+
         default:
-            RC_LOGI("Event: type=%u", event->type);
+            RC_LOGI("Unknown event: type=%u", event->type);
             break;
     }
-
-    enqueue_event(&ev);
 }
 
 /**

@@ -102,74 +102,164 @@ class SaveBackupService {
   //  ZIP Import
   // ─────────────────────────────────────────────
 
-  /// Let user pick a ZIP and import saves, placing files next to matching ROMs.
-  /// Returns the number of files restored.
-  static Future<int> importFromZipPicker({
-    required List<GameRom> games,
-  }) async {
+  /// Let user pick a ZIP file via system file picker.
+  /// Returns the path to the selected ZIP, or null if cancelled.
+  static Future<String?> pickZipFile() async {
     final result = await FilePicker.platform.pickFiles(
       dialogTitle: 'Select backup ZIP',
       type: FileType.custom,
       allowedExtensions: ['zip'],
     );
-    if (result == null || result.files.isEmpty) return 0;
-
-    final path = result.files.single.path;
-    if (path == null) return 0;
-
-    return importFromZip(zipPath: path, games: games);
+    if (result == null || result.files.isEmpty) return null;
+    return result.files.single.path;
   }
 
-  /// Import saves from a ZIP file, matching files to existing ROMs by name.
-  static Future<int> importFromZip({
+  /// Preview the contents of a backup ZIP without restoring.
+  /// Returns metadata about what would be restored.
+  static Future<ImportPreview> previewZip({
     required String zipPath,
     required List<GameRom> games,
   }) async {
     try {
       final bytes = await File(zipPath).readAsBytes();
       final archive = ZipDecoder().decodeBytes(bytes);
+      final fileSize = bytes.length;
 
-      // Build a lookup: romBaseName -> ROM directory
-      final romDirMap = <String, String>{};
+      // Build a lookup: romBaseName -> game
+      final gameMap = <String, GameRom>{};
       for (final game in games) {
         final baseName = p.basenameWithoutExtension(game.path);
-        final romDir = p.dirname(game.path);
-        romDirMap[baseName] = romDir;
+        gameMap[baseName] = game;
       }
+
+      // Parse metadata if present
+      String? exportDate;
+      ArchiveFile? metaEntry;
+      try {
+        metaEntry = archive.files.firstWhere(
+          (f) => f.name.endsWith('_metadata.json'),
+        );
+      } catch (_) {}
+      if (metaEntry != null) {
+        try {
+          final json = jsonDecode(utf8.decode(metaEntry.content as List<int>))
+              as Map<String, dynamic>;
+          exportDate = json['exportDate'] as String?;
+        } catch (_) {}
+      }
+
+      // Count matching and unmatched files per game
+      final matchedGames = <String, List<String>>{}; // baseName -> [filenames]
+      final unmatchedFiles = <String>[];
+      int totalFiles = 0;
+
+      for (final entry in archive.files) {
+        if (!entry.isFile) continue;
+        final parts = p.split(entry.name);
+        if (parts.length < 2) continue;
+        final fileName = parts.last;
+        if (fileName == '_metadata.json') continue;
+
+        totalFiles++;
+        final gameFolderName = parts[parts.length - 2];
+
+        if (gameMap.containsKey(gameFolderName)) {
+          matchedGames
+              .putIfAbsent(gameFolderName, () => [])
+              .add(fileName);
+        } else {
+          unmatchedFiles.add('$gameFolderName/$fileName');
+        }
+      }
+
+      return ImportPreview(
+        zipPath: zipPath,
+        zipSizeBytes: fileSize,
+        exportDate: exportDate,
+        totalFiles: totalFiles,
+        matchedGames: matchedGames,
+        unmatchedFiles: unmatchedFiles,
+      );
+    } catch (e) {
+      debugPrint('Error previewing ZIP: $e');
+      rethrow;
+    }
+  }
+
+  /// Let user pick a ZIP and import saves into the app save directory.
+  /// Returns the number of files restored.
+  static Future<int> importFromZipPicker({
+    required List<GameRom> games,
+    String? appSaveDir,
+  }) async {
+    final path = await pickZipFile();
+    if (path == null) return 0;
+
+    return importFromZip(zipPath: path, games: games, appSaveDir: appSaveDir);
+  }
+
+  /// Import saves from a ZIP file, matching files to existing ROMs by name.
+  ///
+  /// When [appSaveDir] is provided, files are written there (the app's
+  /// internal save directory).  Otherwise falls back to the ROM's directory.
+  static Future<int> importFromZip({
+    required String zipPath,
+    required List<GameRom> games,
+    String? appSaveDir,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    try {
+      final bytes = await File(zipPath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      // Ensure the app save directory exists
+      if (appSaveDir != null) {
+        final dir = Directory(appSaveDir);
+        if (!dir.existsSync()) {
+          dir.createSync(recursive: true);
+        }
+      }
+
+      // Build a lookup: romBaseName -> target save directory
+      final saveDirMap = <String, String>{};
+      for (final game in games) {
+        final baseName = p.basenameWithoutExtension(game.path);
+        // Prefer app save dir; fall back to ROM dir
+        saveDirMap[baseName] = appSaveDir ?? p.dirname(game.path);
+      }
+
+      // Count restorable files for progress
+      final restorable = archive.files.where((e) {
+        if (!e.isFile) return false;
+        final parts = p.split(e.name);
+        if (parts.length < 2) return false;
+        final fileName = parts.last;
+        if (fileName == '_metadata.json') return false;
+        final gameFolderName = parts[parts.length - 2];
+        return saveDirMap.containsKey(gameFolderName);
+      }).toList();
 
       int restored = 0;
 
-      for (final entry in archive.files) {
-        if (entry.isFile) {
-          // Expected path in ZIP: retropal_saves/<RomBaseName>/<filename>
-          final parts = p.split(entry.name);
-          if (parts.length < 2) continue;
+      for (var i = 0; i < restorable.length; i++) {
+        final entry = restorable[i];
+        final parts = p.split(entry.name);
+        final gameFolderName = parts[parts.length - 2];
+        final fileName = parts.last;
 
-          // The game folder is the second-to-last path component
-          final gameFolderName = parts[parts.length - 2];
-          final fileName = parts.last;
+        final destDir = saveDirMap[gameFolderName]!;
 
-          // Skip metadata
-          if (fileName == '_metadata.json') continue;
-
-          // Find matching ROM
-          final romDir = romDirMap[gameFolderName];
-          if (romDir == null) {
-            debugPrint('No matching ROM for: $gameFolderName/$fileName');
-            continue;
-          }
-
-          // Write file next to ROM
-          try {
-            final destPath = p.join(romDir, fileName);
-            final destFile = File(destPath);
-            await destFile.writeAsBytes(entry.content as List<int>);
-            restored++;
-            debugPrint('Restored: $destPath');
-          } catch (e) {
-            debugPrint('Error restoring $fileName: $e');
-          }
+        try {
+          final destPath = p.join(destDir, fileName);
+          final destFile = File(destPath);
+          await destFile.writeAsBytes(entry.content as List<int>);
+          restored++;
+          debugPrint('Restored: $destPath');
+        } catch (e) {
+          debugPrint('Error restoring $fileName: $e');
         }
+
+        onProgress?.call(i + 1, restorable.length);
       }
 
       return restored;
@@ -462,6 +552,53 @@ class SaveBackupService {
     } catch (e) {
       debugPrint('Error creating ZIP: $e');
       return null;
+    }
+  }
+}
+
+/// Preview information about a backup ZIP to be imported.
+class ImportPreview {
+  final String zipPath;
+  final int zipSizeBytes;
+  final String? exportDate;
+  final int totalFiles;
+
+  /// Map of ROM base names → list of save file names that will be restored.
+  final Map<String, List<String>> matchedGames;
+
+  /// Files in the ZIP that don't match any game in the library.
+  final List<String> unmatchedFiles;
+
+  const ImportPreview({
+    required this.zipPath,
+    required this.zipSizeBytes,
+    required this.exportDate,
+    required this.totalFiles,
+    required this.matchedGames,
+    required this.unmatchedFiles,
+  });
+
+  int get matchedFileCount =>
+      matchedGames.values.fold(0, (sum, files) => sum + files.length);
+
+  String get zipSizeFormatted {
+    if (zipSizeBytes < 1024) return '$zipSizeBytes B';
+    if (zipSizeBytes < 1024 * 1024) {
+      return '${(zipSizeBytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(zipSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String? get exportDateFormatted {
+    if (exportDate == null) return null;
+    try {
+      final dt = DateTime.parse(exportDate!);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
+          '${dt.day.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:'
+          '${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return exportDate;
     }
   }
 }

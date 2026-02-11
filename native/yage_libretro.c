@@ -27,12 +27,50 @@ typedef void* LibHandle;
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 #include <android/log.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
+#include <jni.h>
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "YAGE", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "YAGE", __VA_ARGS__)
 #else
 #define LOGI(...) do { printf("[YAGE] "); printf(__VA_ARGS__); printf("\n"); } while(0)
 #define LOGE(...) do { printf("[YAGE ERROR] "); printf(__VA_ARGS__); printf("\n"); } while(0)
 #endif
+
+/* ── Native frame loop (POSIX only) ─────────────────────────────────── */
+#ifndef _WIN32
+#include <pthread.h>
+#include <time.h>
+#include <stdatomic.h>
+#include <errno.h>
+
+/* Forward declaration — implemented in yage_rcheevos.c */
+extern void yage_rc_do_frame(void);
+
+/* Display buffer — snapshot of the last completed video frame.
+ * Updated at ~60 Hz by the native frame loop thread. */
+static uint32_t* g_display_buf          = NULL;
+static size_t    g_display_buf_capacity = 0;
+static int       g_display_width        = 0;
+static int       g_display_height       = 0;
+
+/* Thread control (all atomic for cross-thread safety) */
+static pthread_t           g_frame_thread;
+static atomic_int          g_floop_running       = 0;
+static atomic_int          g_floop_speed_pct     = 100;   /* 100 = 1× */
+static atomic_int          g_floop_rewind_on     = 0;
+static atomic_int          g_floop_rewind_interval = 5;
+static atomic_int          g_floop_rcheevos_on   = 0;
+static atomic_int          g_floop_fps_x100      = 0;     /* fps × 100 */
+static yage_frame_callback_t g_frame_callback    = NULL;
+
+/* ~60 Hz display interval in nanoseconds */
+#define DISPLAY_INTERVAL_NS  16666667LL   /* 1e9 / 60 */
+
+/* Base frame time for GBA (~59.7275 fps) in nanoseconds */
+#define BASE_FRAME_NS        16742706LL   /* 1e9 / 59.7275 */
+
+#endif /* !_WIN32 */
 
 /* Suppress excessive logging after initial frames */
 static int g_log_frame_count = 0;
@@ -103,12 +141,18 @@ struct retro_system_av_info {
 #define GB_WIDTH 160
 #define GB_HEIGHT 144
 
+/* SGB (Super Game Boy) uses 256x224 — the largest mGBA resolution */
+#define SGB_WIDTH 256
+#define SGB_HEIGHT 224
+
 #define AUDIO_BUFFER_SIZE 8192
-#define VIDEO_BUFFER_SIZE (GBA_WIDTH * GBA_HEIGHT)
+/* Initial capacity must accommodate the largest possible resolution (SGB) */
+#define VIDEO_BUFFER_SIZE (SGB_WIDTH * SGB_HEIGHT)
 
 /* Global state for libretro callbacks */
 static YageCore* g_current_core = NULL; /* Active core for env callback access */
 static uint32_t* g_video_buffer = NULL;
+static size_t g_video_buffer_capacity = 0; /* Allocated capacity in pixels */
 static int16_t* g_audio_buffer = NULL;
 static int g_audio_samples = 0;
 static int g_width = GBA_WIDTH;
@@ -171,15 +215,30 @@ static int g_audio_started = 0;
 static double g_audio_sample_rate = 32768.0;
 
 /* Adaptive rate detection — detects and re-adapts per game */
-static int g_rate_detection_frames = 0;
-static int g_rate_detection_samples = 0;
+static int g_rate_detection_samples = 0;  /* Total audio samples during detection */
 static int g_rate_detected = 0;
 static double g_detected_rate = 0;
+static double g_reported_rate = 32768.0;  /* Sample rate from AV info (set at ROM load) */
+
+/* Video frame counter — incremented in video_refresh_callback, used for
+ * audio rate detection.  The audio batch callback can be invoked multiple
+ * times per video frame (especially for GB/GBC), so counting video frames
+ * gives the correct samples-per-video-frame for rate classification. */
+static int g_video_frames_total = 0;
 
 /* Continuous rate monitoring — catches games that change rate mid-play */
-static int g_monitor_frames = 0;
-static int g_monitor_samples = 0;
-static int g_frames_since_reinit = 0;
+static int g_monitor_frames = 0;          /* VIDEO frames seen during monitoring window */
+static int g_monitor_samples = 0;         /* Audio samples during monitoring window */
+static int g_frames_since_reinit = 0;     /* VIDEO frames since last OpenSL reinit */
+
+/* ── Android Texture Rendering (ANativeWindow) ────────────────────────
+ * Zero-copy frame delivery to Flutter's Texture widget.
+ * The ANativeWindow is backed by a SurfaceTexture registered with
+ * Flutter's TextureRegistry.  Pixels are blitted directly from
+ * g_video_buffer — no Dart-side allocation, no decodeImageFromPixels. */
+static ANativeWindow* g_native_window = NULL;
+static int g_nw_configured_w = 0;  /* last-configured buffer geometry width */
+static int g_nw_configured_h = 0;  /* last-configured buffer geometry height */
 
 /* Pre-buffer threshold — just enough for one OpenSL callback to avoid initial underrun */
 #define PREBUFFER_SAMPLES (AUDIO_BUFFER_FRAMES)
@@ -189,15 +248,17 @@ static void shutdown_opensl_audio(void);
 static int init_opensl_audio(double sample_rate);
 
 /* Classify sample rate from average samples-per-frame.
- * GBA runs at ~59.7275 fps, so:
- *   65536 Hz → ~1097 samples/frame  (Pokemon, most GBA)
- *   48000 Hz → ~804 samples/frame   (some titles)
- *   32768 Hz → ~549 samples/frame   (Dragon Ball, some GB/GBA)
+ * mGBA runs at ~59.7275 fps, so expected samples/frame:
+ *   131072 Hz → ~2194 samples/frame  (GB/GBC native: 4.194304 MHz ÷ 32)
+ *    65536 Hz → ~1097 samples/frame  (Pokemon, most GBA)
+ *    48000 Hz → ~804 samples/frame   (some titles)
+ *    32768 Hz → ~549 samples/frame   (Dragon Ball, some GB/GBA)
  *
  * Thresholds use midpoints between expected values, lowered slightly
  * because startup frames often produce fewer samples.
  */
 static double classify_sample_rate(double samples_per_frame) {
+    if (samples_per_frame > 1600) return 131072.0;  /* GB/GBC native rate */
     if (samples_per_frame > 850)  return 65536.0;
     if (samples_per_frame > 650)  return 48000.0;
     return 32768.0;
@@ -536,11 +597,27 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
     
     g_width = width;
     g_height = height;
+    g_video_frames_total++;
     
     /* Log only first few frames to avoid spam */
     if (g_log_frame_count < 5) {
         LOGI("Video: %ux%u, pitch=%zu, format=%d", width, height, pitch, g_pixel_format);
         g_log_frame_count++;
+    }
+
+    /* Guard: reallocate if the incoming frame exceeds our buffer capacity.
+     * This handles SGB-enhanced games that switch from 160x144 to 256x224
+     * or any other dynamic resolution change by the libretro core. */
+    size_t needed = (size_t)width * height;
+    if (needed > g_video_buffer_capacity) {
+        uint32_t* new_buf = (uint32_t*)realloc(g_video_buffer, needed * sizeof(uint32_t));
+        if (!new_buf) {
+            LOGE("Failed to reallocate video buffer for %ux%u", width, height);
+            return;
+        }
+        g_video_buffer = new_buf;
+        g_video_buffer_capacity = needed;
+        LOGI("Video buffer reallocated for %ux%u (%zu pixels)", width, height, needed);
     }
     
     if (g_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
@@ -659,56 +736,80 @@ static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
 
 #ifdef __ANDROID__
     /* ================================================================
-     * PHASE 1: Initial rate detection (first 15 frames)
-     * Start OpenSL ES only once we know the game's sample rate.
-     * Audio is silent during detection (~250ms) but prevents garbled
-     * output from a wrong rate.
+     * PHASE 1: Initial rate detection (first 15 VIDEO frames)
+     * Use the reported sample rate from AV info as the primary source,
+     * validated against measured samples-per-video-frame.
+     *
+     * NOTE: The audio batch callback can fire multiple times per video
+     * frame (especially for GB/GBC at 131072 Hz).  We must count VIDEO
+     * frames (from video_refresh_callback) — not batch invocations —
+     * to get the correct samples-per-frame for classification.
      * ================================================================ */
     if (!g_rate_detected) {
-        g_rate_detection_frames++;
         g_rate_detection_samples += frames;
         
-        if (g_rate_detection_frames >= 15) {
-            double avg_spf = (double)g_rate_detection_samples / g_rate_detection_frames;
-            g_detected_rate = classify_sample_rate(avg_spf);
+        /* Wait for at least 15 VIDEO frames (not batch callbacks) */
+        if (g_video_frames_total >= 15) {
+            double avg_spf = (g_video_frames_total > 0)
+                ? (double)g_rate_detection_samples / g_video_frames_total
+                : 0;
+            double measured_rate = classify_sample_rate(avg_spf);
             
-            LOGI("Initial rate detection: %.1f samples/frame → %.0f Hz",
-                 avg_spf, g_detected_rate);
+            /* Use the reported rate from AV info if it's a known standard
+             * rate.  Fall back to measured rate only if reported looks bogus
+             * (e.g. 0 or extremely high/low). */
+            double use_rate;
+            if (g_reported_rate >= 8000.0 && g_reported_rate <= 192000.0) {
+                use_rate = g_reported_rate;
+                LOGI("Using reported sample rate: %.0f Hz (measured: %.1f samples/vframe → %.0f Hz)",
+                     use_rate, avg_spf, measured_rate);
+            } else {
+                use_rate = measured_rate;
+                LOGI("Reported rate %.0f Hz out of range, using measured: %.1f samples/vframe → %.0f Hz",
+                     g_reported_rate, avg_spf, use_rate);
+            }
             
+            g_detected_rate = use_rate;
             init_opensl_audio(g_detected_rate);
             g_rate_detected = 1;
-            g_frames_since_reinit = 0;
-            g_monitor_frames = 0;
+            g_frames_since_reinit = g_video_frames_total;
+            g_monitor_frames = g_video_frames_total;
             g_monitor_samples = 0;
         }
         return frames;
     }
     
     /* ================================================================
-     * PHASE 2: Continuous rate monitoring
-     * Every ~2 seconds, check if the game's audio rate has changed
-     * (e.g. different rate during menu vs gameplay). If it differs
-     * from the current OpenSL rate, reinitialize.
+     * PHASE 2: Continuous rate monitoring (VIDEO-frame based)
+     * Every ~2 seconds (120 video frames), check if the game's audio
+     * rate has changed.  We count VIDEO frames — not batch callbacks —
+     * so GB/GBC games that fire multiple batches per frame are measured
+     * correctly.
      * ================================================================ */
-    g_monitor_frames++;
     g_monitor_samples += frames;
-    g_frames_since_reinit++;
-    
-    if (g_monitor_frames >= 120) { /* Check every ~2 seconds */
-        double avg_spf = (double)g_monitor_samples / g_monitor_frames;
-        double new_rate = classify_sample_rate(avg_spf);
+    {
+        int vframes_in_window = g_video_frames_total - g_monitor_frames;
+        int vframes_since_reinit = g_video_frames_total - g_frames_since_reinit;
         
-        /* Only reinit if rate genuinely changed and we haven't just reinited */
-        if (new_rate != g_detected_rate && g_frames_since_reinit > 180) {
-            LOGI("Rate change detected: %.0f → %.0f Hz (%.1f samples/frame)",
-                 g_detected_rate, new_rate, avg_spf);
-            g_detected_rate = new_rate;
-            init_opensl_audio(new_rate);
-            g_frames_since_reinit = 0;
+        if (vframes_in_window >= 120) { /* Check every ~2 seconds */
+            double avg_spf = (vframes_in_window > 0)
+                ? (double)g_monitor_samples / vframes_in_window
+                : 0;
+            double new_rate = classify_sample_rate(avg_spf);
+            
+            /* Only reinit if rate genuinely changed and we haven't just reinited */
+            if (new_rate != g_detected_rate && vframes_since_reinit > 180) {
+                LOGI("Rate change detected: %.0f → %.0f Hz (%.1f samples/vframe)",
+                     g_detected_rate, new_rate, avg_spf);
+                g_detected_rate = new_rate;
+                init_opensl_audio(new_rate);
+                g_frames_since_reinit = g_video_frames_total;
+            }
+            
+            /* Reset window: snapshot current video frame count */
+            g_monitor_frames = g_video_frames_total;
+            g_monitor_samples = 0;
         }
-        
-        g_monitor_frames = 0;
-        g_monitor_samples = 0;
     }
     
     /* Debug logging every ~1 second (60 frames) */
@@ -735,7 +836,7 @@ static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
         int free_space = RING_BUFFER_SIZE - 1 - available;
         
         /* Adaptive latency cap: ~50ms worth of stereo samples at current rate.
-         * 65536 Hz → 6554 samples max | 32768 Hz → 3277 samples max */
+         * 131072 Hz → 13107 samples max | 65536 Hz → 6554 | 32768 Hz → 3277 */
         int max_buffered = (int)(g_detected_rate * 2.0 * 0.050); /* 50ms in stereo samples */
         if (max_buffered < AUDIO_BUFFER_FRAMES * 2 * 4) {
             max_buffered = AUDIO_BUFFER_FRAMES * 2 * 4; /* Floor: 4 callbacks */
@@ -939,9 +1040,11 @@ YageCore* yage_core_create(void) {
     YageCore* core = (YageCore*)calloc(1, sizeof(YageCore));
     if (!core) return NULL;
     
-    /* Allocate video buffer */
+    /* Allocate video buffer — sized for SGB (256x224), the largest mGBA output */
     g_video_buffer = (uint32_t*)malloc(VIDEO_BUFFER_SIZE * sizeof(uint32_t));
+    g_video_buffer_capacity = VIDEO_BUFFER_SIZE;
     if (!g_video_buffer) {
+        g_video_buffer_capacity = 0;
         free(core);
         return NULL;
     }
@@ -1064,6 +1167,7 @@ void yage_core_destroy(YageCore* core) {
     if (g_video_buffer) {
         free(g_video_buffer);
         g_video_buffer = NULL;
+        g_video_buffer_capacity = 0;
     }
     if (g_audio_buffer) {
         free(g_audio_buffer);
@@ -1117,8 +1221,25 @@ int yage_core_load_rom(YageCore* core, const char* path) {
         g_width = av_info.geometry.base_width;
         g_height = av_info.geometry.base_height;
         reported_sample_rate = av_info.timing.sample_rate;
+        g_reported_rate = reported_sample_rate;  /* Store for audio init */
         LOGI("AV Info: %ux%u, fps=%.2f, reported_sample_rate=%.0f", 
              g_width, g_height, av_info.timing.fps, reported_sample_rate);
+
+        /* Pre-allocate video buffer for the reported resolution.
+         * SGB-enhanced GB games report 256x224 which is larger than the
+         * default GBA 240x160 allocation.  Using max_width/max_height
+         * when available ensures we cover any resolution the core may use. */
+        unsigned max_w = av_info.geometry.max_width  ? av_info.geometry.max_width  : g_width;
+        unsigned max_h = av_info.geometry.max_height ? av_info.geometry.max_height : g_height;
+        size_t needed = (size_t)max_w * max_h;
+        if (needed > g_video_buffer_capacity && g_video_buffer) {
+            uint32_t* new_buf = (uint32_t*)realloc(g_video_buffer, needed * sizeof(uint32_t));
+            if (new_buf) {
+                g_video_buffer = new_buf;
+                g_video_buffer_capacity = needed;
+                LOGI("Video buffer pre-allocated for %ux%u (%zu pixels)", max_w, max_h, needed);
+            }
+        }
     }
     
 #ifdef __ANDROID__
@@ -1126,10 +1247,10 @@ int yage_core_load_rom(YageCore* core, const char* path) {
     shutdown_opensl_audio();
     
     /* Reset ALL rate detection & monitoring state for the new game */
-    g_rate_detection_frames = 0;
     g_rate_detection_samples = 0;
     g_rate_detected = 0;
     g_detected_rate = 0;
+    g_video_frames_total = 0;
     g_monitor_frames = 0;
     g_monitor_samples = 0;
     g_frames_since_reinit = 0;
@@ -1138,10 +1259,10 @@ int yage_core_load_rom(YageCore* core, const char* path) {
     g_overflow_count = 0;
     g_log_frame_count = 0;
     
-    /* Don't start OpenSL ES yet — let rate detection in audio_sample_batch_callback
-     * determine the correct rate first, then init. This prevents the garbled-audio
-     * problem from starting at the wrong rate. */
-    LOGI("Audio will auto-detect sample rate from first 15 frames (reported: %.0f Hz)",
+    /* Don't start OpenSL ES yet — wait for first 15 video frames to confirm
+     * audio is flowing, then init at the reported sample rate.  This avoids
+     * garbled audio from starting too early. */
+    LOGI("Audio will init after 15 video frames at reported rate: %.0f Hz",
          reported_sample_rate);
 #endif
     
@@ -1420,7 +1541,7 @@ int yage_core_rewind_init(YageCore* core, int capacity) {
     g_rewind_state_size = core->retro_serialize_size();
     if (g_rewind_state_size == 0) return -1;
 
-    if (capacity <= 0 || capacity > 256) capacity = 36;
+    if (capacity <= 0 || capacity > 1024) capacity = 36;
 
     g_rewind_snapshots = (void**)calloc(capacity, sizeof(void*));
     if (!g_rewind_snapshots) return -1;
@@ -1637,3 +1758,377 @@ int yage_core_get_memory_size(YageCore* core, int32_t region_id) {
 #define strcasecmp _stricmp
 #endif
 
+/* ════════════════════════════════════════════════════════════════════════
+ *  Android Texture Rendering — ANativeWindow + JNI bridge
+ *
+ *  Writes RGBA pixels from g_video_buffer directly to a SurfaceTexture
+ *  (via ANativeWindow).  Flutter's Texture widget composites the result
+ *  with zero Dart-side buffer copies.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+#ifdef __ANDROID__
+
+/* Blit g_video_buffer → ANativeWindow.  Thread-safe (ANativeWindow_lock
+ * serializes internally).  Returns 0 on success, -1 on failure. */
+static int blit_to_native_window(void) {
+    ANativeWindow* win = g_native_window;
+    if (!win || !g_video_buffer) return -1;
+
+    int w = g_width;
+    int h = g_height;
+    if (w <= 0 || h <= 0) return -1;
+
+    /* Reconfigure buffer geometry when the resolution changes
+     * (e.g. GB 160×144 → SGB 256×224). */
+    if (w != g_nw_configured_w || h != g_nw_configured_h) {
+        ANativeWindow_setBuffersGeometry(win, w, h, WINDOW_FORMAT_RGBA_8888);
+        g_nw_configured_w = w;
+        g_nw_configured_h = h;
+        LOGI("ANativeWindow geometry set to %dx%d", w, h);
+    }
+
+    ANativeWindow_Buffer buf;
+    if (ANativeWindow_lock(win, &buf, NULL) != 0) return -1;
+
+    uint32_t* dst = (uint32_t*)buf.bits;
+    uint32_t* src = g_video_buffer;
+
+    if (buf.stride == w) {
+        /* Fast path: no stride mismatch — single memcpy */
+        memcpy(dst, src, (size_t)w * h * sizeof(uint32_t));
+    } else {
+        /* Stride-aware row-by-row copy */
+        for (int y = 0; y < h; y++) {
+            memcpy(dst + y * buf.stride, src + y * w,
+                   (size_t)w * sizeof(uint32_t));
+        }
+    }
+
+    ANativeWindow_unlockAndPost(win);
+    return 0;
+}
+
+/* ── JNI functions — called from Kotlin YageTextureBridge ──────────── */
+
+JNIEXPORT void JNICALL
+Java_com_yourmateapps_retropal_YageTextureBridge_nativeSetSurface(
+        JNIEnv* env, jclass clazz, jobject surface) {
+    (void)clazz;
+
+    /* Release any previously attached window */
+    if (g_native_window) {
+        ANativeWindow_release(g_native_window);
+        g_native_window = NULL;
+        g_nw_configured_w = 0;
+        g_nw_configured_h = 0;
+    }
+
+    if (surface) {
+        g_native_window = ANativeWindow_fromSurface(env, surface);
+        if (g_native_window) {
+            ANativeWindow_setBuffersGeometry(
+                g_native_window, g_width, g_height, WINDOW_FORMAT_RGBA_8888);
+            g_nw_configured_w = g_width;
+            g_nw_configured_h = g_height;
+            LOGI("ANativeWindow attached (%dx%d)", g_width, g_height);
+        } else {
+            LOGE("ANativeWindow_fromSurface returned NULL");
+        }
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_yourmateapps_retropal_YageTextureBridge_nativeReleaseSurface(
+        JNIEnv* env, jclass clazz) {
+    (void)env; (void)clazz;
+
+    if (g_native_window) {
+        ANativeWindow_release(g_native_window);
+        g_native_window = NULL;
+        g_nw_configured_w = 0;
+        g_nw_configured_h = 0;
+        LOGI("ANativeWindow released");
+    }
+}
+
+#endif /* __ANDROID__ */
+
+/* ── Public API: yage_texture_blit ─────────────────────────────────── */
+
+YAGE_API int yage_texture_blit(YageCore* core) {
+    (void)core;
+#ifdef __ANDROID__
+    return blit_to_native_window();
+#else
+    return -1;  /* no texture surface on non-Android platforms */
+#endif
+}
+
+YAGE_API int32_t yage_texture_is_attached(YageCore* core) {
+    (void)core;
+#ifdef __ANDROID__
+    return g_native_window != NULL ? 1 : 0;
+#else
+    return 0;
+#endif
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ *  Native Frame Loop — pthread implementation (POSIX only)
+ *
+ *  The emulation runs on a dedicated thread with nanosleep-based timing.
+ *  A display callback is fired at ~60 Hz regardless of emulation speed,
+ *  freeing the Dart/UI thread from per-frame Timer callbacks.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+#ifndef _WIN32
+
+static void* frame_loop_thread(void* arg) {
+    YageCore* core = (YageCore*)arg;
+
+    struct timespec last_time;
+    clock_gettime(CLOCK_MONOTONIC, &last_time);
+
+    int64_t emu_accum_ns     = 0;
+    int64_t display_accum_ns = 0;
+    int     total_frames     = 0;       /* for FPS counter */
+    int     rewind_counter   = 0;
+
+    struct timespec fps_time = last_time;
+
+    LOGI("Frame loop thread started");
+
+    while (atomic_load_explicit(&g_floop_running, memory_order_acquire)) {
+        /* ── Measure elapsed wall-clock time ── */
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        int64_t elapsed_ns = (now.tv_sec - last_time.tv_sec) * 1000000000LL
+                           + (now.tv_nsec - last_time.tv_nsec);
+        last_time = now;
+
+        emu_accum_ns     += elapsed_ns;
+        display_accum_ns += elapsed_ns;
+
+        /* ── Target emulation frame time (speed-dependent) ── */
+        int speed_pct = atomic_load_explicit(&g_floop_speed_pct,
+                                              memory_order_relaxed);
+        if (speed_pct < 25) speed_pct = 25;
+        int64_t target_ns = BASE_FRAME_NS * 100LL / speed_pct;
+
+        /* ── Run emulation frames to catch up ── */
+        int frames_run = 0;
+        while (atomic_load_explicit(&g_floop_running, memory_order_relaxed) &&
+               emu_accum_ns >= target_ns &&
+               frames_run < 8) {
+
+            g_audio_samples = 0;
+            core->retro_run();
+            total_frames++;
+
+            /* Rewind capture */
+            if (atomic_load_explicit(&g_floop_rewind_on, memory_order_relaxed)) {
+                rewind_counter++;
+                int interval = atomic_load_explicit(&g_floop_rewind_interval,
+                                                     memory_order_relaxed);
+                if (interval > 0 && rewind_counter >= interval) {
+                    rewind_counter = 0;
+                    yage_core_rewind_push(core);
+                }
+            }
+
+            /* RetroAchievements per-frame evaluation */
+            if (atomic_load_explicit(&g_floop_rcheevos_on, memory_order_relaxed)) {
+                yage_rc_do_frame();
+            }
+
+            emu_accum_ns -= target_ns;
+            frames_run++;
+        }
+
+        /* Reset if way behind to avoid spiral of death */
+        if (emu_accum_ns > target_ns * 10) {
+            emu_accum_ns = 0;
+        }
+
+        /* ── Display update at ~60 Hz ── */
+        if (frames_run > 0 && display_accum_ns >= DISPLAY_INTERVAL_NS) {
+            display_accum_ns -= DISPLAY_INTERVAL_NS;
+            /* Prevent accumulator from growing unboundedly */
+            if (display_accum_ns > DISPLAY_INTERVAL_NS * 3) {
+                display_accum_ns = 0;
+            }
+
+            int w = g_width;
+            int h = g_height;
+
+#ifdef __ANDROID__
+            /* Prefer zero-copy blit to ANativeWindow (Flutter Texture) */
+            if (g_native_window) {
+                blit_to_native_window();
+            } else
+#endif
+            {
+                /* Fallback: snapshot video buffer → display buffer for
+                 * Dart-side decodeImageFromPixels path */
+                size_t pixels = (size_t)w * h;
+                if (g_display_buf && pixels <= g_display_buf_capacity && g_video_buffer) {
+                    memcpy(g_display_buf, g_video_buffer,
+                           pixels * sizeof(uint32_t));
+                    g_display_width  = w;
+                    g_display_height = h;
+                }
+            }
+
+            /* Notify Dart (runs on the Dart event loop via NativeCallable).
+             * With texture rendering this is only used for FPS tracking
+             * and link cable polling — no pixel data is passed. */
+            if (g_frame_callback) {
+                g_frame_callback(frames_run);
+            }
+        }
+
+        /* ── FPS calculation (every 500 ms) ── */
+        int64_t fps_elapsed = (now.tv_sec - fps_time.tv_sec) * 1000000000LL
+                            + (now.tv_nsec - fps_time.tv_nsec);
+        if (fps_elapsed >= 500000000LL) {
+            double fps = (double)total_frames * 1.0e9 / (double)fps_elapsed;
+            atomic_store_explicit(&g_floop_fps_x100, (int)(fps * 100.0),
+                                  memory_order_relaxed);
+            total_frames = 0;
+            fps_time = now;
+        }
+
+        /* ── Sleep until the next event (emulation tick or display) ── */
+        int64_t next_emu_ns     = target_ns - emu_accum_ns;
+        int64_t next_display_ns = DISPLAY_INTERVAL_NS - display_accum_ns;
+        int64_t sleep_ns = next_emu_ns < next_display_ns
+                         ? next_emu_ns : next_display_ns;
+
+        if (sleep_ns > 500000) {  /* > 0.5 ms */
+            struct timespec ts;
+            ts.tv_sec  = sleep_ns / 1000000000LL;
+            ts.tv_nsec = sleep_ns % 1000000000LL;
+            nanosleep(&ts, NULL);
+        }
+    }
+
+    LOGI("Frame loop thread exiting");
+    return NULL;
+}
+
+/* ── Public API ───────────────────────────────────────────────────────── */
+
+int yage_frame_loop_start(YageCore* core, yage_frame_callback_t callback) {
+    if (!core || !core->game_loaded || !core->retro_run) return -1;
+    if (atomic_load(&g_floop_running)) return -1;  /* already running */
+
+    /* Allocate / reallocate display buffer to match video buffer */
+    size_t needed = g_video_buffer_capacity;
+    if (!g_display_buf || g_display_buf_capacity < needed) {
+        free(g_display_buf);
+        g_display_buf = (uint32_t*)malloc(needed * sizeof(uint32_t));
+        if (!g_display_buf) {
+            LOGE("Failed to allocate display buffer");
+            return -1;
+        }
+        g_display_buf_capacity = needed;
+    }
+    memset(g_display_buf, 0, needed * sizeof(uint32_t));
+    g_display_width  = g_width;
+    g_display_height = g_height;
+
+    g_frame_callback = callback;
+    atomic_store_explicit(&g_floop_fps_x100, 0, memory_order_relaxed);
+    atomic_store_explicit(&g_floop_running, 1, memory_order_release);
+
+    int rc = pthread_create(&g_frame_thread, NULL, frame_loop_thread, core);
+    if (rc != 0) {
+        atomic_store(&g_floop_running, 0);
+        g_frame_callback = NULL;
+        LOGE("pthread_create failed: %d", rc);
+        return -1;
+    }
+
+    LOGI("Native frame loop started (speed=%d%%)",
+         atomic_load(&g_floop_speed_pct));
+    return 0;
+}
+
+void yage_frame_loop_stop(YageCore* core) {
+    (void)core;
+    if (!atomic_load(&g_floop_running)) return;
+
+    atomic_store_explicit(&g_floop_running, 0, memory_order_release);
+    pthread_join(g_frame_thread, NULL);
+    g_frame_callback = NULL;
+    LOGI("Native frame loop stopped");
+}
+
+void yage_frame_loop_set_speed(YageCore* core, int32_t speed_percent) {
+    (void)core;
+    if (speed_percent < 25)  speed_percent = 25;
+    if (speed_percent > 800) speed_percent = 800;
+    atomic_store_explicit(&g_floop_speed_pct, speed_percent,
+                          memory_order_relaxed);
+}
+
+void yage_frame_loop_set_rewind(YageCore* core,
+                                 int32_t enabled, int32_t interval) {
+    (void)core;
+    atomic_store_explicit(&g_floop_rewind_on, enabled ? 1 : 0,
+                          memory_order_relaxed);
+    if (interval > 0) {
+        atomic_store_explicit(&g_floop_rewind_interval, interval,
+                              memory_order_relaxed);
+    }
+}
+
+void yage_frame_loop_set_rcheevos(YageCore* core, int32_t enabled) {
+    (void)core;
+    atomic_store_explicit(&g_floop_rcheevos_on, enabled ? 1 : 0,
+                          memory_order_relaxed);
+}
+
+int32_t yage_frame_loop_get_fps_x100(YageCore* core) {
+    (void)core;
+    return atomic_load_explicit(&g_floop_fps_x100, memory_order_relaxed);
+}
+
+uint32_t* yage_frame_loop_get_display_buffer(YageCore* core) {
+    (void)core;
+    return g_display_buf;
+}
+
+int32_t yage_frame_loop_get_display_width(YageCore* core) {
+    (void)core;
+    return g_display_width;
+}
+
+int32_t yage_frame_loop_get_display_height(YageCore* core) {
+    (void)core;
+    return g_display_height;
+}
+
+int32_t yage_frame_loop_is_running(YageCore* core) {
+    (void)core;
+    return atomic_load_explicit(&g_floop_running, memory_order_acquire);
+}
+
+#else /* _WIN32 — stubs so the symbols exist for the linker */
+
+int  yage_frame_loop_start(YageCore* c, yage_frame_callback_t cb) {
+    (void)c; (void)cb; return -1;
+}
+void  yage_frame_loop_stop(YageCore* c) { (void)c; }
+void  yage_frame_loop_set_speed(YageCore* c, int32_t s) { (void)c; (void)s; }
+void  yage_frame_loop_set_rewind(YageCore* c, int32_t e, int32_t i) {
+    (void)c; (void)e; (void)i;
+}
+void  yage_frame_loop_set_rcheevos(YageCore* c, int32_t e) { (void)c; (void)e; }
+int32_t   yage_frame_loop_get_fps_x100(YageCore* c) { (void)c; return 0; }
+uint32_t* yage_frame_loop_get_display_buffer(YageCore* c) { (void)c; return NULL; }
+int32_t   yage_frame_loop_get_display_width(YageCore* c) { (void)c; return 0; }
+int32_t   yage_frame_loop_get_display_height(YageCore* c) { (void)c; return 0; }
+int32_t   yage_frame_loop_is_running(YageCore* c) { (void)c; return 0; }
+
+#endif /* _WIN32 */

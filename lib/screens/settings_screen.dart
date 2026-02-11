@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -17,435 +18,555 @@ import '../utils/theme.dart';
 import '../widgets/tv_focusable.dart';
 import 'ra_login_screen.dart';
 
-/// Settings screen
-class SettingsScreen extends StatelessWidget {
+/// Settings screen — organized into 5 focused tabs for quick D-pad / touch
+/// navigation: Display, Audio, Controls, Data, Achievements.
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 5, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        leading: TvFocusable(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
       ),
-      body: Consumer<SettingsService>(
-        builder: (context, settingsService, _) {
-          final settings = settingsService.settings;
-          
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // ── Quick Settings (always visible, most-used controls) ──
-              _SectionHeader(title: 'Quick Settings'),
-              _SettingsCard(
-                children: [
-                  _SliderTile(
-                    icon: Icons.volume_down,
-                    title: 'Volume',
-                    value: settings.volume,
-                    onChanged: settingsService.setVolume,
-                  ),
-                  const Divider(height: 1),
-                  _SliderTile(
-                    icon: Icons.opacity,
-                    title: 'Gamepad Opacity',
-                    value: settings.gamepadOpacity,
-                    min: 0.1,
-                    max: 1.0,
-                    onChanged: settingsService.setGamepadOpacity,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Theme (collapsible) ──
-              _CollapsibleSection(
-                title: 'Theme',
-                icon: Icons.color_lens,
-                initiallyExpanded: true,
-                child: _ThemePicker(
-                  selectedThemeId: settings.selectedTheme,
-                  onChanged: settingsService.setAppTheme,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Audio (collapsible) ──
-              _CollapsibleSection(
-                title: 'Audio',
-                icon: Icons.volume_up,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _SwitchTile(
-                      icon: Icons.volume_up,
-                      title: 'Enable Sound',
-                      subtitle: 'Play game audio',
-                      value: settings.enableSound,
-                      onChanged: (_) => settingsService.toggleSound(),
-                    ),
-                    if (settings.enableSound) ...[
-                      const Divider(height: 1),
-                      _SliderTile(
-                        icon: Icons.volume_down,
-                        title: 'Volume',
-                        value: settings.volume,
-                        onChanged: settingsService.setVolume,
-                      ),
-                    ],
+      body: FocusTraversalGroup(
+        policy: OrderedTraversalPolicy(),
+        child: Column(
+          children: [
+            // ── Tab bar ── sits in the body (not AppBar.bottom) so that
+            // FocusTraversalOrder gives D-pad users a clean path:
+            //   back button → tabs → tab content.
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(0),
+              child: Material(
+                color: colors.backgroundMedium,
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: false,
+                  indicatorColor: colors.accent,
+                  indicatorWeight: 3,
+                  labelColor: colors.accent,
+                  unselectedLabelColor: colors.textMuted,
+                  labelStyle:
+                      const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  unselectedLabelStyle: const TextStyle(fontSize: 11),
+                  // Prominent focus ring for TV / keyboard navigation
+                  overlayColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.focused)) {
+                      return colors.accent.withAlpha(50);
+                    }
+                    if (states.contains(WidgetState.hovered)) {
+                      return colors.accent.withAlpha(25);
+                    }
+                    return null;
+                  }),
+                  splashBorderRadius: BorderRadius.circular(8),
+                  dividerHeight: 0,
+                  tabs: const [
+                    Tab(
+                        icon: Icon(Icons.display_settings, size: 20),
+                        text: 'Display'),
+                    Tab(
+                        icon: Icon(Icons.volume_up, size: 20),
+                        text: 'Audio'),
+                    Tab(
+                        icon: Icon(Icons.sports_esports, size: 20),
+                        text: 'Controls'),
+                    Tab(
+                        icon: Icon(Icons.folder_copy, size: 20),
+                        text: 'Data'),
+                    Tab(
+                        icon: Icon(Icons.emoji_events, size: 20),
+                        text: 'Trophies'),
                   ],
                 ),
               ),
+            ),
+            // ── Tab content ──
+            Expanded(
+              child: FocusTraversalOrder(
+                order: const NumericFocusOrder(1),
+                child: Consumer<SettingsService>(
+                  builder: (context, settingsService, _) {
+                    final settings = settingsService.settings;
 
-              const SizedBox(height: 12),
-
-              // ── Display (collapsible) ──
-              _CollapsibleSection(
-                title: 'Display',
-                icon: Icons.display_settings,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _SwitchTile(
-                      icon: Icons.speed,
-                      title: 'Show FPS',
-                      subtitle: 'Display frame rate counter',
-                      value: settings.showFps,
-                      onChanged: (_) => settingsService.toggleShowFps(),
-                    ),
-                    const Divider(height: 1),
-                    _SwitchTile(
-                      icon: Icons.aspect_ratio,
-                      title: 'Maintain Aspect Ratio',
-                      subtitle: 'Keep original game proportions',
-                      value: settings.maintainAspectRatio,
-                      onChanged: (_) => settingsService.toggleAspectRatio(),
-                    ),
-                    const Divider(height: 1),
-                    _SwitchTile(
-                      icon: Icons.blur_on,
-                      title: 'Smooth Scaling',
-                      subtitle: 'ON = smooth, modern look · OFF = crisp, pixelated retro look',
-                      value: settings.enableFiltering,
-                      onChanged: (_) => settingsService.toggleFiltering(),
-                    ),
-                    const Divider(height: 1),
-                    _PaletteTile(
-                      selectedIndex: settings.selectedColorPalette,
-                      onChanged: settingsService.setColorPalette,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Controls (collapsible) ──
-              _CollapsibleSection(
-                title: 'Controls',
-                icon: Icons.sports_esports,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _SwitchTile(
-                      icon: Icons.vibration,
-                      title: 'Haptic Feedback',
-                      subtitle: 'Vibrate on button press',
-                      value: settings.enableVibration,
-                      onChanged: (_) => settingsService.toggleVibration(),
-                    ),
-                    const Divider(height: 1),
-                    _SliderTile(
-                      icon: Icons.opacity,
-                      title: 'Gamepad Opacity',
-                      value: settings.gamepadOpacity,
-                      min: 0.1,
-                      max: 1.0,
-                      onChanged: settingsService.setGamepadOpacity,
-                    ),
-                    const Divider(height: 1),
-                    _SliderTile(
-                      icon: Icons.zoom_in,
-                      title: 'Gamepad Scale',
-                      value: settings.gamepadScale,
-                      min: 0.5,
-                      max: 2.0,
-                      onChanged: settingsService.setGamepadScale,
-                    ),
-                    const Divider(height: 1),
-                    _SwitchTile(
-                      icon: Icons.sports_esports,
-                      title: 'External Controller',
-                      subtitle: 'Bluetooth / USB gamepad & keyboard',
-                      value: settings.enableExternalGamepad,
-                      onChanged: (_) => settingsService.toggleExternalGamepad(),
-                    ),
-                    const Divider(height: 1),
-                    _GamepadSkinTile(
-                      selected: settings.gamepadSkin,
-                      onChanged: settingsService.setGamepadSkin,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Emulation (collapsible) ──
-              _CollapsibleSection(
-                title: 'Emulation',
-                icon: Icons.memory,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _SwitchTile(
-                      icon: Icons.fast_forward,
-                      title: 'Turbo Mode',
-                      subtitle: 'Fast forward emulation',
-                      value: settings.enableTurbo,
-                      onChanged: (_) => settingsService.toggleTurbo(),
-                    ),
-                    if (settings.enableTurbo) ...[
-                      const Divider(height: 1),
-                      _SliderTile(
-                        icon: Icons.speed,
-                        title: 'Turbo Speed',
-                        value: settings.turboSpeed,
-                        min: 1.5,
-                        max: 8.0,
-                        divisions: 13,
-                        labelSuffix: 'x',
-                        onChanged: settingsService.setTurboSpeed,
-                      ),
-                    ],
-                    const Divider(height: 1),
-                    _SwitchTile(
-                      icon: Icons.fast_rewind,
-                      title: 'Rewind',
-                      subtitle: 'Hold button to step backward in time',
-                      value: settings.enableRewind,
-                      onChanged: (_) => settingsService.toggleRewind(),
-                    ),
-                    if (settings.enableRewind) ...[
-                      const Divider(height: 1),
-                      _SliderTile(
-                        icon: Icons.timelapse,
-                        title: 'Rewind Buffer',
-                        value: settings.rewindBufferSeconds.toDouble(),
-                        min: 1.0,
-                        max: 10.0,
-                        divisions: 9,
-                        labelSuffix: 's',
-                        onChanged: (v) =>
-                            settingsService.setRewindBufferSeconds(v.round()),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Library (collapsible) ──
-              _CollapsibleSection(
-                title: 'Library',
-                icon: Icons.library_books,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _ActionTile(
-                      icon: Icons.folder,
-                      title: 'Manage ROM Folders',
-                      onTap: () => _showRomFolders(context),
-                    ),
-                    const Divider(height: 1),
-                    _ActionTile(
-                      icon: Icons.refresh,
-                      title: 'Refresh Library',
-                      onTap: () {
-                        context.read<GameLibraryService>().refresh();
-                        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-                          const SnackBar(content: Text('Refreshing library...')),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Backup & Restore (collapsible) ──
-              _CollapsibleSection(
-                title: 'Backup & Restore',
-                icon: Icons.backup,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _ActionTile(
-                      icon: Icons.upload_file,
-                      title: 'Export All Saves to ZIP',
-                      onTap: () => _exportAllSaves(context),
-                    ),
-                    const Divider(height: 1),
-                    _ActionTile(
-                      icon: Icons.download,
-                      title: 'Import Saves from ZIP',
-                      onTap: () => _importSaves(context),
-                    ),
-                    const Divider(height: 1),
-                    _ActionTile(
-                      icon: Icons.cloud_upload,
-                      title: 'Backup to Google Drive',
-                      onTap: () => _backupToDrive(context),
-                    ),
-                    const Divider(height: 1),
-                    _ActionTile(
-                      icon: Icons.cloud_download,
-                      title: 'Restore from Google Drive',
-                      onTap: () => _restoreFromDrive(context),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── RetroAchievements (collapsible) ──
-              _CollapsibleSection(
-                title: 'RetroAchievements',
-                icon: Icons.emoji_events,
-                initiallyExpanded: true,
-                child: Column(
-                  children: [
-                    // Master enable/disable toggle
-                    _SettingsCard(
+                    return TabBarView(
+                      controller: _tabController,
                       children: [
-                        _SwitchTile(
-                          icon: Icons.emoji_events,
-                          title: 'Enable RetroAchievements',
-                          subtitle: 'Track and earn achievements while playing',
-                          value: settings.raEnabled,
-                          onChanged: (_) => settingsService.toggleRA(),
-                        ),
+                        _buildDisplayTab(
+                            context, settings, settingsService, colors),
+                        _buildAudioTab(
+                            context, settings, settingsService, colors),
+                        _buildControlsTab(
+                            context, settings, settingsService, colors),
+                        _buildDataTab(
+                            context, settings, settingsService, colors),
+                        _buildAchievementsTab(
+                            context, settings, settingsService, colors),
                       ],
-                    ),
-                    // Everything below is gated on raEnabled
-                    if (settings.raEnabled) ...[
-                      const SizedBox(height: 8),
-                      _RetroAchievementsTile(),
-                      // Show mode/notification settings only when logged in
-                      Consumer<RetroAchievementsService>(
-                        builder: (context, raService, _) {
-                          if (!raService.isLoggedIn) return const SizedBox.shrink();
-                          return Column(
-                            children: [
-                              const SizedBox(height: 8),
-                              _SettingsCard(
-                                children: [
-                                  _SwitchTile(
-                                    icon: Icons.shield,
-                                    title: 'Hardcore Mode',
-                                    subtitle: 'Disable savestates, cheats, rewind, and fast-forward',
-                                    value: settings.raHardcoreMode,
-                                    onChanged: (_) => settingsService.toggleRAHardcoreMode(),
-                                  ),
-                                  const Divider(height: 1),
-                                  _ActionTile(
-                                    icon: Icons.key,
-                                    title: 'Change Password',
-                                    onTap: () async {
-                                      await raService.logout();
-                                      if (context.mounted) {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => const RALoginScreen(),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      // Disclosure
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 14,
-                              color: colors.textMuted,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Uses RetroAchievements. Your credentials are '
-                                'stored securely on-device and never shared.',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: colors.textMuted,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                    );
+                  },
                 ),
               ),
-
-              const SizedBox(height: 12),
-
-              // ── About (collapsible) ──
-              _CollapsibleSection(
-                title: 'About',
-                icon: Icons.info_outline,
-                initiallyExpanded: true,
-                child: _SettingsCard(
-                  children: [
-                    _InfoTile(
-                      icon: Icons.info_outline,
-                      title: 'RetroPal',
-                      subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
-                    ),
-                    const Divider(height: 1),
-                    _ActionTile(
-                      icon: Icons.restore,
-                      title: 'Reset to Defaults',
-                      onTap: () => _confirmReset(context),
-                      isDestructive: true,
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 32),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Tab 1 — Display
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildDisplayTab(
+    BuildContext context,
+    EmulatorSettings settings,
+    SettingsService settingsService,
+    AppColorTheme colors,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // ── Theme ──
+        _SectionHeader(title: 'Theme'),
+        _ThemePicker(
+          selectedThemeId: settings.selectedTheme,
+          onChanged: settingsService.setAppTheme,
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── Display Settings ──
+        _SectionHeader(title: 'Display'),
+        _SettingsCard(
+          children: [
+            _SwitchTile(
+              icon: Icons.speed,
+              title: 'Show FPS',
+              subtitle: 'Display frame rate counter',
+              value: settings.showFps,
+              onChanged: (_) => settingsService.toggleShowFps(),
+            ),
+            const Divider(height: 1),
+            _SwitchTile(
+              icon: Icons.aspect_ratio,
+              title: 'Maintain Aspect Ratio',
+              subtitle: 'Keep original game proportions',
+              value: settings.maintainAspectRatio,
+              onChanged: (_) => settingsService.toggleAspectRatio(),
+            ),
+            const Divider(height: 1),
+            _SwitchTile(
+              icon: Icons.blur_on,
+              title: 'Smooth Scaling',
+              subtitle: 'ON = smooth, modern look · OFF = crisp, pixelated retro look',
+              value: settings.enableFiltering,
+              onChanged: (_) => settingsService.toggleFiltering(),
+            ),
+            const Divider(height: 1),
+            _PaletteTile(
+              selectedIndex: settings.selectedColorPalette,
+              onChanged: settingsService.setColorPalette,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Tab 2 — Audio
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildAudioTab(
+    BuildContext context,
+    EmulatorSettings settings,
+    SettingsService settingsService,
+    AppColorTheme colors,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionHeader(title: 'Audio'),
+        _SettingsCard(
+          children: [
+            _SwitchTile(
+              icon: Icons.volume_up,
+              title: 'Enable Sound',
+              subtitle: 'Play game audio',
+              value: settings.enableSound,
+              onChanged: (_) => settingsService.toggleSound(),
+            ),
+            if (settings.enableSound) ...[
+              const Divider(height: 1),
+              _SliderTile(
+                icon: Icons.volume_down,
+                title: 'Volume',
+                value: settings.volume,
+                onChanged: settingsService.setVolume,
+              ),
+            ],
+          ],
+        ),
+
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Tab 3 — Controls
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildControlsTab(
+    BuildContext context,
+    EmulatorSettings settings,
+    SettingsService settingsService,
+    AppColorTheme colors,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // ── Touch Controls ──
+        _SectionHeader(title: 'Touch Controls'),
+        _SettingsCard(
+          children: [
+            _SwitchTile(
+              icon: Icons.vibration,
+              title: 'Haptic Feedback',
+              subtitle: 'Vibrate on button press',
+              value: settings.enableVibration,
+              onChanged: (_) => settingsService.toggleVibration(),
+            ),
+            const Divider(height: 1),
+            _SliderTile(
+              icon: Icons.opacity,
+              title: 'Gamepad Opacity',
+              value: settings.gamepadOpacity,
+              min: 0.1,
+              max: 1.0,
+              onChanged: settingsService.setGamepadOpacity,
+            ),
+            const Divider(height: 1),
+            _SliderTile(
+              icon: Icons.zoom_in,
+              title: 'Gamepad Scale',
+              value: settings.gamepadScale,
+              min: 0.5,
+              max: 2.0,
+              onChanged: settingsService.setGamepadScale,
+            ),
+            const Divider(height: 1),
+            _SwitchTile(
+              icon: Icons.sports_esports,
+              title: 'External Controller',
+              subtitle: 'Bluetooth / USB gamepad & keyboard',
+              value: settings.enableExternalGamepad,
+              onChanged: (_) => settingsService.toggleExternalGamepad(),
+            ),
+            const Divider(height: 1),
+            _GamepadSkinTile(
+              selected: settings.gamepadSkin,
+              onChanged: settingsService.setGamepadSkin,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── Emulation ──
+        _SectionHeader(title: 'Emulation'),
+        _SettingsCard(
+          children: [
+            _SwitchTile(
+              icon: Icons.fast_forward,
+              title: 'Turbo Mode',
+              subtitle: 'Fast forward emulation',
+              value: settings.enableTurbo,
+              onChanged: (_) => settingsService.toggleTurbo(),
+            ),
+            if (settings.enableTurbo) ...[
+              const Divider(height: 1),
+              _SliderTile(
+                icon: Icons.speed,
+                title: 'Turbo Speed',
+                value: settings.turboSpeed,
+                min: 1.5,
+                max: 8.0,
+                divisions: 13,
+                labelSuffix: 'x',
+                onChanged: settingsService.setTurboSpeed,
+              ),
+            ],
+            const Divider(height: 1),
+            _SwitchTile(
+              icon: Icons.fast_rewind,
+              title: 'Rewind',
+              subtitle: 'Hold button to step backward in time',
+              value: settings.enableRewind,
+              onChanged: (_) => settingsService.toggleRewind(),
+            ),
+            if (settings.enableRewind) ...[
+              const Divider(height: 1),
+              _SliderTile(
+                icon: Icons.timelapse,
+                title: 'Rewind Buffer',
+                value: settings.rewindBufferSeconds.toDouble(),
+                min: 1.0,
+                max: 60.0,
+                divisions: 59,
+                labelSuffix: 's',
+                onChanged: (v) =>
+                    settingsService.setRewindBufferSeconds(v.round()),
+              ),
+            ],
+          ],
+        ),
+
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Tab 4 — Data (Library + Backup + About)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildDataTab(
+    BuildContext context,
+    EmulatorSettings settings,
+    SettingsService settingsService,
+    AppColorTheme colors,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // ── Library ──
+        _SectionHeader(title: 'Library'),
+        _SettingsCard(
+          children: [
+            _ActionTile(
+              icon: Icons.folder,
+              title: 'Manage ROM Folders',
+              onTap: () => _showRomFolders(context),
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.refresh,
+              title: 'Refresh Library',
+              onTap: () {
+                context.read<GameLibraryService>().refresh();
+                ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+                  const SnackBar(content: Text('Refreshing library...')),
+                );
+              },
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── Backup & Restore ──
+        _SectionHeader(title: 'Backup & Restore'),
+        _SettingsCard(
+          children: [
+            _ActionTile(
+              icon: Icons.upload_file,
+              title: 'Export All Saves to ZIP',
+              onTap: () => _exportAllSaves(context),
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.download,
+              title: 'Import Saves from ZIP',
+              onTap: () => _importSaves(context),
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.cloud_upload,
+              title: 'Backup to Google Drive',
+              onTap: () => _backupToDrive(context),
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.cloud_download,
+              title: 'Restore from Google Drive',
+              onTap: () => _restoreFromDrive(context),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── About ──
+        _SectionHeader(title: 'About'),
+        _SettingsCard(
+          children: [
+            _InfoTile(
+              icon: Icons.info_outline,
+              title: 'RetroPal',
+              subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.restore,
+              title: 'Reset to Defaults',
+              onTap: () => _confirmReset(context),
+              isDestructive: true,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Tab 5 — Achievements
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildAchievementsTab(
+    BuildContext context,
+    EmulatorSettings settings,
+    SettingsService settingsService,
+    AppColorTheme colors,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionHeader(title: 'RetroAchievements'),
+
+        // Master enable/disable toggle
+        _SettingsCard(
+          children: [
+            _SwitchTile(
+              icon: Icons.emoji_events,
+              title: 'Enable RetroAchievements',
+              subtitle: 'Track and earn achievements while playing',
+              value: settings.raEnabled,
+              onChanged: (_) => settingsService.toggleRA(),
+            ),
+          ],
+        ),
+
+        // Everything below is gated on raEnabled
+        if (settings.raEnabled) ...[
+          const SizedBox(height: 12),
+          _RetroAchievementsTile(),
+
+          // Show mode/notification settings only when logged in
+          Consumer<RetroAchievementsService>(
+            builder: (context, raService, _) {
+              if (!raService.isLoggedIn) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  const SizedBox(height: 12),
+                  _SettingsCard(
+                    children: [
+                      _SwitchTile(
+                        icon: Icons.shield,
+                        title: 'Hardcore Mode',
+                        subtitle:
+                            'Disable savestates, cheats, rewind, and fast-forward',
+                        value: settings.raHardcoreMode,
+                        onChanged: (_) =>
+                            settingsService.toggleRAHardcoreMode(),
+                      ),
+                      const Divider(height: 1),
+                      _ActionTile(
+                        icon: Icons.key,
+                        title: 'Change Password',
+                        onTap: () async {
+                          await raService.logout();
+                          if (context.mounted) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const RALoginScreen(),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          // Disclosure
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 14, color: colors.textMuted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Uses RetroAchievements. Your credentials are '
+                    'stored securely on-device and never shared.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colors.textMuted,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Action methods
+  // ═══════════════════════════════════════════════════════════════════════
+
   void _showRomFolders(BuildContext context) {
     final colors = AppColorTheme.of(context);
     final library = context.read<GameLibraryService>();
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: colors.surface,
@@ -478,59 +599,82 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
-                  if (library.romDirectories.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Text(
-                        'No folders added yet',
-                        style: TextStyle(color: colors.textMuted),
-                      ),
-                    )
-                  else
-                    ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: library.romDirectories.length,
-                      itemBuilder: (context, index) {
-                        final dir = library.romDirectories[index];
-                        return ListTile(
-                          leading: Icon(Icons.folder, color: colors.accent),
-                          title: Text(
-                            dir.split(RegExp(r'[/\\]')).last,
-                            style: TextStyle(color: colors.textPrimary),
-                          ),
-                          subtitle: Text(
-                            dir,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colors.textMuted,
+                  FocusTraversalGroup(
+                    policy: OrderedTraversalPolicy(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (library.romDirectories.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Text(
+                              'No folders added yet',
+                              style: TextStyle(color: colors.textMuted),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete, color: colors.error),
-                            onPressed: () {
-                              library.removeRomDirectory(dir);
-                              setState(() {});
+                          )
+                        else
+                          ...library.romDirectories.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final dir = entry.value;
+                            return TvFocusable(
+                              autofocus: index == 0,
+                              borderRadius: BorderRadius.circular(8),
+                              child: ListTile(
+                                leading:
+                                    Icon(Icons.folder, color: colors.accent),
+                                title: Text(
+                                  dir.split(RegExp(r'[/\\]')).last,
+                                  style:
+                                      TextStyle(color: colors.textPrimary),
+                                ),
+                                subtitle: Text(
+                                  dir,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: colors.textMuted,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: IconButton(
+                                  icon: Icon(Icons.delete,
+                                      color: colors.error),
+                                  onPressed: () {
+                                    library.removeRomDirectory(dir);
+                                    setState(() {});
+                                  },
+                                ),
+                              ),
+                            );
+                          }),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: TvFocusable(
+                            autofocus: library.romDirectories.isEmpty,
+                            onTap: () async {
+                              final result =
+                                  await FilePicker.platform.getDirectoryPath();
+                              if (result != null) {
+                                await library.addRomDirectory(result);
+                                setState(() {});
+                              }
                             },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final result = await FilePicker.platform
+                                    .getDirectoryPath();
+                                if (result != null) {
+                                  await library.addRomDirectory(result);
+                                  setState(() {});
+                                }
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add Folder'),
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                  
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await FilePicker.platform.getDirectoryPath();
-                        if (result != null) {
-                          await library.addRomDirectory(result);
-                          setState(() {});
-                        }
-                      },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Folder'),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -550,27 +694,36 @@ class SettingsScreen extends StatelessWidget {
         backgroundColor: colors.surface,
         title: Text(
           'Reset Settings?',
-          style: TextStyle(
-            color: colors.textPrimary,
-          ),
+          style: TextStyle(color: colors.textPrimary),
         ),
         content: Text(
           'This will reset all settings to their default values.',
           style: TextStyle(color: colors.textSecondary),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+          TvFocusable(
+            onTap: () => Navigator.pop(context),
+            borderRadius: BorderRadius.circular(8),
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
           ),
-          TextButton(
-            onPressed: () {
+          TvFocusable(
+            onTap: () {
               context.read<SettingsService>().resetToDefaults();
               Navigator.pop(context);
             },
-            child: Text(
-              'Reset',
-              style: TextStyle(color: colors.error),
+            borderRadius: BorderRadius.circular(8),
+            child: TextButton(
+              onPressed: () {
+                context.read<SettingsService>().resetToDefaults();
+                Navigator.pop(context);
+              },
+              child: Text(
+                'Reset',
+                style: TextStyle(color: colors.error),
+              ),
             ),
           ),
         ],
@@ -584,13 +737,14 @@ class SettingsScreen extends StatelessWidget {
     final games = library.games;
 
     if (games.isEmpty) {
-      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-        const SnackBar(content: Text('No games in library to export')),
-      );
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(content: Text('No games in library to export')),
+        );
       return;
     }
 
-    // Show progress dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -604,33 +758,32 @@ class SettingsScreen extends StatelessWidget {
 
   void _importSaves(BuildContext context) async {
     final library = context.read<GameLibraryService>();
+    final emulator = context.read<EmulatorService>();
     final games = library.games;
 
     if (games.isEmpty) {
-      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-        const SnackBar(content: Text('Add games to library first before importing saves')),
-      );
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+              content:
+                  Text('Add games to library first before importing saves')),
+        );
       return;
     }
 
-    try {
-      final count = await SaveBackupService.importFromZipPicker(games: games);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-        SnackBar(
-          content: Text(
-            count > 0
-                ? 'Restored $count save file${count == 1 ? '' : 's'}'
-                : 'No matching save files found in ZIP',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
-      );
-    }
+    final zipPath = await SaveBackupService.pickZipFile();
+    if (zipPath == null || !context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _ImportRestoreDialog(
+        zipPath: zipPath,
+        games: games,
+        appSaveDir: emulator.saveDir,
+      ),
+    );
   }
 
   void _backupToDrive(BuildContext context) async {
@@ -639,9 +792,11 @@ class SettingsScreen extends StatelessWidget {
     final games = library.games;
 
     if (games.isEmpty) {
-      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-        const SnackBar(content: Text('No games in library to backup')),
-      );
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(content: Text('No games in library to backup')),
+        );
       return;
     }
 
@@ -657,24 +812,32 @@ class SettingsScreen extends StatelessWidget {
 
   void _restoreFromDrive(BuildContext context) async {
     final library = context.read<GameLibraryService>();
+    final emulator = context.read<EmulatorService>();
 
     if (library.games.isEmpty) {
-      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-        const SnackBar(content: Text('Add games to library first before restoring')),
-      );
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+              content:
+                  Text('Add games to library first before restoring')),
+        );
       return;
     }
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _DriveRestoreDialog(games: library.games),
+      builder: (ctx) => _DriveRestoreDialog(
+        games: library.games,
+        appSaveDir: emulator.saveDir,
+      ),
     );
   }
 }
 
 /// Collapsible accordion section for grouping related settings.
-class _CollapsibleSection extends StatelessWidget {
+class _CollapsibleSection extends StatefulWidget {
   final String title;
   final IconData icon;
   final bool initiallyExpanded;
@@ -686,6 +849,50 @@ class _CollapsibleSection extends StatelessWidget {
     this.initiallyExpanded = false,
     required this.child,
   });
+
+  @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection>
+    with SingleTickerProviderStateMixin {
+  late bool _expanded;
+  late final AnimationController _animController;
+  late final Animation<double> _expandAnimation;
+  late final Animation<double> _rotateAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      value: _expanded ? 1.0 : 0.0,
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeInOut,
+    );
+    _rotateAnimation = Tween<double>(begin: 0, end: 0.5).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _animController.forward();
+    } else {
+      _animController.reverse();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -700,30 +907,52 @@ class _CollapsibleSection extends StatelessWidget {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Theme(
-        // Remove the default divider line that ExpansionTile adds
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: initiallyExpanded,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          childrenPadding: EdgeInsets.zero,
-          leading: Icon(icon, color: colors.accent, size: 22),
-          title: Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: colors.primary,
-              letterSpacing: 1.5,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TvFocusable(
+            onTap: _toggle,
+            borderRadius: const BorderRadius.all(Radius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(widget.icon, color: colors.accent, size: 22),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      widget.title.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: colors.primary,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                  RotationTransition(
+                    turns: _rotateAnimation,
+                    child: Icon(
+                      Icons.expand_more,
+                      color: colors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          iconColor: colors.textMuted,
-          collapsedIconColor: colors.textMuted,
-          children: [
-            Divider(height: 1, color: colors.surfaceLight),
-            child,
-          ],
-        ),
+          SizeTransition(
+            sizeFactor: _expandAnimation,
+            axisAlignment: -1,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Divider(height: 1, color: colors.surfaceLight),
+                widget.child,
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -794,25 +1023,32 @@ class _SwitchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return ListTile(
-      leading: Icon(icon, color: colors.accent),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          color: colors.textPrimary,
+    return TvFocusable(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        leading: Icon(icon, color: colors.accent),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            color: colors.textPrimary,
+          ),
         ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: colors.textMuted,
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12,
+            color: colors.textMuted,
+          ),
         ),
-      ),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
+        trailing: IgnorePointer(
+          child: Switch(
+            value: value,
+            onChanged: onChanged,
+          ),
+        ),
+        onTap: () => onChanged(!value),
       ),
     );
   }
@@ -839,44 +1075,84 @@ class _SliderTile extends StatelessWidget {
     required this.onChanged,
   });
 
+  /// Step size for D-pad left/right adjustment.
+  double get _step {
+    if (divisions != null) return (max - min) / divisions!;
+    return (max - min) * 0.05; // 5% steps
+  }
+
+  void _increment() {
+    final next = (value + _step).clamp(min, max);
+    onChanged(next);
+  }
+
+  void _decrement() {
+    final next = (value - _step).clamp(min, max);
+    onChanged(next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Focus(
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+            event.logicalKey == LogicalKeyboardKey.gameButtonRight1) {
+          _increment();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.gameButtonLeft1) {
+          _decrement();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: TvFocusable(
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: colors.accent, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: colors.textPrimary,
+              Row(
+                children: [
+                  Icon(icon, color: colors.accent, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colors.textPrimary,
+                      ),
+                    ),
                   ),
-                ),
+                  Text(
+                    '${value.toStringAsFixed(1)}$labelSuffix',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.accent,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                '${value.toStringAsFixed(1)}$labelSuffix',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colors.accent,
+              IgnorePointer(
+                ignoring: false,
+                child: Slider(
+                  value: value,
+                  min: min,
+                  max: max,
+                  divisions: divisions,
+                  onChanged: onChanged,
                 ),
               ),
             ],
           ),
-          Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: divisions,
-            onChanged: onChanged,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -898,23 +1174,27 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isDestructive ? colors.error : colors.accent,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          color: isDestructive ? colors.error : colors.textPrimary,
-        ),
-      ),
-      trailing: Icon(
-        Icons.chevron_right,
-        color: colors.textMuted,
-      ),
+    return TvFocusable(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: isDestructive ? colors.error : colors.accent,
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            color: isDestructive ? colors.error : colors.textPrimary,
+          ),
+        ),
+        trailing: Icon(
+          Icons.chevron_right,
+          color: colors.textMuted,
+        ),
+        onTap: onTap,
+      ),
     );
   }
 }
@@ -1455,15 +1735,23 @@ class _RetroAchievementsTile extends StatelessWidget {
                         style: TextStyle(color: colors.textSecondary),
                       ),
                       actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancel'),
+                        TvFocusable(
+                          onTap: () => Navigator.pop(ctx, false),
+                          borderRadius: BorderRadius.circular(8),
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
                         ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: Text(
-                            'Sign Out',
-                            style: TextStyle(color: colors.error),
+                        TvFocusable(
+                          onTap: () => Navigator.pop(ctx, true),
+                          borderRadius: BorderRadius.circular(8),
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(
+                              'Sign Out',
+                              style: TextStyle(color: colors.error),
+                            ),
                           ),
                         ),
                       ],
@@ -1512,8 +1800,9 @@ class _RetroAchievementsTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    GestureDetector(
+                    TvFocusable(
                       onTap: raService.clearError,
+                      borderRadius: BorderRadius.circular(8),
                       child: Icon(
                         Icons.close,
                         size: 16,
@@ -1541,19 +1830,30 @@ class _RetroAchievementsTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.login, size: 18),
-                      label: const Text('Sign In'),
-                      onPressed: () {
-                        raService.clearError();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const RALoginScreen(),
-                          ),
-                        );
-                      },
+                  TvFocusable(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      raService.clearError();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const RALoginScreen(),
+                        ),
+                      );
+                    },
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.login, size: 18),
+                        label: const Text('Sign In'),
+                        onPressed: () {
+                          raService.clearError();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const RALoginScreen(),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -1737,6 +2037,372 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
   }
 }
 
+/// Dialog that previews a backup ZIP and lets the user confirm the import.
+class _ImportRestoreDialog extends StatefulWidget {
+  final String zipPath;
+  final List<GameRom> games;
+  final String? appSaveDir;
+
+  const _ImportRestoreDialog({
+    required this.zipPath,
+    required this.games,
+    this.appSaveDir,
+  });
+
+  @override
+  State<_ImportRestoreDialog> createState() => _ImportRestoreDialogState();
+}
+
+class _ImportRestoreDialogState extends State<_ImportRestoreDialog> {
+  ImportPreview? _preview;
+  String _status = 'Reading backup…';
+  bool _loading = true;
+  bool _restoring = false;
+  bool _done = false;
+  bool _error = false;
+  double _progress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreview();
+  }
+
+  Future<void> _loadPreview() async {
+    try {
+      final preview = await SaveBackupService.previewZip(
+        zipPath: widget.zipPath,
+        games: widget.games,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _preview = preview;
+        _loading = false;
+        if (preview.matchedFileCount == 0) {
+          _status = 'No matching save files found.\n'
+              'Make sure the games are in your library.';
+          _error = true;
+        } else {
+          _status = '';
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Failed to read ZIP: $e';
+          _loading = false;
+          _error = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _restore() async {
+    if (_restoring) return;
+    setState(() {
+      _restoring = true;
+      _status = 'Restoring saves…';
+      _progress = 0;
+    });
+
+    try {
+      final count = await SaveBackupService.importFromZip(
+        zipPath: widget.zipPath,
+        games: widget.games,
+        appSaveDir: widget.appSaveDir,
+        onProgress: (done, total) {
+          if (mounted) {
+            setState(() {
+              _progress = total > 0 ? done / total : 0;
+              _status = 'Restoring file $done of $total…';
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _done = true;
+          _restoring = false;
+          _status = count > 0
+              ? 'Successfully restored $count save file${count == 1 ? '' : 's'}!'
+              : 'No files were restored.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Restore failed: $e';
+          _restoring = false;
+          _error = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColorTheme.of(context);
+    final preview = _preview;
+    final showPreview = preview != null && !_restoring && !_done && !_error;
+
+    return AlertDialog(
+      backgroundColor: colors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(
+            _error
+                ? Icons.error_outline
+                : (_done ? Icons.check_circle : Icons.download),
+            color: _error
+                ? colors.error
+                : (_done ? colors.accent : colors.textSecondary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Import Saves',
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_loading || _restoring) ...[
+              LinearProgressIndicator(
+                value: _restoring && _progress > 0 ? _progress : null,
+                backgroundColor: colors.surfaceLight,
+                valueColor: AlwaysStoppedAnimation(colors.accent),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            if (_status.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _status,
+                  style: TextStyle(
+                    color: _error
+                        ? colors.error
+                        : (_done ? colors.accent : colors.textSecondary),
+                    fontSize: 13,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+            // Preview section
+            if (showPreview) ...[
+              // ZIP info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colors.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.archive, size: 16, color: colors.accent),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Backup: ${preview.zipSizeFormatted}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (preview.exportDateFormatted != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Created: ${preview.exportDateFormatted}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.textMuted,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      '${preview.matchedFileCount} file${preview.matchedFileCount == 1 ? '' : 's'} '
+                      'for ${preview.matchedGames.length} game${preview.matchedGames.length == 1 ? '' : 's'} '
+                      'will be restored',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.accent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (preview.unmatchedFiles.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${preview.unmatchedFiles.length} file${preview.unmatchedFiles.length == 1 ? '' : 's'} '
+                        'skipped (no matching game in library)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // Game list
+              if (preview.matchedGames.isNotEmpty)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: preview.matchedGames.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: colors.surfaceLight,
+                    ),
+                    itemBuilder: (context, index) {
+                      final entry =
+                          preview.matchedGames.entries.elementAt(index);
+                      final gameName = entry.key;
+                      final files = entry.value;
+
+                      // Categorize files
+                      final hasSram = files.any((f) => f.endsWith('.sav'));
+                      final stateCount = files
+                          .where((f) => RegExp(r'\.ss\d$').hasMatch(f))
+                          .length;
+                      final screenshotCount =
+                          files.where((f) => f.endsWith('.png')).length;
+
+                      final details = <String>[];
+                      if (hasSram) details.add('SRAM');
+                      if (stateCount > 0) {
+                        details.add(
+                            '$stateCount save state${stateCount == 1 ? '' : 's'}');
+                      }
+                      if (screenshotCount > 0) {
+                        details.add(
+                            '$screenshotCount screenshot${screenshotCount == 1 ? '' : 's'}');
+                      }
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 6, horizontal: 4),
+                        child: Row(
+                          children: [
+                            Icon(Icons.videogame_asset,
+                                size: 16, color: colors.accent),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    gameName,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: colors.textPrimary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (details.isNotEmpty)
+                                    Text(
+                                      details.join(' · '),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: colors.textMuted,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+              const SizedBox(height: 8),
+
+              // Warning
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 16, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This will overwrite any existing save data for the matched games.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.orange.shade300,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        // Restore button (only shown during preview)
+        if (showPreview && preview.matchedFileCount > 0)
+          TextButton.icon(
+            icon: Icon(Icons.restore, size: 18, color: colors.accent),
+            label: Text(
+              'Restore',
+              style: TextStyle(color: colors.accent),
+            ),
+            onPressed: _restore,
+          ),
+        // Close / Cancel
+        TextButton(
+          onPressed: _restoring ? null : () => Navigator.pop(context),
+          child: Text(
+            _done || _error ? 'Close' : 'Cancel',
+            style: TextStyle(color: colors.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Dialog that handles Google Drive backup (sign in → export → upload).
 class _DriveBackupDialog extends StatefulWidget {
   final List<GameRom> games;
@@ -1889,8 +2555,9 @@ class _DriveBackupDialogState extends State<_DriveBackupDialog> {
 /// Dialog that lists Drive backups and lets user pick one to restore.
 class _DriveRestoreDialog extends StatefulWidget {
   final List<GameRom> games;
+  final String? appSaveDir;
 
-  const _DriveRestoreDialog({required this.games});
+  const _DriveRestoreDialog({required this.games, this.appSaveDir});
 
   @override
   State<_DriveRestoreDialog> createState() => _DriveRestoreDialogState();
@@ -1971,6 +2638,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
       final count = await SaveBackupService.importFromZip(
         zipPath: zipPath,
         games: widget.games,
+        appSaveDir: widget.appSaveDir,
       );
 
       // Clean up temp file
@@ -2060,26 +2728,30 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
                           '${modified.hour.toString().padLeft(2, '0')}:${modified.minute.toString().padLeft(2, '0')}'
                         : 'Unknown date';
 
-                    return ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.archive, size: 20),
-                      title: Text(
-                        backup.name ?? 'Backup',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.textPrimary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '$dateStr · $sizeMb MB',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: colors.textMuted,
-                        ),
-                      ),
+                    return TvFocusable(
                       onTap: () => _restore(backup),
+                      borderRadius: BorderRadius.circular(8),
+                      child: ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.archive, size: 20),
+                        title: Text(
+                          backup.name ?? 'Backup',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '$dateStr · $sizeMb MB',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colors.textMuted,
+                          ),
+                        ),
+                        onTap: () => _restore(backup),
+                      ),
                     );
                   },
                 ),

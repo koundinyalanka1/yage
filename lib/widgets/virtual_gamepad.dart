@@ -187,8 +187,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       // the resize if it would drop below the touch-target threshold.
       final gameRect = widget.gameRect;
       final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
-      final baseSize = isPortrait ? gameRect.width * 0.28 : gameRect.width * 0.20;
-      final buttonBase = isPortrait ? gameRect.width * 0.17 : gameRect.width * 0.12;
+      final sizeRef = isPortrait
+          ? gameRect.width
+          : MediaQuery.of(context).size.height;
+      final baseSize = isPortrait ? sizeRef * 0.28 : sizeRef * 0.26;
+      final buttonBase = isPortrait ? sizeRef * 0.17 : sizeRef * 0.16;
 
       final double smallestDim;
       switch (button) {
@@ -271,24 +274,30 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
           // Responsive sizing based on screen
           final gameRect = widget.gameRect;
 
-// Size relative to GAME, not full screen
+// Size relative to GAME in portrait; relative to screen height in
+          // landscape so buttons stay consistent regardless of game aspect
+          // ratio (GB/GBC is nearly square → narrower gameRect in landscape).
           final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
 
+          final sizeRef = isPortrait ? gameRect.width : screenSize.height;
+
           final baseSize = isPortrait
-              ? gameRect.width * 0.28
-              : gameRect.width * 0.20;
+              ? sizeRef * 0.28
+              : sizeRef * 0.26;
 
           final buttonBase = isPortrait
-              ? gameRect.width * 0.17
-              : gameRect.width * 0.12;
-          final portraitBoost = isPortrait ? 1.1 : 1.0;
+              ? sizeRef * 0.17
+              : sizeRef * 0.16;
+          // D-pad / joystick boost: 10% bigger in portrait, 25% bigger in
+          // landscape (user request — gives more comfortable thumb target).
+          final dpadBoost = isPortrait ? 1.1 : 1.25;
 
           // Use cached skin data (resolved in initState / didUpdateWidget)
           final skin = _resolvedSkin;
 
           // Pre-compute child sizes for each button so the clamp logic can
           // keep the entire widget on screen, not just its top-left corner.
-          final dpadScale = layout.dpad.size * widget.scale * portraitBoost;
+          final dpadScale = layout.dpad.size * widget.scale * dpadBoost;
           final dpadSize = Size(baseSize * dpadScale, baseSize * dpadScale);
 
           final aSize = buttonBase * layout.aButton.size * widget.scale;
@@ -537,13 +546,20 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     // Ensure the ENTIRE button stays on screen by accounting for its size.
     // minMargin is a small safety buffer from the screen edges.
     final double minMargin = screenSize.width * 0.01;
+    // In landscape, reserve vertical space at the top so gamepad buttons
+    // (especially L/R shoulders) don't overlap the HUD row (menu, rewind,
+    // fast-forward, rotation).  The HUD button height is proportional to
+    // screen width, matching the hudBtn calculation in game_screen.
+    final double minYMargin = isPortrait
+        ? minMargin
+        : (screenSize.width * 0.107).clamp(36.0, 56.0) + screenSize.height * 0.02;
     final double clampedX = x.clamp(
       minMargin,
       math.max(minMargin, screenSize.width - childSize.width - minMargin),
     );
     final double clampedY = y.clamp(
-      minMargin,
-      math.max(minMargin, screenSize.height - childSize.height - minMargin),
+      minYMargin,
+      math.max(minYMargin, screenSize.height - childSize.height - minMargin),
     );
 
     return Positioned(

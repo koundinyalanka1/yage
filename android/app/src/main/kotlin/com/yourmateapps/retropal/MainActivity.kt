@@ -25,6 +25,9 @@ class MainActivity : FlutterActivity() {
     // Legacy storage permission callback (Android ≤ 12 TV browser)
     private var permissionResultHandler: ((Boolean) -> Unit)? = null
 
+    // Texture bridge for zero-copy frame delivery
+    private var textureBridge: YageTextureBridge? = null
+
     companion object {
         private const val SAF_IMPORT_FOLDER_CODE = 2001
         private const val STORAGE_PERMISSION_CODE = 1001
@@ -33,6 +36,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Initialize texture bridge for zero-copy frame delivery
+        textureBridge = YageTextureBridge(flutterEngine)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -76,6 +82,24 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    // ── Texture rendering — zero-copy frame delivery ──
+                    "createGameTexture" -> {
+                        val width = call.argument<Int>("width") ?: 240
+                        val height = call.argument<Int>("height") ?: 160
+                        val textureId = textureBridge?.createTexture(width, height)
+                        result.success(textureId)
+                    }
+                    "destroyGameTexture" -> {
+                        textureBridge?.destroy()
+                        result.success(null)
+                    }
+                    "updateGameTextureSize" -> {
+                        val width = call.argument<Int>("width") ?: 240
+                        val height = call.argument<Int>("height") ?: 160
+                        textureBridge?.updateSize(width, height)
+                        result.success(null)
+                    }
+
                     else -> result.notImplemented()
                 }
             }
@@ -86,6 +110,12 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onDestroy() {
+        textureBridge?.destroy()
+        textureBridge = null
+        super.onDestroy()
     }
 
     private fun handleIntent(intent: Intent?) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -57,6 +58,26 @@ class EmulatorService extends ChangeNotifier {
   /// callbacks become no-ops the instant [pause] / [stop] flips it to false.
   bool _frameLoopActive = false;
   
+  /// True when the native (pthread) frame loop is actively driving
+  /// emulation instead of the Dart Timer-based loop.
+  bool _useNativeFrameLoop = false;
+
+  /// NativeCallable handle for the native frame loop callback.
+  /// Must stay alive as long as the native thread is running.
+  NativeCallable<NativeFrameCallback>? _nativeFrameCallable;
+
+  /// True when frames are delivered via Android Texture widget
+  /// (ANativeWindow), bypassing decodeImageFromPixels entirely.
+  bool _useTextureRendering = false;
+  bool get useTextureRendering => _useTextureRendering;
+
+  /// Enable texture rendering mode (call after creating the platform
+  /// texture via the method channel).
+  void setTextureRendering(bool enabled) {
+    _useTextureRendering = enabled;
+    debugPrint('EmulatorService: texture rendering ${enabled ? "enabled" : "disabled"}');
+  }
+
   // Play time tracking — accumulates while the emulator is running
   final Stopwatch _playTimeStopwatch = Stopwatch();
   int _flushedPlayTimeSeconds = 0;
@@ -118,6 +139,10 @@ class EmulatorService extends ChangeNotifier {
   /// Set emulation speed (0.5x, 1x, 2x, 4x, etc.)
   void setSpeed(double speed) {
     _speedMultiplier = speed.clamp(0.25, 8.0);
+    // Propagate to native frame loop if active
+    if (_useNativeFrameLoop) {
+      _core?.frameLoopSetSpeed((_speedMultiplier * 100).round());
+    }
     notifyListeners();
   }
   
@@ -128,16 +153,24 @@ class EmulatorService extends ChangeNotifier {
     } else {
       _speedMultiplier = _settings.turboSpeed;
     }
+    // Propagate to native frame loop if active
+    if (_useNativeFrameLoop) {
+      _core?.frameLoopSetSpeed((_speedMultiplier * 100).round());
+    }
     notifyListeners();
   }
   
   int get screenWidth {
     if (_useStub) return _stub?.width ?? 240;
+    // Use display dimensions when native frame loop is active
+    // (may differ from core dimensions during SGB mode transitions)
+    if (_useNativeFrameLoop) return _core?.displayWidth ?? 240;
     return _core?.width ?? 240;
   }
   
   int get screenHeight {
     if (_useStub) return _stub?.height ?? 160;
+    if (_useNativeFrameLoop) return _core?.displayHeight ?? 160;
     return _core?.height ?? 160;
   }
   
@@ -401,6 +434,15 @@ class EmulatorService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether the native frame loop is available and should be used.
+  /// Only for the real native core (not stub) and only on platforms
+  /// that support pthread (Android, Linux, macOS — NOT Windows).
+  bool get _canUseNativeFrameLoop {
+    if (_useStub || _core == null) return false;
+    if (Platform.isWindows) return false;
+    return _core!.isFrameLoopSupported;
+  }
+
   /// Pause emulation.
   ///
   /// SRAM is NOT flushed here — it is only written when:
@@ -417,6 +459,10 @@ class EmulatorService extends ChangeNotifier {
     // callbacks become no-ops before we update the rest of the state.
     _frameLoopActive = false;
     _state = EmulatorState.paused;
+
+    // Stop native frame loop if active (blocks until thread exits)
+    _stopNativeFrameLoop();
+
     _frameTimer?.cancel();
     _frameTimer = null;
     _playTimeStopwatch.stop();
@@ -436,6 +482,11 @@ class EmulatorService extends ChangeNotifier {
 
   /// Reset the emulator
   void reset() {
+    // Must stop native frame loop before resetting the core —
+    // retro_reset() and retro_run() must not execute concurrently.
+    final wasNative = _useNativeFrameLoop;
+    if (wasNative) _stopNativeFrameLoop();
+
     if (_useStub) {
       _stub?.reset();
     } else {
@@ -444,9 +495,29 @@ class EmulatorService extends ChangeNotifier {
     if (_state == EmulatorState.paused) {
       _runSingleFrame();
     }
+
+    // Restart native frame loop
+    if (wasNative && _state == EmulatorState.running) {
+      _startNativeFrameLoop();
+    }
   }
 
   void _startFrameLoop() {
+    // Prefer native (pthread) frame loop on supported platforms.
+    // This moves emulation to a dedicated thread, keeping the Dart/UI
+    // thread free for layout and painting.  The native thread signals
+    // Dart at ~60 Hz for display updates regardless of turbo speed.
+    if (_canUseNativeFrameLoop && !_isRewinding) {
+      _startNativeFrameLoop();
+      return;
+    }
+
+    // Fallback: Dart Timer-based loop (stub mode, rewind, Windows)
+    _startDartFrameLoop();
+  }
+
+  /// Start the Dart Timer-based frame loop (legacy fallback).
+  void _startDartFrameLoop() {
     _frameTimer?.cancel();
     _frameTimer = null;
     _lastFrameTime = DateTime.now();
@@ -457,6 +528,83 @@ class EmulatorService extends ChangeNotifier {
     // right when the next frame is due. At 1× speed this means ~60
     // callbacks/sec; at 8× turbo ~480/sec — dramatically less CPU waste.
     _scheduleNextTick();
+  }
+
+  /// Start the native (pthread) frame loop.
+  void _startNativeFrameLoop() {
+    if (_useNativeFrameLoop) return; // already running
+
+    // Create NativeCallable.listener — invocations from the native thread
+    // are posted to the Dart event loop automatically.
+    _nativeFrameCallable?.close();
+    _nativeFrameCallable =
+        NativeCallable<NativeFrameCallback>.listener(_onNativeFrameReady);
+
+    // Configure native thread parameters
+    final core = _core!;
+    core.frameLoopSetSpeed((_speedMultiplier * 100).round());
+    core.frameLoopSetRewind(
+      enabled: _settings.enableRewind,
+      interval: _rewindCaptureInterval,
+    );
+    core.frameLoopSetRcheevos(enabled: rcheevosClient != null);
+
+    final ok = core.startFrameLoop(_nativeFrameCallable!.nativeFunction);
+    if (ok) {
+      _useNativeFrameLoop = true;
+      debugPrint('EmulatorService: using native frame loop');
+    } else {
+      // Fall back to Dart Timer
+      debugPrint('EmulatorService: native frame loop failed, falling back to Dart Timer');
+      _nativeFrameCallable?.close();
+      _nativeFrameCallable = null;
+      _startDartFrameLoop();
+    }
+  }
+
+  /// Stop the native frame loop (blocks until thread exits).
+  void _stopNativeFrameLoop() {
+    if (!_useNativeFrameLoop) return;
+    _core?.stopFrameLoop();
+    _nativeFrameCallable?.close();
+    _nativeFrameCallable = null;
+    _useNativeFrameLoop = false;
+  }
+
+  /// Called at ~60 Hz from the native thread (via NativeCallable.listener).
+  /// Runs on the Dart event loop — safe to call Flutter APIs.
+  void _onNativeFrameReady(int framesRun) {
+    if (!_frameLoopActive || !_useNativeFrameLoop) return;
+
+    // ── Read display buffer (only when NOT using texture rendering) ──
+    // With texture rendering the native frame loop blits directly to the
+    // ANativeWindow — no Dart-side buffer copy needed.
+    if (!_useTextureRendering) {
+      final core = _core;
+      if (core != null && onFrame != null) {
+        final pixels = core.getDisplayBuffer();
+        if (pixels != null) {
+          final w = core.displayWidth;
+          final h = core.displayHeight;
+          onFrame!(pixels, w, h);
+        }
+      }
+    }
+
+    // ── Link cable polling (at display rate — 60 Hz is fine) ──
+    _pollLinkCable();
+
+    // ── FPS from native thread ──
+    final c = core;
+    if (c != null) {
+      final nativeFps = c.getFrameLoopFps();
+      if (nativeFps > 0) {
+        _currentFps = nativeFps;
+        if (_settings.showFps) {
+          notifyListeners();
+        }
+      }
+    }
   }
   
   /// Schedule the next frame tick using [Future.delayed] with a calculated
@@ -533,9 +681,15 @@ class EmulatorService extends ChangeNotifier {
       _core!.runFrame();
       _frameCount++;
 
-      final pixels = _core!.getVideoBuffer();
-      if (pixels != null && onFrame != null) {
-        onFrame!(pixels, _core!.width, _core!.height);
+      if (_useTextureRendering) {
+        // Zero-copy: blit directly to ANativeWindow surface.
+        // No Dart-side buffer copy, no decodeImageFromPixels.
+        _core!.textureBlit();
+      } else {
+        final pixels = _core!.getVideoBuffer();
+        if (pixels != null && onFrame != null) {
+          onFrame!(pixels, _core!.width, _core!.height);
+        }
       }
       
       // Note: Audio is now handled natively by OpenSL ES on Android
@@ -585,9 +739,13 @@ class EmulatorService extends ChangeNotifier {
     } else {
       if (_core == null || !_core!.isRunning) return;
       _core!.runFrame();
-      final pixels = _core!.getVideoBuffer();
-      if (pixels != null && onFrame != null) {
-        onFrame!(pixels, _core!.width, _core!.height);
+      if (_useTextureRendering) {
+        _core!.textureBlit();
+      } else {
+        final pixels = _core!.getVideoBuffer();
+        if (pixels != null && onFrame != null) {
+          onFrame!(pixels, _core!.width, _core!.height);
+        }
       }
     }
   }
@@ -601,7 +759,7 @@ class EmulatorService extends ChangeNotifier {
 
     final capturesPerSecond = 60.0 / _rewindCaptureInterval;
     final capacity = (capturesPerSecond * _settings.rewindBufferSeconds).round();
-    _core!.rewindInit(capacity.clamp(12, 256));
+    _core!.rewindInit(capacity.clamp(12, 720));
     _rewindCaptureCounter = 0;
   }
 
@@ -610,11 +768,22 @@ class EmulatorService extends ChangeNotifier {
     if (!_settings.enableRewind || _useStub) return;
     if (_state != EmulatorState.running || _core == null) return;
 
+    // Stop native frame loop — rewind needs Dart-side step control
+    final wasNative = _useNativeFrameLoop;
+    if (wasNative) {
+      _stopNativeFrameLoop();
+    }
+
     _isRewinding = true;
     _rewindStepCounter = 0;
 
     // Mute audio during rewind to avoid garbled sound
     _core!.setAudioEnabled(false);
+
+    // Start Dart Timer fallback for rewind stepping
+    if (wasNative) {
+      _startDartFrameLoop();
+    }
 
     // Perform an immediate first step for instant feedback
     _performRewindStep();
@@ -631,6 +800,15 @@ class EmulatorService extends ChangeNotifier {
     // Restore audio settings
     if (_core != null) {
       _applyAudioSettings();
+    }
+
+    // Switch back to native frame loop if available.
+    // The Dart Timer loop was started for rewind stepping — kill it and
+    // restart the native thread now that normal emulation resumes.
+    if (_canUseNativeFrameLoop && _state == EmulatorState.running) {
+      _frameTimer?.cancel();
+      _frameTimer = null;
+      _startNativeFrameLoop();
     }
 
     notifyListeners();
@@ -667,15 +845,27 @@ class EmulatorService extends ChangeNotifier {
     if (_core == null || !_core!.isRunning) return;
     _core!.runFrame();
 
-    final pixels = _core!.getVideoBuffer();
-    if (pixels != null && onFrame != null) {
-      onFrame!(pixels, _core!.width, _core!.height);
+    if (_useTextureRendering) {
+      _core!.textureBlit();
+    } else {
+      final pixels = _core!.getVideoBuffer();
+      if (pixels != null && onFrame != null) {
+        onFrame!(pixels, _core!.width, _core!.height);
+      }
     }
   }
 
   // ── Link Cable ──
 
   /// Poll the SIO registers and exchange data with the link cable peer.
+  // ── Link Cable SIO register addresses ──
+  // GB / GBC
+  static const int _gbRegSB = 0xFF01; // Serial transfer data
+  // GBA (Normal / Multi-player modes)
+  static const int _gbaRegSIODATA8 = 0x0400012A; // 8-bit serial data / multi-player send
+  static const int _gbaRegSIODATA32 = 0x04000120; // 32-bit serial data (lo halfword)
+  static const int _gbaRegSIOCNT = 0x04000128; // Serial control
+
   /// Called once per frame when a [LinkCableService] is connected.
   void _pollLinkCable() {
     final lc = linkCable;
@@ -697,12 +887,35 @@ class EmulatorService extends ChangeNotifier {
     // If a transfer is pending on our side (master clock), send it out
     final status = _core!.linkGetTransferStatus();
     if (status == 1 && !lc.isAwaitingReply) {
-      // Read the outgoing byte from SB
-      final outgoing = _core!.linkReadByte(0xFF01); // GB_REG_SB
+      final outgoing = _readSioOutgoing();
       if (outgoing >= 0) {
         lc.sendSioData(outgoing);
       }
     }
+  }
+
+  /// Read the outgoing serial byte from the correct I/O register
+  /// for the current platform.
+  int _readSioOutgoing() {
+    if (_core == null) return -1;
+
+    final plat = platform;
+    if (plat == GamePlatform.gba) {
+      // GBA: check SIOCNT bit 12 to determine 8-bit vs 32-bit Normal mode.
+      // SIOCNT is a 16-bit register at 0x04000128.  Bit 12 lives in the
+      // high byte (0x04000129), at bit 4 of that byte.
+      // In Multi-player mode the send register is at the same address as
+      // SIODATA8, so 0x0400012A covers both Normal-8 and Multi-player.
+      final siocntHi = _core!.linkReadByte(_gbaRegSIOCNT + 1);
+      if (siocntHi < 0) return -1;
+
+      // Bit 12 of SIOCNT (bit 4 in the high byte): 0 = 8-bit, 1 = 32-bit.
+      final is32bit = (siocntHi & (1 << 4)) != 0;
+      return _core!.linkReadByte(is32bit ? _gbaRegSIODATA32 : _gbaRegSIODATA8);
+    }
+
+    // GB / GBC: read from SB register
+    return _core!.linkReadByte(_gbRegSB);
   }
 
   /// Set audio volume (0.0 = mute, 1.0 = full)
@@ -760,7 +973,9 @@ class EmulatorService extends ChangeNotifier {
     }
   }
 
-  /// Get the current video buffer (raw RGBA pixels)
+  /// Get the current video buffer (raw RGBA pixels).
+  /// When the native frame loop was recently active, prefers the display
+  /// buffer snapshot (which is always a complete frame).
   Uint8List? getVideoBufferRaw() {
     if (_useStub) return _stub?.getVideoBuffer();
     return _core?.getVideoBuffer();
@@ -803,10 +1018,15 @@ class EmulatorService extends ChangeNotifier {
 
   /// Save state to slot (also captures a screenshot thumbnail)
   Future<bool> saveState(int slot) async {
+    // Pause native frame loop to prevent concurrent core access
+    final wasNative = _useNativeFrameLoop;
+    if (wasNative) _stopNativeFrameLoop();
+
     bool success;
     if (_useStub) {
       success = _stub?.saveState(slot) ?? false;
     } else if (_core == null) {
+      if (wasNative) _startNativeFrameLoop();
       return false;
     } else {
       success = _core!.saveState(slot);
@@ -814,23 +1034,35 @@ class EmulatorService extends ChangeNotifier {
     if (success) {
       await _saveStateScreenshot(slot);
     }
+
+    if (wasNative && _state == EmulatorState.running) _startNativeFrameLoop();
     return success;
   }
 
   /// Load state from slot
   Future<bool> loadState(int slot) async {
+    // Pause native frame loop to prevent concurrent core access
+    final wasNative = _useNativeFrameLoop;
+    if (wasNative) _stopNativeFrameLoop();
+
     if (_useStub) {
       final success = _stub?.loadState(slot) ?? false;
       if (success && _state == EmulatorState.paused) {
         _runSingleFrame();
       }
+      if (wasNative && _state == EmulatorState.running) _startNativeFrameLoop();
       return success;
     }
-    if (_core == null) return false;
+    if (_core == null) {
+      if (wasNative && _state == EmulatorState.running) _startNativeFrameLoop();
+      return false;
+    }
     final success = _core!.loadState(slot);
     if (success && _state == EmulatorState.paused) {
       _runSingleFrame();
     }
+
+    if (wasNative && _state == EmulatorState.running) _startNativeFrameLoop();
     return success;
   }
 
@@ -932,13 +1164,27 @@ class EmulatorService extends ChangeNotifier {
     // Apply turbo speed changes — if fast-forward is active, update to new speed
     if (oldSettings.turboSpeed != newSettings.turboSpeed && _speedMultiplier > 1.0) {
       _speedMultiplier = newSettings.turboSpeed;
+      if (_useNativeFrameLoop) {
+        _core?.frameLoopSetSpeed((_speedMultiplier * 100).round());
+      }
       notifyListeners();
     }
 
     // If turbo was disabled in settings while fast-forward is active, reset to 1x
     if (oldSettings.enableTurbo && !newSettings.enableTurbo && _speedMultiplier > 1.0) {
       _speedMultiplier = 1.0;
+      if (_useNativeFrameLoop) {
+        _core?.frameLoopSetSpeed(100);
+      }
       notifyListeners();
+    }
+
+    // Propagate rewind config to native frame loop
+    if (_useNativeFrameLoop &&
+        (oldSettings.enableRewind != newSettings.enableRewind)) {
+      _core?.frameLoopSetRewind(
+          enabled: newSettings.enableRewind,
+          interval: _rewindCaptureInterval);
     }
 
     // Handle rewind setting changes
@@ -1023,6 +1269,10 @@ class EmulatorService extends ChangeNotifier {
     // Deactivate the frame loop guard first so any already-enqueued timer
     // callbacks become no-ops before we tear down the core.
     _frameLoopActive = false;
+
+    // Stop native frame loop if active (blocks until thread exits)
+    _stopNativeFrameLoop();
+
     _frameTimer?.cancel();
     _frameTimer = null;
     _playTimeStopwatch.stop();

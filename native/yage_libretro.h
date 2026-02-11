@@ -176,6 +176,89 @@ YAGE_API int yage_core_read_memory(YageCore* core, uint32_t address,
 /* Get size of a libretro memory region (0=SaveRAM, 1=RTC, 2=SystemRAM, 3=VRAM). */
 YAGE_API int yage_core_get_memory_size(YageCore* core, int32_t region_id);
 
+/*
+ * Native Frame Loop (POSIX only — Android, Linux, macOS)
+ *
+ * Runs the emulation frame loop on a dedicated native thread instead of
+ * the Dart/UI thread.  This dramatically improves frame pacing and UI
+ * responsiveness, especially at turbo speeds (8× = 480 emulation fps).
+ *
+ * The thread handles: frame timing (nanosleep), retro_run(), rewind
+ * capture, rcheevos per-frame processing, and FPS calculation.
+ *
+ * A display callback is fired at ~60 Hz to notify Dart when a new
+ * frame is ready for rendering.  At turbo speeds the emulation runs
+ * faster but the display signal stays at 60 Hz.
+ */
+
+/* Callback signature: called on the native thread at ~60 Hz.
+ * `frames_run` is the number of emulation frames executed since the
+ * last display signal (1 at 1×, ~8 at 8× turbo, etc.). */
+typedef void (*yage_frame_callback_t)(int32_t frames_run);
+
+/* Start the native frame loop thread.
+ * `callback` is invoked at ~60 Hz from the native thread.
+ * Returns 0 on success, -1 if the frame loop is already running or
+ * if the platform does not support native threading. */
+YAGE_API int yage_frame_loop_start(YageCore* core, yage_frame_callback_t callback);
+
+/* Stop the native frame loop thread (blocks until the thread exits). */
+YAGE_API void yage_frame_loop_stop(YageCore* core);
+
+/* Atomically set the emulation speed (100 = 1×, 200 = 2×, 800 = 8×). */
+YAGE_API void yage_frame_loop_set_speed(YageCore* core, int32_t speed_percent);
+
+/* Configure rewind capture from the native thread.
+ * enabled: 0 = off, 1 = on.  interval: capture every N frames. */
+YAGE_API void yage_frame_loop_set_rewind(YageCore* core, int32_t enabled, int32_t interval);
+
+/* Enable/disable rcheevos per-frame processing on the native thread. */
+YAGE_API void yage_frame_loop_set_rcheevos(YageCore* core, int32_t enabled);
+
+/* Get FPS × 100 (e.g. 5973 = 59.73 fps).  Safe to call from any thread. */
+YAGE_API int32_t yage_frame_loop_get_fps_x100(YageCore* core);
+
+/* Get the display buffer — a snapshot of the last completed frame.
+ * Updated at ~60 Hz.  Safe to read from the Dart thread between
+ * display callbacks (the native thread will not overwrite until the
+ * next display interval). */
+YAGE_API uint32_t* yage_frame_loop_get_display_buffer(YageCore* core);
+
+/* Get display dimensions of the last completed frame. */
+YAGE_API int32_t yage_frame_loop_get_display_width(YageCore* core);
+YAGE_API int32_t yage_frame_loop_get_display_height(YageCore* core);
+
+/* Check whether the native frame loop is currently running. */
+YAGE_API int32_t yage_frame_loop_is_running(YageCore* core);
+
+/*
+ * Android Texture Rendering — zero-copy frame delivery
+ *
+ * On Android, frames can be delivered to a Flutter Texture widget via an
+ * ANativeWindow backed by a SurfaceTexture.  This eliminates the
+ * decodeImageFromPixels bottleneck (no Dart-side buffer copies, no
+ * ui.Image allocations, no GC pressure at 60 fps).
+ *
+ * Workflow:
+ *   1. Kotlin creates a SurfaceTexture via TextureRegistry, wraps it in
+ *      a Surface, and passes the Surface to nativeSetSurface() via JNI.
+ *   2. The native frame loop (or yage_texture_blit from Dart Timer path)
+ *      writes pixels directly to the ANativeWindow at ~60 Hz.
+ *   3. Flutter composites the Texture widget — zero Dart-side allocation.
+ *
+ * On non-Android platforms yage_texture_blit() is a no-op returning -1.
+ */
+
+/* Blit the current video buffer to the attached ANativeWindow surface.
+ * Call from the Dart Timer frame loop path (the native frame loop
+ * blits automatically).
+ * Returns 0 on success, -1 if no surface is attached or blit fails. */
+YAGE_API int yage_texture_blit(YageCore* core);
+
+/* Check whether a native texture surface is attached.
+ * Returns 1 if attached, 0 if not. */
+YAGE_API int32_t yage_texture_is_attached(YageCore* core);
+
 #ifdef __cplusplus
 }
 #endif
