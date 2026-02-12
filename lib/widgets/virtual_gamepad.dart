@@ -322,14 +322,43 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
             baseSize * 0.12 * selectScale + baseSize * 0.12 * selectScale,
           );
 
+          // ── Pre-compute all button sizes ──
+          final buttonSizes = <GamepadButton, Size>{
+            GamepadButton.dpad: dpadSize,
+            GamepadButton.aButton: Size(aSize, aSize),
+            GamepadButton.bButton: Size(bSize, bSize),
+            GamepadButton.lButton: lSize,
+            GamepadButton.rButton: rSize,
+            GamepadButton.startButton: startSize,
+            GamepadButton.selectButton: selectSize,
+          };
+
+          // ── Pre-compute raw pixel positions for every button ──
+          final rawPositions = <GamepadButton, Offset>{};
+          for (final btn in GamepadButton.values) {
+            rawPositions[btn] = _computeButtonPosition(
+              layout: _getButtonLayout(btn),
+              screenSize: screenSize,
+              button: btn,
+              childSize: buttonSizes[btn]!,
+            );
+          }
+
+          // ── Resolve collisions so no two buttons overlap ──
+          final resolvedPositions = _resolveCollisions(
+            positions: rawPositions,
+            sizes: buttonSizes,
+            screenSize: screenSize,
+            isPortrait: isPortrait,
+          );
+
           return Stack(
             children: [
               // D-Pad or Joystick
-              _buildPositionedButton(
-                layout: layout.dpad,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.dpad]!,
                 button: GamepadButton.dpad,
-                childSize: dpadSize,
+                screenSize: screenSize,
                 child: widget.useJoystick
                     ? _Joystick(
                         onDirectionChanged: (up, down, left, right) {
@@ -358,11 +387,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               ),
               
               // A Button
-              _buildPositionedButton(
-                layout: layout.aButton,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.aButton]!,
                 button: GamepadButton.aButton,
-                childSize: Size(aSize, aSize),
+                screenSize: screenSize,
                 child: _CircleButton(
                   label: 'A',
                   color: colors.accentAlt,
@@ -374,11 +402,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               ),
               
               // B Button
-              _buildPositionedButton(
-                layout: layout.bButton,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.bButton]!,
                 button: GamepadButton.bButton,
-                childSize: Size(bSize, bSize),
+                screenSize: screenSize,
                 child: _CircleButton(
                   label: 'B',
                   color: colors.accentYellow,
@@ -390,11 +417,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               ),
               
               // L Button
-              _buildPositionedButton(
-                layout: layout.lButton,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.lButton]!,
                 button: GamepadButton.lButton,
-                childSize: lSize,
+                screenSize: screenSize,
                 child: _ShoulderButton(
                   label: 'L',
                   onChanged: (pressed) => _updateKey(GBAKey.l, pressed),
@@ -406,11 +432,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               ),
               
               // R Button
-              _buildPositionedButton(
-                layout: layout.rButton,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.rButton]!,
                 button: GamepadButton.rButton,
-                childSize: rSize,
+                screenSize: screenSize,
                 child: _ShoulderButton(
                   label: 'R',
                   onChanged: (pressed) => _updateKey(GBAKey.r, pressed),
@@ -422,11 +447,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               ),
               
               // Start Button
-              _buildPositionedButton(
-                layout: layout.startButton,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.startButton]!,
                 button: GamepadButton.startButton,
-                childSize: startSize,
+                screenSize: screenSize,
                 child: _SmallButton(
                   label: 'START',
                   onChanged: (pressed) => _updateKey(GBAKey.start, pressed),
@@ -438,11 +462,10 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
               ),
               
               // Select Button
-              _buildPositionedButton(
-                layout: layout.selectButton,
-                screenSize: screenSize,
+              _buildButtonAtPosition(
+                position: resolvedPositions[GamepadButton.selectButton]!,
                 button: GamepadButton.selectButton,
-                childSize: selectSize,
+                screenSize: screenSize,
                 child: _SmallButton(
                   label: 'SELECT',
                   onChanged: (pressed) => _updateKey(GBAKey.select, pressed),
@@ -459,100 +482,68 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
     );
   }
 
-  Widget _buildPositionedButton({
+  // ────────────────────────────────────────────────────────────────
+  // Position computation — pure function, no widget creation
+  // ────────────────────────────────────────────────────────────────
+  Offset _computeButtonPosition({
     required ButtonLayout layout,
     required Size screenSize,
     required GamepadButton button,
     required Size childSize,
-    required Widget child,
   }) {
-    final isSelected = widget.editMode && _selectedButton == button;
     final Rect gameRect = widget.gameRect;
     final bool isPortrait = screenSize.height > screenSize.width;
 
     double x = 0.0;
     double y = 0.0;
 
-    // Use proportional margins (2% of screen dimension) for screen independence
-    final double marginPercent = 0.02;
+    const double marginPercent = 0.02;
 
     if (isPortrait) {
-      // ================= PORTRAIT MODE =================
-      // In portrait, VirtualGamepad widget IS the control area (positioned below game)
-      // So screenSize here = control area size, not full screen
-      // Layout coordinates: x (0-1) = left to right of widget
-      //                     y (0-1) = top to bottom of widget (control area)
-      
       final double widgetW = screenSize.width;
       final double widgetH = screenSize.height;
-      
-      // Proportional margins from edges
       final double marginX = widgetW * marginPercent;
       final double marginY = widgetH * marginPercent;
-      
       final double usableWidth = widgetW - marginX * 2;
       final double usableHeight = widgetH - marginY * 2;
-      
-      // Direct mapping: layout 0-1 -> widget coordinates
       x = marginX + layout.x * usableWidth;
       y = marginY + layout.y * usableHeight;
-
     } else {
-      // ================= LANDSCAPE MODE =================
-      // In landscape, VirtualGamepad fills the screen
-      // gameRect tells us where the game display is
-      // Left zone: left edge to game left
-      // Right zone: game right to right edge
-
       final double screenW = screenSize.width;
       final double screenH = screenSize.height;
-
-      // Define zones with proportional padding from edges
       final double edgePadding = screenW * marginPercent;
-      final double gameGap = screenW * 0.01; // 1% gap between controls and game
-      
-      // Left zone dimensions
+      final double gameGap = screenW * 0.01;
+
       final double leftZoneLeft = edgePadding;
       final double leftZoneRight = gameRect.left - gameGap;
       final double leftZoneWidth = math.max(0, leftZoneRight - leftZoneLeft);
-      
-      // Right zone dimensions  
+
       final double rightZoneLeft = gameRect.right + gameGap;
       final double rightZoneRight = screenW - edgePadding;
       final double rightZoneWidth = math.max(0, rightZoneRight - rightZoneLeft);
 
-      // Vertical: full screen height with small margins
       final double marginY = edgePadding;
       final double usableHeight = screenH - marginY * 2;
 
       final bool isLeftSide =
           button == GamepadButton.dpad ||
-              button == GamepadButton.lButton ||
-              button == GamepadButton.selectButton;
+          button == GamepadButton.lButton ||
+          button == GamepadButton.selectButton;
 
       if (isLeftSide) {
-        // Left zone: x=0 at left edge, x=1 at right edge (near game)
         x = leftZoneLeft + layout.x * leftZoneWidth;
       } else {
-        // Right zone: x=0 at left edge (near game), x=1 at right edge
         x = rightZoneLeft + layout.x * rightZoneWidth;
       }
-
-      // Y position within usable height
       y = marginY + layout.y * usableHeight;
     }
 
-    // ================= SAFE CLAMP =================
-    // Ensure the ENTIRE button stays on screen by accounting for its size.
-    // minMargin is a small safety buffer from the screen edges.
+    // ── Safe clamp ──
     final double minMargin = screenSize.width * 0.01;
-    // In landscape, reserve vertical space at the top so gamepad buttons
-    // (especially L/R shoulders) don't overlap the HUD row (menu, rewind,
-    // fast-forward, rotation).  The HUD button height is proportional to
-    // screen width, matching the hudBtn calculation in game_screen.
     final double minYMargin = isPortrait
         ? minMargin
         : (screenSize.width * 0.107).clamp(36.0, 56.0) + screenSize.height * 0.02;
+
     final double clampedX = x.clamp(
       minMargin,
       math.max(minMargin, screenSize.width - childSize.width - minMargin),
@@ -562,22 +553,121 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
       math.max(minYMargin, screenSize.height - childSize.height - minMargin),
     );
 
+    return Offset(clampedX, clampedY);
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Collision resolution — ensures a minimum gap between every pair
+  // of buttons, regardless of user/saved configuration.
+  // Uses iterative pair-wise separation clamped to screen bounds.
+  // ────────────────────────────────────────────────────────────────
+  Map<GamepadButton, Offset> _resolveCollisions({
+    required Map<GamepadButton, Offset> positions,
+    required Map<GamepadButton, Size> sizes,
+    required Size screenSize,
+    required bool isPortrait,
+  }) {
+    // Minimum gap between any two button rects (proportional to shorter dim).
+    final double minGap = math.min(screenSize.width, screenSize.height) * 0.015;
+
+    final double minMargin = screenSize.width * 0.01;
+    final double minYMargin = isPortrait
+        ? minMargin
+        : (screenSize.width * 0.107).clamp(36.0, 56.0) + screenSize.height * 0.02;
+
+    // Work on mutable copies.
+    final pos = Map<GamepadButton, Offset>.from(positions);
+
+    // Run a few iterations — most layouts converge in 2-3.
+    for (int iter = 0; iter < 4; iter++) {
+      bool moved = false;
+      final buttons = GamepadButton.values;
+      for (int i = 0; i < buttons.length; i++) {
+        for (int j = i + 1; j < buttons.length; j++) {
+          final a = buttons[i];
+          final b = buttons[j];
+          final sa = sizes[a]!;
+          final sb = sizes[b]!;
+
+          // Inflate rects by half the gap on each side.
+          final rA = Rect.fromLTWH(
+            pos[a]!.dx - minGap / 2,
+            pos[a]!.dy - minGap / 2,
+            sa.width + minGap,
+            sa.height + minGap,
+          );
+          final rB = Rect.fromLTWH(
+            pos[b]!.dx - minGap / 2,
+            pos[b]!.dy - minGap / 2,
+            sb.width + minGap,
+            sb.height + minGap,
+          );
+
+          if (!rA.overlaps(rB)) continue;
+
+          moved = true;
+
+          // Compute overlap on each axis.
+          final overlapX = math.min(rA.right, rB.right) - math.max(rA.left, rB.left);
+          final overlapY = math.min(rA.bottom, rB.bottom) - math.max(rA.top, rB.top);
+
+          // Push apart along the axis with the SMALLER overlap (cheaper move).
+          if (overlapX < overlapY) {
+            final half = overlapX / 2 + 0.5; // +0.5 to break ties
+            final sign = pos[a]!.dx <= pos[b]!.dx ? -1.0 : 1.0;
+            pos[a] = Offset(pos[a]!.dx + sign * half, pos[a]!.dy);
+            pos[b] = Offset(pos[b]!.dx - sign * half, pos[b]!.dy);
+          } else {
+            final half = overlapY / 2 + 0.5;
+            final sign = pos[a]!.dy <= pos[b]!.dy ? -1.0 : 1.0;
+            pos[a] = Offset(pos[a]!.dx, pos[a]!.dy + sign * half);
+            pos[b] = Offset(pos[b]!.dx, pos[b]!.dy - sign * half);
+          }
+
+          // Re-clamp both buttons to screen bounds.
+          pos[a] = Offset(
+            pos[a]!.dx.clamp(minMargin, math.max(minMargin, screenSize.width - sa.width - minMargin)),
+            pos[a]!.dy.clamp(minYMargin, math.max(minYMargin, screenSize.height - sa.height - minMargin)),
+          );
+          pos[b] = Offset(
+            pos[b]!.dx.clamp(minMargin, math.max(minMargin, screenSize.width - sb.width - minMargin)),
+            pos[b]!.dy.clamp(minYMargin, math.max(minYMargin, screenSize.height - sb.height - minMargin)),
+          );
+        }
+      }
+
+      if (!moved) break; // Already non-overlapping.
+    }
+
+    return pos;
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Build a positioned button widget at a pre-computed position
+  // ────────────────────────────────────────────────────────────────
+  Widget _buildButtonAtPosition({
+    required Offset position,
+    required GamepadButton button,
+    required Size screenSize,
+    required Widget child,
+  }) {
+    final isSelected = widget.editMode && _selectedButton == button;
+
     return Positioned(
-      left: clampedX,
-      top: clampedY,
+      left: position.dx,
+      top: position.dy,
       child: widget.editMode
           ? _EditableButtonWrapper(
-        isSelected: isSelected,
-        onDrag: (delta) => _onButtonDrag(button, delta, screenSize),
-        onScaleUp: () => _onButtonResize(button, 0.1),
-        onScaleDown: () => _onButtonResize(button, -0.1),
-        onTap: () => setState(() => _selectedButton = button),
-        child: child,
-      )
+              isSelected: isSelected,
+              onDrag: (delta) => _onButtonDrag(button, delta, screenSize),
+              onScaleUp: () => _onButtonResize(button, 0.1),
+              onScaleDown: () => _onButtonResize(button, -0.1),
+              onTap: () => setState(() => _selectedButton = button),
+              child: child,
+            )
           : child,
     );
   }
-
 
 }
 

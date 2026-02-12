@@ -961,7 +961,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           final _sh = MediaQuery.of(context).size.height;
           final _safeTop = MediaQuery.of(context).padding.top;
           final _safeBottom = MediaQuery.of(context).padding.bottom;
-          final hudBtn = (_sw * 0.107).clamp(36.0, 56.0);   // button size
+          // In landscape for GBA (wide aspect ratio), shrink HUD buttons
+          // so they don't eat into the already-narrow side zones.
+          final bool isGbaLandscape = _isLandscape &&
+              widget.game.platform == GamePlatform.gba;
+          final hudBtn = isGbaLandscape
+              ? (_sw * 0.082).clamp(30.0, 44.0)    // ~23% smaller for GBA landscape
+              : (_sw * 0.107).clamp(36.0, 56.0);   // normal size
           final hudEdge = _sw * 0.02;                         // edge margin
           final hudGap = _sw * 0.03;                          // gap between btns
           final hudTop = _safeTop + _sh * 0.005;              // top offset
