@@ -42,12 +42,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _isLandscape = false;
   bool _editingLayout = false;
   GamepadLayout? _tempLayout; // Temporary layout while editing
+
+  /// True when controls were hidden automatically by gamepad detection
+  /// (not by the user choosing "Hide Controls" in the menu).
+  /// Used to auto-restore controls when the gamepad disconnects.
+  bool _controllerAutoHidden = false;
   
   // Use a key to preserve GameDisplay state across orientation changes
   final _gameDisplayKey = GlobalKey();
   
   // External gamepad / keyboard input
-  final GamepadMapper _gamepadMapper = GamepadMapper();
+  late final GamepadMapper _gamepadMapper = GamepadMapper(
+    mapping: GamepadMapper.mappingForPlatform(widget.game.platform),
+  );
   final FocusNode _focusNode = FocusNode();
   int _virtualKeys = 0;
   int _physicalKeys = 0;
@@ -377,6 +384,23 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       if (!_showMenu) {
         emulator.start();
       }
+      // If controls were auto-hidden by gamepad detection, restore them on
+      // resume — the gamepad may have been disconnected while the app was
+      // backgrounded (e.g. Bluetooth turned off, controller powered down).
+      // Reset detection so a reconnecting gamepad is noticed again.
+      if (_controllerAutoHidden && !_showControls) {
+        setState(() {
+          _showControls = true;
+          _controllerAutoHidden = false;
+        });
+        _gamepadMapper.resetDetection();
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          const SnackBar(
+            content: Text('Touch controls restored'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -541,11 +565,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
       // Auto-hide virtual gamepad the first time a real controller is detected
       if (!wasDetected && _gamepadMapper.controllerDetected && _showControls) {
-        setState(() => _showControls = false);
+        setState(() {
+          _showControls = false;
+          _controllerAutoHidden = true;
+        });
         ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           const SnackBar(
-            content: Text('Controller detected — touch controls hidden'),
-            duration: Duration(seconds: 2),
+            content: Text('Controller detected — touch controls hidden. Tap screen to restore.'),
+            duration: Duration(seconds: 3),
           ),
         );
       }
@@ -579,13 +606,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final raService = _raServiceRef!;
 
     if (!raService.isLoggedIn) {
-      _showRAToast(
-        title: 'Not Logged In',
-        subtitle: 'Log in to RetroAchievements in Settings',
-        icon: Icons.login,
-        accentColor: Colors.orange,
-        duration: const Duration(seconds: 3),
-      );
+      // TODO: Uncomment once RA approval is granted
+      // _showRAToast(
+      //   title: 'Not Logged In',
+      //   subtitle: 'Log in to RetroAchievements in Settings',
+      //   icon: Icons.login,
+      //   accentColor: Colors.orange,
+      //   duration: const Duration(seconds: 3),
+      // );
       return;
     }
 
@@ -994,7 +1022,30 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               _isLandscape
                   ? _buildLandscapeLayout(emulator, settings, gameDisplay)
                   : _buildPortraitLayout(emulator, settings, gameDisplay),
-              
+
+              // Tap-to-restore layer: when controls were auto-hidden by
+              // gamepad detection, a screen tap restores touch controls
+              // (the gamepad may have been disconnected).
+              if (_controllerAutoHidden && !_showControls && !_showMenu)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      setState(() {
+                        _showControls = true;
+                        _controllerAutoHidden = false;
+                      });
+                      _gamepadMapper.resetDetection();
+                      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+                        const SnackBar(
+                          content: Text('Touch controls restored'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
               // FPS overlay - positioned to the left of the rotation button
               if (settings.showFps)
                 Positioned(
@@ -1303,7 +1354,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     }
                   },
                   onToggleControls: () {
-                    setState(() => _showControls = !_showControls);
+                    setState(() {
+                      _showControls = !_showControls;
+                      // User is explicitly toggling — no longer auto-hidden
+                      _controllerAutoHidden = false;
+                    });
                   },
                   showControls: _showControls,
                   onEditLayout: _enterEditMode,
@@ -1450,6 +1505,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               },
               useJoystick: settings.useJoystick,
               skin: settings.gamepadSkin,
+              platform: widget.game.platform,
             ),
           ),
       ],
@@ -1533,6 +1589,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             },
             useJoystick: settings.useJoystick,
             skin: settings.gamepadSkin,
+            platform: widget.game.platform,
           ),
       ],
     );
@@ -1612,23 +1669,32 @@ class _MenuButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
     return TvFocusable(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       borderRadius: BorderRadius.circular(size * 0.27),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: colors.surface.withAlpha(204),
-          borderRadius: BorderRadius.circular(size * 0.27),
-          border: Border.all(
-            color: colors.surfaceLight,
-            width: 1,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: colors.surface.withAlpha(204),
+            borderRadius: BorderRadius.circular(size * 0.27),
+            border: Border.all(
+              color: colors.surfaceLight,
+              width: 1,
+            ),
           ),
-        ),
-        child: Icon(
-          Icons.menu,
-          color: colors.textSecondary,
-          size: size * 0.55,
+          child: Icon(
+            Icons.menu,
+            color: colors.textSecondary,
+            size: size * 0.55,
+          ),
         ),
       ),
     );
@@ -1646,23 +1712,32 @@ class _RotationButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
     return TvFocusable(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       borderRadius: BorderRadius.circular(size * 0.27),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: colors.surface.withAlpha(204),
-          borderRadius: BorderRadius.circular(size * 0.27),
-          border: Border.all(
-            color: colors.surfaceLight,
-            width: 1,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: colors.surface.withAlpha(204),
+            borderRadius: BorderRadius.circular(size * 0.27),
+            border: Border.all(
+              color: colors.surfaceLight,
+              width: 1,
+            ),
           ),
-        ),
-        child: Icon(
-          Icons.screen_rotation,
-          color: colors.textSecondary,
-          size: size * 0.50,
+          child: Icon(
+            Icons.screen_rotation,
+            color: colors.textSecondary,
+            size: size * 0.50,
+          ),
         ),
       ),
     );
@@ -2608,10 +2683,16 @@ class _RewindButton extends StatelessWidget {
     final colors = AppColorTheme.of(context);
     final radius = size * 0.27;
     return TvFocusable(
-      onTap: () => onHoldChanged(!isActive),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onHoldChanged(!isActive);
+      },
       borderRadius: BorderRadius.circular(radius),
       child: GestureDetector(
-        onTapDown: (_) => onHoldChanged(true),
+        onTapDown: (_) {
+          HapticFeedback.lightImpact();
+          onHoldChanged(true);
+        },
         onTapUp: (_) => onHoldChanged(false),
         onTapCancel: () => onHoldChanged(false),
         child: Container(
@@ -2656,9 +2737,17 @@ class _FastForwardButton extends StatelessWidget {
     final colors = AppColorTheme.of(context);
     final radius = size * 0.27;
     return TvFocusable(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       borderRadius: BorderRadius.circular(radius),
-      child: Container(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        child: Container(
         height: size,
         padding: EdgeInsets.symmetric(horizontal: size * 0.27),
         decoration: BoxDecoration(
@@ -2692,6 +2781,7 @@ class _FastForwardButton extends StatelessWidget {
             ],
           ],
         ),
+      ),
       ),
     );
   }

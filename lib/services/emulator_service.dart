@@ -179,14 +179,33 @@ class EmulatorService extends ChangeNotifier {
     return _core?.platform ?? GamePlatform.unknown;
   }
 
-  /// Initialize the emulator service
-  Future<bool> initialize() async {
+  /// Initialize the emulator service for the given [platform].
+  ///
+  /// Selects the appropriate libretro core (mGBA for GB/GBC/GBA, FCEUmm
+  /// for NES, Snes9x2010 for SNES) and loads the native wrapper.
+  /// If [platform] is `null`, defaults to mGBA (GB/GBA).
+  Future<bool> initialize({GamePlatform? platform}) async {
     if (_state != EmulatorState.uninitialized) return true;
 
     try {
+      // Select the right libretro core for the platform
+      if (platform != null) {
+        _bindings.selectCore(platform);
+      }
+
       // Try to load native library first
       if (_bindings.load()) {
         _core = MGBACore(_bindings);
+
+        // If the native wrapper supports multi-core, tell it which core
+        // to load before initializing.
+        if (platform != null && _bindings.isCoreSelectionLoaded) {
+          final coreLib = MGBABindings.platformCoreLibs[platform];
+          if (coreLib != null) {
+            _core!.setCoreLibrary(coreLib);
+          }
+        }
+
         if (_core!.initialize()) {
           final saveDir = await _getSaveDirectory();
           _saveDir = saveDir;
@@ -199,7 +218,7 @@ class EmulatorService extends ChangeNotifier {
       }
       
       // Fall back to stub implementation
-      debugPrint('Native mGBA library not available, using stub for UI testing');
+      debugPrint('Native library not available, using stub for UI testing');
       _stub = MGBAStub();
       _stub!.initialize();
       _useStub = true;
@@ -356,7 +375,7 @@ class EmulatorService extends ChangeNotifier {
   /// Load a ROM file
   Future<bool> loadRom(GameRom rom) async {
     if (_state == EmulatorState.uninitialized) {
-      if (!await initialize()) return false;
+      if (!await initialize(platform: rom.platform)) return false;
     }
 
     try {
@@ -372,6 +391,13 @@ class EmulatorService extends ChangeNotifier {
       final biosPath = _getBiosPath(rom.platform);
       if (biosPath != null && File(biosPath).existsSync()) {
         _core!.loadBIOS(biosPath);
+      }
+
+      // Apply SGB border setting before loading the ROM
+      // (the core reads the option at load time — only relevant for GB)
+      if (rom.platform == GamePlatform.gb ||
+          rom.platform == GamePlatform.gbc) {
+        _core!.setSgbBorders(_settings.enableSgbBorders);
       }
 
       // Point the native core's save directory at the ROM's folder
@@ -390,7 +416,7 @@ class EmulatorService extends ChangeNotifier {
       // Apply audio settings to the native core
       _applyAudioSettings();
 
-      // Apply color palette (for original GB games)
+      // Apply color palette (for original GB games only)
       _applyColorPalette();
 
       // Initialize rewind buffer if enabled
@@ -414,6 +440,9 @@ class EmulatorService extends ChangeNotifier {
       GamePlatform.gba => _settings.biosPathGba,
       GamePlatform.gb => _settings.biosPathGb,
       GamePlatform.gbc => _settings.biosPathGbc,
+      // NES and SNES libretro cores don't require BIOS files
+      GamePlatform.nes => null,
+      GamePlatform.snes => null,
       GamePlatform.unknown => null,
     };
   }
@@ -867,10 +896,14 @@ class EmulatorService extends ChangeNotifier {
   static const int _gbaRegSIOCNT = 0x04000128; // Serial control
 
   /// Called once per frame when a [LinkCableService] is connected.
+  /// Link cable is only supported for GB/GBC/GBA platforms.
   void _pollLinkCable() {
     final lc = linkCable;
     if (lc == null || lc.state != LinkCableState.connected) return;
     if (_useStub || _core == null) return;
+    // Link cable is only for GB/GBA — skip for NES/SNES
+    final p = platform;
+    if (p == GamePlatform.nes || p == GamePlatform.snes) return;
 
     // If the peer sent us a byte and a transfer is pending, inject it
     if (lc.hasIncomingData) {
@@ -943,6 +976,14 @@ class EmulatorService extends ChangeNotifier {
       _stub?.setColorPalette(paletteIndex, colors);
     } else {
       _core?.setColorPalette(paletteIndex, colors);
+    }
+  }
+
+  /// Enable or disable SGB (Super Game Boy) border rendering.
+  /// Must be called before loadRom for the change to take effect.
+  void setSgbBorders(bool enabled) {
+    if (!_useStub) {
+      _core?.setSgbBorders(enabled);
     }
   }
 
@@ -1201,6 +1242,15 @@ class EmulatorService extends ChangeNotifier {
         newSettings.enableRewind && !_useStub && _core != null &&
         _state != EmulatorState.uninitialized) {
       _initRewind(); // Reinitialize with new capacity
+    }
+
+    // Apply SGB border setting to native core
+    // Note: the actual border rendering only takes effect on ROM reload,
+    // but we update the native flag immediately so the next ROM load uses it.
+    if (oldSettings.enableSgbBorders != newSettings.enableSgbBorders) {
+      if (!_useStub && _core != null) {
+        _core!.setSgbBorders(newSettings.enableSgbBorders);
+      }
     }
 
     // Restart auto-save timer if interval changed while running

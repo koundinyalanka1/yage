@@ -30,6 +30,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final FocusNode _keyFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -40,14 +41,47 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _keyFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Gamepad L1 / R1 bumpers switch tabs, consistent with the home screen.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+
+    // L1 / PageUp → previous tab
+    if (key == LogicalKeyboardKey.gameButtonLeft1 ||
+        key == LogicalKeyboardKey.pageUp) {
+      final newIndex =
+          (_tabController.index - 1).clamp(0, _tabController.length - 1);
+      if (newIndex != _tabController.index) {
+        _tabController.animateTo(newIndex);
+      }
+      return KeyEventResult.handled;
+    }
+    // R1 / PageDown → next tab
+    if (key == LogicalKeyboardKey.gameButtonRight1 ||
+        key == LogicalKeyboardKey.pageDown) {
+      final newIndex =
+          (_tabController.index + 1).clamp(0, _tabController.length - 1);
+      if (newIndex != _tabController.index) {
+        _tabController.animateTo(newIndex);
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColorTheme.of(context);
 
-    return Scaffold(
+    return Focus(
+      focusNode: _keyFocusNode,
+      onKeyEvent: _onKeyEvent,
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
         leading: TvFocusable(
@@ -142,6 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -198,6 +233,22 @@ class _SettingsScreenState extends State<SettingsScreen>
             _PaletteTile(
               selectedIndex: settings.selectedColorPalette,
               onChanged: settingsService.setColorPalette,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── Super Game Boy ──
+        _SectionHeader(title: 'Super Game Boy'),
+        _SettingsCard(
+          children: [
+            _SwitchTile(
+              icon: Icons.border_all,
+              title: 'SGB Borders',
+              subtitle: 'Show decorative borders for SGB-enhanced games (requires game reload)',
+              value: settings.enableSgbBorders,
+              onChanged: (_) => settingsService.toggleSgbBorders(),
             ),
           ],
         ),
@@ -441,6 +492,24 @@ class _SettingsScreenState extends State<SettingsScreen>
               subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
             ),
             const Divider(height: 1),
+            _InfoTile(
+              icon: Icons.memory,
+              title: 'Powered by mGBA',
+              subtitle: 'mGBA is licensed under the Mozilla Public License 2.0 (MPL-2.0).\n© endrift and contributors.\nhttps://mgba.io',
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.description_outlined,
+              title: 'Open-Source Licenses',
+              onTap: () {
+                showLicensePage(
+                  context: context,
+                  applicationName: 'RetroPal',
+                  applicationVersion: '0.1.0',
+                );
+              },
+            ),
+            const Divider(height: 1),
             _ActionTile(
               icon: Icons.restore,
               title: 'Reset to Defaults',
@@ -468,7 +537,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SectionHeader(title: 'RetroAchievements'),
+        _SectionHeader(title: 'RetroAchievements (Softcore Only)'),
 
         // Master enable/disable toggle
         _SettingsCard(
@@ -476,7 +545,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             _SwitchTile(
               icon: Icons.emoji_events,
               title: 'Enable RetroAchievements',
-              subtitle: 'Track and earn achievements while playing',
+              subtitle: 'Track and earn achievements while playing (softcore)',
               value: settings.raEnabled,
               onChanged: (_) => settingsService.toggleRA(),
             ),
@@ -497,16 +566,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 12),
                   _SettingsCard(
                     children: [
-                      _SwitchTile(
-                        icon: Icons.shield,
-                        title: 'Hardcore Mode',
-                        subtitle:
-                            'Disable savestates, cheats, rewind, and fast-forward',
-                        value: settings.raHardcoreMode,
-                        onChanged: (_) =>
-                            settingsService.toggleRAHardcoreMode(),
-                      ),
-                      const Divider(height: 1),
+                      // TODO: Hardcore mode – requires RA approval before enabling
+                      // _SwitchTile(
+                      //   icon: Icons.shield,
+                      //   title: 'Hardcore Mode',
+                      //   subtitle:
+                      //       'Disable savestates, cheats, rewind, and fast-forward',
+                      //   value: settings.raHardcoreMode,
+                      //   onChanged: (_) =>
+                      //       settingsService.toggleRAHardcoreMode(),
+                      // ),
+                      // const Divider(height: 1),
                       _ActionTile(
                         icon: Icons.key,
                         title: 'Change Password',

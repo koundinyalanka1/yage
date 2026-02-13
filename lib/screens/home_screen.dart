@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 
 import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
+import '../services/cover_art_service.dart';
 import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
 import '../services/retro_achievements_service.dart';
@@ -154,11 +155,51 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   /// Check if the app was opened via a VIEW intent with a ROM file path.
   /// If so, add it to the library and launch it immediately.
+  /// Also handles ZIP files by extracting ROMs and importing them.
   Future<void> _checkIncomingFile() async {
     try {
       final path = await _deviceChannel.invokeMethod<String>('getOpenFilePath');
       if (path == null || path.isEmpty || !mounted) return;
 
+      final library = context.read<GameLibraryService>();
+
+      // ── Handle ZIP files: extract ROMs and import ──
+      if (path.toLowerCase().endsWith('.zip')) {
+        final games = await library.importRomZip(path);
+        if (!mounted) return;
+
+        if (games.isNotEmpty) {
+          // Auto-download cover art for newly imported ROMs
+          _autoFetchCovers(games, library);
+
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Imported ${games.length} ROM${games.length == 1 ? '' : 's'} from ZIP',
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+
+          // Launch the first game if only one was imported
+          if (games.length == 1) {
+            _launchGame(games.first);
+          }
+        } else {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('No valid ROM files (.gb, .gbc, .gba) found inside the ZIP.'),
+              ),
+            );
+        }
+        return;
+      }
+
+      // ── Handle individual ROM files ──
       final game = GameRom.fromPath(path);
       if (game == null) {
         if (mounted) {
@@ -170,7 +211,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
 
       // Add to library if not already there
-      final library = context.read<GameLibraryService>();
       await library.addRom(path);
 
       // Find the game entry (addRom might return null if it already exists)
@@ -321,22 +361,34 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // We use FileType.any because Android SAF requires MIME types and
     // .gba/.gb/.gbc have no registered MIME type — FileType.custom would
     // silently drop them, leaving only .zip.  We filter results ourselves.
-    const _allowedExtensions = {'.gba', '.gb', '.gbc', '.zip'};
+    //
+    // NOTE: We check the original filename (f.name) instead of the cached
+    // path (f.path) because on some Android devices the SAF file picker
+    // caches files under a temporary name without the original extension.
+    const _allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'};
+    // Track which cached paths are actually ZIPs (by original name), because
+    // the cached file path may not preserve the original extension on some
+    // Android devices.
+    final zipPaths = <String>{};
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
         allowMultiple: true,
       );
-      paths = result?.files
-          .where((f) {
-              if (f.path == null) return false;
-              final dot = f.path!.lastIndexOf('.');
-              if (dot == -1) return false;
-              return _allowedExtensions.contains(
-                  f.path!.toLowerCase().substring(dot));
-          })
-          .map((f) => f.path!)
-          .toList();
+      if (result != null) {
+        for (final f in result.files) {
+          if (f.path == null) continue;
+          // Use the original filename (always has extension) for matching
+          final name = f.name.toLowerCase();
+          final dot = name.lastIndexOf('.');
+          if (dot == -1) continue;
+          final ext = name.substring(dot);
+          if (!_allowedExtensions.contains(ext)) continue;
+          paths ??= [];
+          paths!.add(f.path!);
+          if (ext == '.zip') zipPaths.add(f.path!);
+        }
+      }
     } catch (_) {
       paths = null;
     }
@@ -344,6 +396,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // On TV, fall back to built-in browser if system picker returned nothing
     if ((paths == null || paths.isEmpty) && TvDetector.isTV && mounted) {
       paths = await TvFileBrowser.pickFiles(context);
+      // TV file browser returns direct filesystem paths — extension is reliable
+      if (paths != null) {
+        for (final p in paths) {
+          if (p.toLowerCase().endsWith('.zip')) zipPaths.add(p);
+        }
+      }
     }
 
     if (paths != null && paths.isNotEmpty && mounted) {
@@ -364,7 +422,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 const SizedBox(width: 20),
                 Expanded(
                   child: Text(
-                    'Importing ${paths!.length} ROM${paths.length == 1 ? '' : 's'}…',
+                    'Importing ${paths!.length} file${paths.length == 1 ? '' : 's'}…',
                   ),
                 ),
               ],
@@ -374,8 +432,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       );
 
       for (final path in paths) {
-        final game = await library.importRom(path);
-        if (game != null) addedGames.add(game);
+        if (zipPaths.contains(path)) {
+          // Extract ROM files from ZIP and import each one
+          final games = await library.importRomZip(path);
+          addedGames.addAll(games);
+        } else {
+          final game = await library.importRom(path);
+          if (game != null) addedGames.add(game);
+        }
       }
 
       // Dismiss loading dialog
@@ -383,6 +447,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
       if (addedGames.isNotEmpty && mounted) {
         _tabController.animateTo(0);
+
+        // Auto-download cover art for newly imported ROMs (fire-and-forget).
+        _autoFetchCovers(addedGames, library);
+      } else if (mounted) {
+        // Let the user know when nothing was imported (e.g. ZIP with no ROMs)
+        final hasZip = paths.any((p) => p.toLowerCase().endsWith('.zip'));
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                hasZip
+                    ? 'No valid ROM files (.gb, .gbc, .gba) found inside the ZIP.'
+                    : 'No valid ROM files were imported.',
+              ),
+            ),
+          );
       }
     }
   }
@@ -719,19 +800,44 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
             ),
-          ] else
-          // Settings button (phone/tablet)
-          IconButton(
-            icon: Icon(
-              Icons.settings_outlined,
-              color: colors.textSecondary,
-              size: 20,
-            ),
-            tooltip: 'Settings',
-            onPressed: _openSettings,
+          ] else ...[
+          // More menu (phone/tablet compact) — Settings + Download All Cover Art
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: colors.textSecondary, size: 20),
+            tooltip: 'More options',
+            color: colors.surface,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            onSelected: (value) {
+              switch (value) {
+                case 'settings':
+                  _openSettings();
+                case 'download_all_covers':
+                  _downloadAllCoverArt();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'download_all_covers',
+                child: ListTile(
+                  leading: Icon(Icons.download),
+                  title: Text('Download All Cover Art'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Settings'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
+          ],
         ],
       ),
     );
@@ -855,16 +961,42 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 onPressed: _openSettings,
               ),
             ),
-          ] else
-          // Settings button (phone/tablet)
-          IconButton(
-            icon: Icon(
-              Icons.settings_outlined,
-              color: colors.textSecondary,
-            ),
-            tooltip: 'Settings',
-            onPressed: _openSettings,
+          ] else ...[
+          // More menu (phone/tablet) — Settings + Download All Cover Art
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: colors.textSecondary),
+            tooltip: 'More options',
+            color: colors.surface,
+            onSelected: (value) {
+              switch (value) {
+                case 'settings':
+                  _openSettings();
+                case 'download_all_covers':
+                  _downloadAllCoverArt();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'download_all_covers',
+                child: ListTile(
+                  leading: Icon(Icons.download),
+                  title: Text('Download All Cover Art'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Settings'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
+          ],
         ],
       ),
     );
@@ -1145,66 +1277,70 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     if (_isGridView) {
       // Adaptive column count: more columns on TV / large screens
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          int crossAxisCount = 2;
-          if (TvDetector.isTV || constraints.maxWidth > 900) {
-            crossAxisCount = 5;
-          } else if (constraints.maxWidth > 600) {
-            crossAxisCount = 3;
-          }
+      return TvScrollAccelerator(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            int crossAxisCount = 2;
+            if (TvDetector.isTV || constraints.maxWidth > 900) {
+              crossAxisCount = 5;
+            } else if (constraints.maxWidth > 600) {
+              crossAxisCount = 3;
+            }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              childAspectRatio: 0.75,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: games.length,
-            itemBuilder: (context, index) {
-              final game = games[index];
-              return TvFocusable(
-                autofocus: _shouldAutofocusIndex(index, games.length),
-                onTap: () => _launchGame(game),
-                onLongPress: () => _showGameOptions(game),
-                onFocusChanged: (focused) {
-                  if (focused) _lastFocusedGameIndex = index;
-                },
-                child: GameCard(
-                  game: game,
+            return GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                childAspectRatio: 0.65,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: games.length,
+              itemBuilder: (context, index) {
+                final game = games[index];
+                return TvFocusable(
+                  autofocus: _shouldAutofocusIndex(index, games.length),
                   onTap: () => _launchGame(game),
                   onLongPress: () => _showGameOptions(game),
-                ),
-              );
-            },
-          );
-        },
+                  onFocusChanged: (focused) {
+                    if (focused) _lastFocusedGameIndex = index;
+                  },
+                  child: GameCard(
+                    game: game,
+                    onTap: () => _launchGame(game),
+                    onLongPress: () => _showGameOptions(game),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: games.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 4),
-      itemBuilder: (context, index) {
-        final game = games[index];
-        return TvFocusable(
-          autofocus: _shouldAutofocusIndex(index, games.length),
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => _launchGame(game),
-          onLongPress: () => _showGameOptions(game),
-          onFocusChanged: (focused) {
-            if (focused) _lastFocusedGameIndex = index;
-          },
-          child: GameListTile(
-            game: game,
+    return TvScrollAccelerator(
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: games.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 4),
+        itemBuilder: (context, index) {
+          final game = games[index];
+          return TvFocusable(
+            autofocus: _shouldAutofocusIndex(index, games.length),
+            borderRadius: BorderRadius.circular(12),
             onTap: () => _launchGame(game),
             onLongPress: () => _showGameOptions(game),
-          ),
-        );
-      },
+            onFocusChanged: (focused) {
+              if (focused) _lastFocusedGameIndex = index;
+            },
+            child: GameListTile(
+              game: game,
+              onTap: () => _launchGame(game),
+              onLongPress: () => _showGameOptions(game),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1318,6 +1454,141 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  /// Download cover art for a single game by its ROM hash.
+  Future<void> _downloadCoverArt(GameRom game) async {
+    if (!mounted) return;
+
+    final library = context.read<GameLibraryService>();
+    final coverService = context.read<CoverArtService>();
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 18, height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('Searching cover art for "${game.name}"…'),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 30),
+        ),
+      );
+
+    final localPath = await coverService.fetchCoverArt(game);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    if (localPath != null) {
+      await library.setCoverArt(game, localPath);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cover art downloaded!'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No cover art found for this ROM.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Download cover art for all games that don't have one.
+  Future<void> _downloadAllCoverArt() async {
+    if (!mounted) return;
+
+    final library = context.read<GameLibraryService>();
+    final coverService = context.read<CoverArtService>();
+    final games = library.games;
+
+    final gamesWithoutCover =
+        games.where((g) => g.coverPath == null).toList();
+
+    if (gamesWithoutCover.isEmpty) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('All games already have cover art.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            'Downloading cover art for ${gamesWithoutCover.length} '
+            'game${gamesWithoutCover.length == 1 ? '' : 's'}…',
+          ),
+          duration: const Duration(seconds: 60),
+        ),
+      );
+
+    final results = await coverService.fetchAllCoverArt(gamesWithoutCover);
+
+    // Apply results to library
+    for (final entry in results.entries) {
+      final game = games.firstWhere(
+        (g) => g.path == entry.key,
+        orElse: () => gamesWithoutCover.first,
+      );
+      await library.setCoverArt(game, entry.value);
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            'Downloaded ${results.length} of '
+            '${gamesWithoutCover.length} cover art images.',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+  }
+
+
+  /// Fire-and-forget: download cover art for a list of newly imported games.
+  void _autoFetchCovers(List<GameRom> games, GameLibraryService library) {
+    final coverService = context.read<CoverArtService>();
+
+    () async {
+      for (final game in games) {
+        if (game.coverPath != null) continue;
+        try {
+          final path = await coverService.fetchCoverArt(game);
+          if (path != null) {
+            await library.setCoverArt(game, path);
+          }
+        } catch (_) {
+          // Best-effort — don't interrupt the user
+        }
+        // Small delay between requests
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }();
+  }
 
   /// Show achievements list for a game.
   ///
@@ -1517,6 +1788,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               onTap: () {
                                 Navigator.pop(context);
                                 _selectCoverArt(game);
+                              },
+                            ),
+                          ),
+                          TvFocusable(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _downloadCoverArt(game);
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: ListTile(
+                              leading: const Icon(Icons.download),
+                              title: const Text('Download Cover Art'),
+                              subtitle: const Text('Search online'),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _downloadCoverArt(game);
                               },
                             ),
                           ),

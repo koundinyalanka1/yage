@@ -164,6 +164,12 @@ static int g_pixel_format = RETRO_PIXEL_FORMAT_RGB565; /* Default format */
 static float g_volume = 1.0f;
 static int g_audio_enabled = 1;
 
+/* SGB (Super Game Boy) border support
+ * When enabled, mGBA renders the full 256×224 SGB frame including borders.
+ * Controlled via the libretro core option mgba_sgb_borders. */
+static int g_sgb_borders_enabled = 1;  /* 1 = show SGB borders, 0 = GB only */
+static int g_variables_dirty = 1;      /* 1 = core should re-read variables */
+
 /* GB color palette remapping (only for original GB games) 
  * Colors stored in ABGR format (RGBA in little-endian memory for Flutter) */
 static int g_palette_enabled = 0;  /* 0 = use original colors, 1 = remap */
@@ -986,6 +992,12 @@ static void handle_set_memory_maps(const void* data) {
     LOGI("Link cable: stored %d memory regions", g_mem_region_count);
 }
 
+/* Libretro variable struct (for core option handling) */
+struct retro_variable {
+    const char *key;
+    const char *value;
+};
+
 static bool environment_callback(unsigned cmd, void* data) {
     switch (cmd) {
         case 10: /* RETRO_ENVIRONMENT_SET_PIXEL_FORMAT */
@@ -1008,12 +1020,28 @@ static bool environment_callback(unsigned cmd, void* data) {
                     ? g_current_core->save_dir : ".";
             }
             return true;
-        case 15: /* RETRO_ENVIRONMENT_GET_VARIABLE */
+        case 15: { /* RETRO_ENVIRONMENT_GET_VARIABLE */
+            if (!data) return false;
+            struct retro_variable* var = (struct retro_variable*)data;
+            if (!var->key) return false;
+
+            if (strcmp(var->key, "mgba_sgb_borders") == 0) {
+                var->value = g_sgb_borders_enabled ? "ON" : "OFF";
+                return true;
+            }
+            /* Let mGBA use its own defaults for all other variables */
             return false;
-        case 16: /* RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE */
-            return false;
-        case 17: /* RETRO_ENVIRONMENT_SET_VARIABLES */
+        }
+        case 16: /* RETRO_ENVIRONMENT_SET_VARIABLES */
+            /* Accept the core's variable definitions */
             return true;
+        case 17: { /* RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE */
+            if (data) {
+                *(bool*)data = g_variables_dirty ? true : false;
+                g_variables_dirty = 0;
+            }
+            return true;
+        }
         case 27: /* RETRO_ENVIRONMENT_GET_LOG_INTERFACE */
             return false;
         case 31: /* RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY */
@@ -1191,12 +1219,26 @@ int yage_core_load_rom(YageCore* core, const char* path) {
             core->platform = YAGE_PLATFORM_GBC;
             g_width = GB_WIDTH;
             g_height = GB_HEIGHT;
+        } else if (strcasecmp(ext, ".sgb") == 0) {
+            /* SGB-enhanced ROM — use GB platform but set initial
+             * dimensions to SGB (256×224) when borders are enabled */
+            core->platform = YAGE_PLATFORM_GB;
+            if (g_sgb_borders_enabled) {
+                g_width = SGB_WIDTH;
+                g_height = SGB_HEIGHT;
+            } else {
+                g_width = GB_WIDTH;
+                g_height = GB_HEIGHT;
+            }
         } else if (strcasecmp(ext, ".gb") == 0) {
             core->platform = YAGE_PLATFORM_GB;
             g_width = GB_WIDTH;
             g_height = GB_HEIGHT;
         }
     }
+    
+    /* Mark variables dirty so the core re-reads SGB border setting */
+    g_variables_dirty = 1;
     
     /* Load the ROM */
     struct retro_game_info info = {0};
@@ -1521,6 +1563,25 @@ void yage_core_set_color_palette(YageCore* core, int palette_index,
              color0 & 0xFFFFFF, color1 & 0xFFFFFF,
              color2 & 0xFFFFFF, color3 & 0xFFFFFF);
     }
+}
+
+/*
+ * SGB Border Control
+ *
+ * Enable or disable Super Game Boy border rendering.
+ * When enabled (1), SGB-enhanced GB games will render at 256×224 with
+ * decorative borders around the 160×144 gameplay area.
+ * When disabled (0), SGB games render at the standard 160×144 GB resolution.
+ *
+ * Must be called BEFORE loading a ROM (or the ROM must be reloaded) for
+ * the change to take effect, since the core reads this option at load time.
+ */
+
+YAGE_API void yage_core_set_sgb_borders(YageCore* core, int enabled) {
+    (void)core;
+    g_sgb_borders_enabled = enabled ? 1 : 0;
+    g_variables_dirty = 1;  /* Tell core to re-read variables */
+    LOGI("SGB borders %s", enabled ? "enabled" : "disabled");
 }
 
 /*

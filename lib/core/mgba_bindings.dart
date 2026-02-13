@@ -74,6 +74,10 @@ typedef MgbaCoreSetColorPalette = void Function(
     NativeCore core, int paletteIndex,
     int color0, int color1, int color2, int color3);
 
+// SGB border control
+typedef MgbaCoreSetSgbBordersNative = Void Function(NativeCore core, Int32 enabled);
+typedef MgbaCoreSetSgbBorders = void Function(NativeCore core, int enabled);
+
 // Battery/SRAM save functions
 typedef MgbaCoreGetSramSizeNative = Int32 Function(NativeCore core);
 typedef MgbaCoreGetSramSize = int Function(NativeCore core);
@@ -174,6 +178,11 @@ typedef YageFrameLoopGetDisplayHeight = int Function(NativeCore core);
 typedef YageFrameLoopIsRunningNative = Int32 Function(NativeCore core);
 typedef YageFrameLoopIsRunning = int Function(NativeCore core);
 
+// ── Core selection (multi-core support) ──────────────────────────────
+// Tell the native wrapper which libretro core .so to load before init.
+typedef YageCoreSetCoreNative = Int32 Function(Pointer<Utf8> corePath);
+typedef YageCoreSetCore = int Function(Pointer<Utf8> corePath);
+
 // ── Android Texture Rendering functions ──────────────────────────────
 typedef YageTextureBlitNative = Int32 Function(NativeCore core);
 typedef YageTextureBlit = int Function(NativeCore core);
@@ -181,7 +190,11 @@ typedef YageTextureBlit = int Function(NativeCore core);
 typedef YageTextureIsAttachedNative = Int32 Function(NativeCore core);
 typedef YageTextureIsAttached = int Function(NativeCore core);
 
-/// Game Boy key codes matching mGBA's input format
+/// Gamepad key codes (bitmask).
+///
+/// Bits 0-9 match the original mGBA/GBA layout. Bits 10-11 are used for
+/// SNES X/Y buttons.  The native `yage_core_set_keys` accepts a uint32
+/// so there is plenty of room for future extensions.
 class GBAKey {
   static const int a = 1 << 0;
   static const int b = 1 << 1;
@@ -193,6 +206,9 @@ class GBAKey {
   static const int down = 1 << 7;
   static const int r = 1 << 8;
   static const int l = 1 << 9;
+  // SNES extra face buttons
+  static const int x = 1 << 10;
+  static const int y = 1 << 11;
 }
 
 /// Platform types
@@ -201,6 +217,8 @@ enum GamePlatform {
   gb,
   gbc,
   gba,
+  nes,
+  snes,
 }
 
 /// mGBA native library bindings
@@ -232,6 +250,9 @@ class MGBABindings {
   late final MgbaCoreSetVolume coreSetVolume;
   late final MgbaCoreSetAudioEnabled coreSetAudioEnabled;
   late final MgbaCoreSetColorPalette coreSetColorPalette;
+  MgbaCoreSetSgbBorders? coreSetSgbBorders;
+  bool _sgbBordersLoaded = false;
+  bool get isSgbBordersLoaded => _sgbBordersLoaded;
   late final MgbaCoreRewindInit coreRewindInit;
   late final MgbaCoreRewindDeinit coreRewindDeinit;
   late final MgbaCoreRewindPush coreRewindPush;
@@ -273,9 +294,32 @@ class MGBABindings {
   bool _textureLoaded = false;
   bool get isTextureLoaded => _textureLoaded;
 
+  // Core selection (optional — multi-core support)
+  YageCoreSetCore? coreSetCore;
+  bool _coreSelectionLoaded = false;
+  bool get isCoreSelectionLoaded => _coreSelectionLoaded;
+
   bool get isLoaded => _isLoaded;
 
-  /// Load the mGBA dynamic library.
+  /// The libretro core library to use.  Set via [selectCore] before [load].
+  /// Defaults to mGBA.
+  String _selectedCoreLib = 'libmgba_libretro_android.so';
+
+  /// Map from [GamePlatform] to the Android .so name of the libretro core.
+  static const platformCoreLibs = <GamePlatform, String>{
+    GamePlatform.gb:   'libmgba_libretro_android.so',
+    GamePlatform.gbc:  'libmgba_libretro_android.so',
+    GamePlatform.gba:  'libmgba_libretro_android.so',
+    GamePlatform.nes:  'libfceumm_libretro_android.so',
+    GamePlatform.snes: 'libsnes9x2010_libretro_android.so',
+  };
+
+  /// Select which libretro core to use.  Must be called before [load].
+  void selectCore(GamePlatform platform) {
+    _selectedCoreLib = platformCoreLibs[platform] ?? _selectedCoreLib;
+  }
+
+  /// Load the YAGE core dynamic library.
   ///
   /// All function symbols are resolved into local variables first. Only if
   /// every single lookup succeeds are the instance fields assigned and
@@ -285,14 +329,14 @@ class MGBABindings {
     if (_isLoaded) return true;
 
     try {
-      // On Android, we need to load the mGBA libretro core first
-      // so it's available when yage_core tries to use it
+      // On Android, pre-load the selected libretro core so it's available
+      // when yage_core tries to use it via dlopen.
       if (Platform.isAndroid) {
         try {
-          DynamicLibrary.open('libmgba_libretro_android.so');
-          debugPrint('Loaded mGBA libretro core');
+          DynamicLibrary.open(_selectedCoreLib);
+          debugPrint('Loaded libretro core: $_selectedCoreLib');
         } catch (e) {
-          debugPrint('Warning: Could not pre-load mGBA core: $e');
+          debugPrint('Warning: Could not pre-load core $_selectedCoreLib: $e');
         }
       }
       
@@ -531,6 +575,30 @@ class MGBABindings {
         _textureLoaded = false;
       }
 
+      // ── Optional: try to load SGB border control symbol ──
+      try {
+        coreSetSgbBorders = lib
+            .lookup<NativeFunction<MgbaCoreSetSgbBordersNative>>('yage_core_set_sgb_borders')
+            .asFunction<MgbaCoreSetSgbBorders>();
+        _sgbBordersLoaded = true;
+        debugPrint('SGB border control symbol loaded successfully');
+      } catch (e) {
+        debugPrint('SGB border control not available: $e');
+        _sgbBordersLoaded = false;
+      }
+
+      // ── Optional: try to load core selection symbol (multi-core) ──
+      try {
+        coreSetCore = lib
+            .lookup<NativeFunction<YageCoreSetCoreNative>>('yage_core_set_core')
+            .asFunction<YageCoreSetCore>();
+        _coreSelectionLoaded = true;
+        debugPrint('Core selection symbol loaded successfully');
+      } catch (e) {
+        debugPrint('Core selection not available (single-core build): $e');
+        _coreSelectionLoaded = false;
+      }
+
       return true;
     } catch (e) {
       debugPrint('Failed to load YAGE core library: $e');
@@ -560,6 +628,18 @@ class MGBACore {
 
   /// The raw native YageCore pointer (for passing to rcheevos init).
   NativeCore? get nativeCorePtr => _corePtr;
+
+  /// Tell the native wrapper which libretro core to load.
+  /// Must be called *after* [MGBABindings.load] and *before* [initialize].
+  void setCoreLibrary(String coreLib) {
+    if (_bindings.coreSetCore == null) return;
+    final pathPtr = coreLib.toNativeUtf8();
+    try {
+      _bindings.coreSetCore!(pathPtr);
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
 
   /// Initialize the emulator core
   bool initialize() {
@@ -634,6 +714,8 @@ class MGBACore {
       1 => GamePlatform.gb,
       2 => GamePlatform.gbc,
       3 => GamePlatform.gba,
+      4 => GamePlatform.nes,
+      5 => GamePlatform.snes,
       _ => GamePlatform.unknown,
     };
   }
@@ -777,6 +859,17 @@ class MGBACore {
       colors[0], colors[1], colors[2], colors[3],
     );
   }
+
+  /// Enable or disable SGB (Super Game Boy) border rendering.
+  /// When enabled, SGB-enhanced GB games render at 256×224 with borders.
+  /// Must be called before loadROM for the change to take effect.
+  void setSgbBorders(bool enabled) {
+    if (_corePtr == null || _bindings.coreSetSgbBorders == null) return;
+    _bindings.coreSetSgbBorders!(_corePtr as Pointer<Void>, enabled ? 1 : 0);
+  }
+
+  /// Whether the SGB border control API is available.
+  bool get isSgbBordersSupported => _bindings.isSgbBordersLoaded && _corePtr != null;
 
   /// Initialize rewind ring buffer with given capacity (number of snapshots)
   int rewindInit(int capacity) {

@@ -260,7 +260,10 @@ class SettingsService extends ChangeNotifier {
     await update((s) => s.copyWith(raHardcoreMode: enabled));
   }
 
-  /// Toggle RetroAchievements unlock notifications
+  /// Toggle SGB (Super Game Boy) border rendering
+  Future<void> toggleSgbBorders() async {
+    await update((s) => s.copyWith(enableSgbBorders: !s.enableSgbBorders));
+  }
 
   // ── One-time flags (stored outside the main settings blob) ──────────
 

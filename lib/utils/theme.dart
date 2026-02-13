@@ -42,6 +42,8 @@ class AppColorTheme extends ThemeExtension<AppColorTheme> {
   final Color gbColor;
   final Color gbcColor;
   final Color gbaColor;
+  final Color nesColor;
+  final Color snesColor;
 
   // State colors
   final Color success;
@@ -69,6 +71,8 @@ class AppColorTheme extends ThemeExtension<AppColorTheme> {
     this.gbColor = const Color(0xFF8BC34A),
     this.gbcColor = const Color(0xFF03A9F4),
     this.gbaColor = const Color(0xFFE91E63),
+    this.nesColor = const Color(0xFFE53935),   // NES red
+    this.snesColor = const Color(0xFF7B1FA2),  // SNES purple
     this.success = const Color(0xFF4CAF50),
     this.warning = const Color(0xFFFF9800),
     this.error = const Color(0xFFF44336),
@@ -103,6 +107,8 @@ class AppColorTheme extends ThemeExtension<AppColorTheme> {
     Color? gbColor,
     Color? gbcColor,
     Color? gbaColor,
+    Color? nesColor,
+    Color? snesColor,
     Color? success,
     Color? warning,
     Color? error,
@@ -128,6 +134,8 @@ class AppColorTheme extends ThemeExtension<AppColorTheme> {
       gbColor: gbColor ?? this.gbColor,
       gbcColor: gbcColor ?? this.gbcColor,
       gbaColor: gbaColor ?? this.gbaColor,
+      nesColor: nesColor ?? this.nesColor,
+      snesColor: snesColor ?? this.snesColor,
       success: success ?? this.success,
       warning: warning ?? this.warning,
       error: error ?? this.error,
@@ -158,6 +166,8 @@ class AppColorTheme extends ThemeExtension<AppColorTheme> {
       gbColor: Color.lerp(gbColor, other.gbColor, t)!,
       gbcColor: Color.lerp(gbcColor, other.gbcColor, t)!,
       gbaColor: Color.lerp(gbaColor, other.gbaColor, t)!,
+      nesColor: Color.lerp(nesColor, other.nesColor, t)!,
+      snesColor: Color.lerp(snesColor, other.snesColor, t)!,
       success: Color.lerp(success, other.success, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
       error: Color.lerp(error, other.error, t)!,

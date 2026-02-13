@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -122,6 +123,66 @@ class GameLibraryService extends ChangeNotifier {
     return addRom(destPath);
   }
 
+  /// Import ROMs from a ZIP archive.
+  ///
+  /// Extracts any `.gba`, `.gb`, `.gbc`, or `.sgb` files found inside the ZIP,
+  /// copies them to internal storage, and adds them to the library.
+  /// Returns the list of successfully imported [GameRom]s.
+  ///
+  /// If the ZIP file itself is inside the internal roms directory (e.g. copied
+  /// there by a VIEW intent), it is deleted after extraction to save space.
+  Future<List<GameRom>> importRomZip(String zipPath) async {
+    const romExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'};
+    final romsDir = await getInternalRomsDir();
+    final addedGames = <GameRom>[];
+
+    try {
+      final bytes = await File(zipPath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      for (final entry in archive.files) {
+        if (!entry.isFile) continue;
+
+        final ext = p.extension(entry.name).toLowerCase();
+        if (!romExtensions.contains(ext)) continue;
+
+        // Use the leaf file name (ignore directory structure inside ZIP)
+        final fileName = p.basename(entry.name);
+        final destPath = p.join(romsDir, fileName);
+
+        // Skip if a ROM with the same name already exists on disk
+        if (File(destPath).existsSync()) {
+          // Still try to register it in case it's not in the library yet
+          final game = await addRom(destPath);
+          if (game != null) addedGames.add(game);
+          continue;
+        }
+
+        // Write extracted ROM to internal storage
+        try {
+          await File(destPath).writeAsBytes(entry.content as List<int>);
+          final game = await addRom(destPath);
+          if (game != null) addedGames.add(game);
+        } catch (e) {
+          debugPrint('Error extracting ROM "$fileName" from ZIP: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error reading ZIP file: $e');
+    }
+
+    // Clean up: if the ZIP is inside the roms directory (e.g. copied there
+    // by a VIEW intent), delete it after extraction to save space.
+    try {
+      final zipFile = File(zipPath);
+      if (zipFile.existsSync() && p.dirname(zipPath) == romsDir) {
+        await zipFile.delete();
+      }
+    } catch (_) {}
+
+    return addedGames;
+  }
+
   // ──────────── ROM management ────────────
 
   /// Add a single ROM file - returns the added game or null
@@ -167,7 +228,7 @@ class GameLibraryService extends ChangeNotifier {
       for (final entity in entities) {
         if (entity is File) {
           final ext = p.extension(entity.path).toLowerCase();
-          if (['.gba', '.gb', '.gbc', '.sgb'].contains(ext)) {
+          if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
             final game = GameRom.fromPath(entity.path);
             if (game != null && !_games.any((g) => g.path == entity.path)) {
               _games.add(game);
@@ -296,7 +357,7 @@ class GameLibraryService extends ChangeNotifier {
         for (final entity in entities) {
           if (entity is File) {
             final ext = p.extension(entity.path).toLowerCase();
-            if (['.gba', '.gb', '.gbc', '.sgb'].contains(ext)) {
+            if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
               final game = GameRom.fromPath(entity.path);
               if (game != null &&
                   !freshGames.any((g) => g.path == entity.path)) {

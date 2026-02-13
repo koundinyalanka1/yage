@@ -12,7 +12,7 @@
 }
 
 # YAGE specific
--keep class com.yourmateapps.yage.** { *; }
+-keep class com.yourmateapps.retropal.** { *; }
 
 # Google Play Core (referenced by Flutter's deferred components support)
 -dontwarn com.google.android.play.core.splitcompat.**

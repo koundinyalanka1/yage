@@ -104,6 +104,13 @@ YAGE_API void yage_core_set_color_palette(YageCore* core, int palette_index,
                                            uint32_t color2, uint32_t color3);
 
 /*
+ * SGB (Super Game Boy) border control
+ * enabled: 1 = show SGB borders (256×224), 0 = standard GB (160×144)
+ * Call BEFORE loading a ROM for the change to take effect.
+ */
+YAGE_API void yage_core_set_sgb_borders(YageCore* core, int enabled);
+
+/*
  * Save states
  */
 YAGE_API int yage_core_save_state(YageCore* core, int slot);

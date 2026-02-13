@@ -93,6 +93,10 @@ class GamepadLayout {
   final ButtonLayout startButton;
   final ButtonLayout selectButton;
 
+  /// SNES face buttons (optional — only used when platform is SNES).
+  final ButtonLayout? xButton;
+  final ButtonLayout? yButton;
+
   const GamepadLayout({
     required this.dpad,
     required this.aButton,
@@ -101,6 +105,8 @@ class GamepadLayout {
     required this.rButton,
     required this.startButton,
     required this.selectButton,
+    this.xButton,
+    this.yButton,
   });
 
   /// Portrait layout - screen independent
@@ -154,6 +160,20 @@ class GamepadLayout {
       x: 0.62,
       y: 0.42,
       size: 1.05,
+    ),
+
+    // SNES X: above A (diamond top)
+    xButton: ButtonLayout(
+      x: 0.78,
+      y: 0.42,
+      size: 1.10,
+    ),
+
+    // SNES Y: left of A (diamond left)
+    yButton: ButtonLayout(
+      x: 0.58,
+      y: 0.57,
+      size: 1.10,
     ),
   );
 
@@ -213,6 +233,20 @@ class GamepadLayout {
       y: 0.85,
       size: 1.00,
     ),
+
+    // SNES X: above A (diamond top) — in landscape right zone
+    xButton: ButtonLayout(
+      x: 0.20,
+      y: 0.18,
+      size: 1.05,
+    ),
+
+    // SNES Y: left of A (diamond left) — in landscape right zone
+    yButton: ButtonLayout(
+      x: 0.05,
+      y: 0.38,
+      size: 1.05,
+    ),
   );
 
 
@@ -229,11 +263,14 @@ class GamepadLayout {
           lButton == other.lButton &&
           rButton == other.rButton &&
           startButton == other.startButton &&
-          selectButton == other.selectButton;
+          selectButton == other.selectButton &&
+          xButton == other.xButton &&
+          yButton == other.yButton;
 
   @override
   int get hashCode => Object.hash(
-        dpad, aButton, bButton, lButton, rButton, startButton, selectButton);
+        dpad, aButton, bButton, lButton, rButton, startButton, selectButton,
+        xButton, yButton);
 
   GamepadLayout copyWith({
     ButtonLayout? dpad,
@@ -243,6 +280,8 @@ class GamepadLayout {
     ButtonLayout? rButton,
     ButtonLayout? startButton,
     ButtonLayout? selectButton,
+    ButtonLayout? xButton,
+    ButtonLayout? yButton,
   }) {
     return GamepadLayout(
       dpad: dpad ?? this.dpad,
@@ -252,6 +291,8 @@ class GamepadLayout {
       rButton: rButton ?? this.rButton,
       startButton: startButton ?? this.startButton,
       selectButton: selectButton ?? this.selectButton,
+      xButton: xButton ?? this.xButton,
+      yButton: yButton ?? this.yButton,
     );
   }
 
@@ -263,6 +304,8 @@ class GamepadLayout {
     'rButton': rButton.toJson(),
     'startButton': startButton.toJson(),
     'selectButton': selectButton.toJson(),
+    if (xButton != null) 'xButton': xButton!.toJson(),
+    if (yButton != null) 'yButton': yButton!.toJson(),
   };
 
   factory GamepadLayout.fromJson(Map<String, dynamic> json) {
@@ -288,6 +331,12 @@ class GamepadLayout {
       selectButton: json['selectButton'] != null 
           ? ButtonLayout.fromJson(json['selectButton']) 
           : GamepadLayout.defaultPortrait.selectButton,
+      xButton: json['xButton'] != null
+          ? ButtonLayout.fromJson(json['xButton'])
+          : null,
+      yButton: json['yButton'] != null
+          ? ButtonLayout.fromJson(json['yButton'])
+          : null,
     );
   }
 
@@ -306,5 +355,7 @@ enum GamepadButton {
   rButton,
   startButton,
   selectButton,
+  xButton,
+  yButton,
 }
 

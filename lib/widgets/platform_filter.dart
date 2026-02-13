@@ -50,6 +50,20 @@ class PlatformFilter extends StatelessWidget {
             color: colors.gbColor,
             onTap: () => onChanged(GamePlatform.gb),
           ),
+          const SizedBox(width: 8),
+          _FilterChip(
+            label: 'NES',
+            isSelected: selectedPlatform == GamePlatform.nes,
+            color: colors.nesColor,
+            onTap: () => onChanged(GamePlatform.nes),
+          ),
+          const SizedBox(width: 8),
+          _FilterChip(
+            label: 'SNES',
+            isSelected: selectedPlatform == GamePlatform.snes,
+            color: colors.snesColor,
+            onTap: () => onChanged(GamePlatform.snes),
+          ),
         ],
       ),
     );

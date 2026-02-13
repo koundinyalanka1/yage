@@ -55,23 +55,36 @@ class GameRom {
       '.gb' => GamePlatform.gb,
       '.gbc' => GamePlatform.gbc,
       '.sgb' => GamePlatform.gb,
+      '.nes' => GamePlatform.nes,
+      '.sfc' => GamePlatform.snes,
+      '.smc' => GamePlatform.snes,
       _ => GamePlatform.unknown,
     };
   }
 
-  String get platformName => switch (platform) {
-    GamePlatform.gba => 'Game Boy Advance',
-    GamePlatform.gb => 'Game Boy',
-    GamePlatform.gbc => 'Game Boy Color',
-    GamePlatform.unknown => 'Unknown',
-  };
+  String get platformName {
+    if (extension == '.sgb') return 'Super Game Boy';
+    return switch (platform) {
+      GamePlatform.gba => 'Game Boy Advance',
+      GamePlatform.gb => 'Game Boy',
+      GamePlatform.gbc => 'Game Boy Color',
+      GamePlatform.nes => 'Nintendo Entertainment System',
+      GamePlatform.snes => 'Super Nintendo',
+      GamePlatform.unknown => 'Unknown',
+    };
+  }
 
-  String get platformShortName => switch (platform) {
-    GamePlatform.gba => 'GBA',
-    GamePlatform.gb => 'GB',
-    GamePlatform.gbc => 'GBC',
-    GamePlatform.unknown => '???',
-  };
+  String get platformShortName {
+    if (extension == '.sgb') return 'SGB';
+    return switch (platform) {
+      GamePlatform.gba => 'GBA',
+      GamePlatform.gb => 'GB',
+      GamePlatform.gbc => 'GBC',
+      GamePlatform.nes => 'NES',
+      GamePlatform.snes => 'SNES',
+      GamePlatform.unknown => '???',
+    };
+  }
 
   String get formattedSize {
     if (sizeBytes < 1024) {

@@ -33,6 +33,7 @@ class EmulatorSettings {
   final bool isGridView; // grid vs list view on the home screen
   final bool raEnabled; // master toggle for RetroAchievements
   final bool raHardcoreMode; // RetroAchievements hardcore mode
+  final bool enableSgbBorders; // SGB border rendering for GB games
   const EmulatorSettings({
     this.volume = 0.8,
     this.enableSound = true,
@@ -62,6 +63,7 @@ class EmulatorSettings {
     this.isGridView = true,
     this.raEnabled = true,
     this.raHardcoreMode = false,
+    this.enableSgbBorders = true,
   });
 
   EmulatorSettings copyWith({
@@ -93,6 +95,7 @@ class EmulatorSettings {
     bool? isGridView,
     bool? raEnabled,
     bool? raHardcoreMode,
+    bool? enableSgbBorders,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -123,6 +126,7 @@ class EmulatorSettings {
       isGridView: isGridView ?? this.isGridView,
       raEnabled: raEnabled ?? this.raEnabled,
       raHardcoreMode: raHardcoreMode ?? this.raHardcoreMode,
+      enableSgbBorders: enableSgbBorders ?? this.enableSgbBorders,
     );
   }
 
@@ -162,6 +166,7 @@ class EmulatorSettings {
       'isGridView': isGridView,
       'raEnabled': raEnabled,
       'raHardcoreMode': raHardcoreMode,
+      'enableSgbBorders': enableSgbBorders,
     };
   }
 
@@ -199,6 +204,7 @@ class EmulatorSettings {
       isGridView: json['isGridView'] as bool? ?? true,
       raEnabled: json['raEnabled'] as bool? ?? true,
       raHardcoreMode: json['raHardcoreMode'] as bool? ?? false,
+      enableSgbBorders: json['enableSgbBorders'] as bool? ?? true,
     );
   }
 
@@ -233,7 +239,8 @@ class EmulatorSettings {
           sortOption == other.sortOption &&
           isGridView == other.isGridView &&
           raEnabled == other.raEnabled &&
-          raHardcoreMode == other.raHardcoreMode;
+          raHardcoreMode == other.raHardcoreMode &&
+          enableSgbBorders == other.enableSgbBorders;
 
   @override
   int get hashCode => Object.hashAll([
@@ -244,7 +251,7 @@ class EmulatorSettings {
         autoSaveInterval, gamepadLayoutPortrait, gamepadLayoutLandscape,
         useJoystick, enableExternalGamepad, gamepadSkin, selectedTheme,
         enableRewind, rewindBufferSeconds, sortOption, isGridView,
-        raEnabled, raHardcoreMode,
+        raEnabled, raHardcoreMode, enableSgbBorders,
       ]);
 
   /// Parse gamepad skin from JSON, supporting both the current string format

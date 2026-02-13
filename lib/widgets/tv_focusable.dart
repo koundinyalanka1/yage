@@ -176,6 +176,80 @@ class _TvFocusableState extends State<TvFocusable>
   }
 }
 
+/// Wraps a scrollable list / grid to provide D-pad hold-to-scroll
+/// acceleration.  When a directional key is held down, focus traversal
+/// progressively speeds up — instead of moving one item per key repeat,
+/// it skips multiple items, making navigation through 50+ item lists viable.
+///
+/// On devices without a D-pad / gamepad this is effectively a no-op (the
+/// Focus node never receives key-repeat events for directional keys).
+class TvScrollAccelerator extends StatefulWidget {
+  final Widget child;
+
+  const TvScrollAccelerator({super.key, required this.child});
+
+  @override
+  State<TvScrollAccelerator> createState() => _TvScrollAcceleratorState();
+}
+
+class _TvScrollAcceleratorState extends State<TvScrollAccelerator> {
+  int _repeatCount = 0;
+
+  static final _directions = <LogicalKeyboardKey, TraversalDirection>{
+    LogicalKeyboardKey.arrowUp: TraversalDirection.up,
+    LogicalKeyboardKey.arrowDown: TraversalDirection.down,
+    LogicalKeyboardKey.arrowLeft: TraversalDirection.left,
+    LogicalKeyboardKey.arrowRight: TraversalDirection.right,
+  };
+
+  /// Progressive acceleration curve.
+  /// Returns the number of **extra** focus steps to perform on top of
+  /// the default one-item-per-repeat that Flutter's shortcut system
+  /// already handles.
+  int _extraSteps(int repeat) {
+    if (repeat < 5) return 0; //  1× — normal one-at-a-time
+    if (repeat < 12) return 1; // 2×
+    if (repeat < 25) return 3; // 4×
+    return 7; //                  8×
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final dir = _directions[event.logicalKey];
+    if (dir == null) return KeyEventResult.ignored;
+
+    if (event is KeyRepeatEvent) {
+      _repeatCount++;
+      final extra = _extraSteps(_repeatCount);
+      if (extra > 0) {
+        // Programmatically move focus by [extra] additional items.
+        // focusInDirection is synchronous and updates primaryFocus
+        // immediately, so sequential calls are safe.
+        for (int i = 0; i < extra; i++) {
+          primaryFocus?.focusInDirection(dir);
+        }
+      }
+    } else if (event is KeyDownEvent) {
+      _repeatCount = 0;
+    } else if (event is KeyUpEvent) {
+      _repeatCount = 0;
+    }
+
+    // Always return ignored so the framework's own directional-focus
+    // shortcut still fires and moves focus by its normal +1 step.
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onKeyEvent: _onKey,
+      canRequestFocus: false, // invisible to focus traversal
+      skipTraversal: true,
+      child: widget.child,
+    );
+  }
+}
+
 /// Animated builder helper – similar to AnimatedBuilder but takes Animation.
 class AnimatedBuilder extends StatelessWidget {
   final Animation<double> animation;

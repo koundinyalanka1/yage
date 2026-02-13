@@ -20,23 +20,29 @@ import '../models/ra_achievement.dart';
 /// Maps internal [GamePlatform] values to RetroAchievements console IDs.
 ///
 /// Official RA console IDs for supported platforms:
+///   • SNES           → 3
 ///   • Game Boy       → 4
 ///   • Game Boy Advance → 5
 ///   • Game Boy Color → 6
+///   • NES            → 7
 class RAConsoleId {
   RAConsoleId._();
 
+  static const int snes = 3;
   static const int gameBoy = 4;
   static const int gameBoyAdvance = 5;
   static const int gameBoyColor = 6;
+  static const int nes = 7;
 
   /// Resolve [GamePlatform] → RA console ID.
   /// Returns `null` for unknown / unsupported platforms.
   static int? fromPlatform(GamePlatform platform) {
     return switch (platform) {
-      GamePlatform.gb  => gameBoy,
-      GamePlatform.gba => gameBoyAdvance,
-      GamePlatform.gbc => gameBoyColor,
+      GamePlatform.gb   => gameBoy,
+      GamePlatform.gba  => gameBoyAdvance,
+      GamePlatform.gbc  => gameBoyColor,
+      GamePlatform.nes  => nes,
+      GamePlatform.snes => snes,
       GamePlatform.unknown => null,
     };
   }
@@ -44,9 +50,11 @@ class RAConsoleId {
   /// Human-readable label for a console ID (for debug / logging).
   static String label(int id) {
     return switch (id) {
+      snes           => 'SNES',
       gameBoy        => 'Game Boy',
       gameBoyAdvance => 'Game Boy Advance',
       gameBoyColor   => 'Game Boy Color',
+      nes            => 'NES',
       _              => 'Unknown ($id)',
     };
   }
@@ -552,9 +560,11 @@ class RetroAchievementsService extends ChangeNotifier {
   /// Compute the RetroAchievements-compatible hash for a ROM file.
   ///
   /// **Hashing rules (per RA spec):**
-  ///   • **Game Boy (GB):**  MD5 of the entire ROM file.
-  ///   • **Game Boy Color (GBC):**  MD5 of the entire ROM file.
-  ///   • **Game Boy Advance (GBA):**  MD5 of the entire ROM file.
+  ///   • **Game Boy / GBC / GBA:**  MD5 of the entire ROM file.
+  ///   • **NES:**  Strip the 16-byte iNES header (and 512-byte trainer if
+  ///     present), then MD5 the remaining PRG+CHR data.
+  ///   • **SNES:**  If the file size mod 1024 == 512, strip the 512-byte
+  ///     copier header, then MD5 the rest.
   ///
   /// All hashing is done **locally** — no ROM data leaves the device.
   /// Returns the lowercase 32-character hex MD5 string, or `null` on
@@ -569,8 +579,43 @@ class RetroAchievementsService extends ChangeNotifier {
         return null;
       }
 
-      // Stream the file through MD5 to avoid loading the entire ROM
-      // into memory at once (GBA ROMs can be up to 32 MB).
+      final ext = p.extension(romPath).toLowerCase();
+
+      // ── NES: strip iNES header (16 bytes) + optional trainer (512 bytes)
+      if (ext == '.nes') {
+        final bytes = await file.readAsBytes();
+        if (bytes.length < 16) return null;
+        // Check for iNES magic: "NES\x1A"
+        final hasHeader = bytes[0] == 0x4E && bytes[1] == 0x45 &&
+                          bytes[2] == 0x53 && bytes[3] == 0x1A;
+        if (hasHeader) {
+          final hasTrainer = (bytes[6] & 0x04) != 0;
+          final offset = 16 + (hasTrainer ? 512 : 0);
+          if (offset >= bytes.length) return null;
+          final digest = md5.convert(bytes.sublist(offset));
+          return digest.toString();
+        }
+        // No iNES header — hash entire file
+        final digest = md5.convert(bytes);
+        return digest.toString();
+      }
+
+      // ── SNES: strip optional 512-byte copier header
+      if (ext == '.sfc' || ext == '.smc') {
+        final stat = await file.stat();
+        final size = stat.size;
+        final hasHeader = (size % 1024) == 512;
+        if (hasHeader) {
+          final bytes = await file.readAsBytes();
+          final digest = md5.convert(bytes.sublist(512));
+          return digest.toString();
+        }
+        // No copier header — stream-hash entire file
+        final digest = await md5.bind(file.openRead()).first;
+        return digest.toString();
+      }
+
+      // ── GB / GBC / GBA: hash entire file ──
       final digest = await md5.bind(file.openRead()).first;
       return digest.toString(); // lowercase hex string
     } catch (e) {

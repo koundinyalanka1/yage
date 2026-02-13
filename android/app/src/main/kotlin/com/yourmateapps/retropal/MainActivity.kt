@@ -31,7 +31,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val SAF_IMPORT_FOLDER_CODE = 2001
         private const val STORAGE_PERMISSION_CODE = 1001
-        private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb")
+        private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb", "nes", "sfc", "smc")
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

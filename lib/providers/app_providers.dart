@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/rcheevos_bindings.dart';
+import '../services/cover_art_service.dart';
 import '../services/emulator_service.dart';
 import '../services/game_database.dart';
 import '../services/game_library_service.dart';
@@ -33,6 +34,7 @@ class AppProviders extends StatelessWidget {
           create: (_) => GameLibraryService(gameDatabase)..initialize(),
         ),
         ChangeNotifierProvider(create: (_) => EmulatorService()),
+        ChangeNotifierProvider(create: (_) => CoverArtService()),
         ChangeNotifierProvider(create: (_) => LinkCableService()),
         ChangeNotifierProvider(create: (_) => RetroAchievementsService()..initialize()),
         // Mode enforcement only — no longer depends on RA service.

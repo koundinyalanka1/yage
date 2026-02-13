@@ -25,6 +25,8 @@ class GameCard extends StatelessWidget {
     GamePlatform.gb => colors.gbColor,
     GamePlatform.gbc => colors.gbcColor,
     GamePlatform.gba => colors.gbaColor,
+    GamePlatform.nes => colors.nesColor,
+    GamePlatform.snes => colors.snesColor,
     GamePlatform.unknown => colors.textMuted,
   };
 
@@ -32,6 +34,8 @@ class GameCard extends StatelessWidget {
     GamePlatform.gb => Icons.sports_esports,
     GamePlatform.gbc => Icons.gamepad,
     GamePlatform.gba => Icons.videogame_asset,
+    GamePlatform.nes => Icons.tv,
+    GamePlatform.snes => Icons.games,
     GamePlatform.unknown => Icons.help_outline,
   };
 
@@ -101,7 +105,7 @@ class GameCard extends StatelessWidget {
               children: [
                 // Cover/Icon area
                 Expanded(
-                  flex: 3,
+                  flex: 4,
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -177,9 +181,9 @@ class GameCard extends StatelessWidget {
                 
                 // Info area
                 Expanded(
-                  flex: 2,
+                  flex: 1,
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 12, bottom: 12, right: 4),
+                    padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8, right: 4),
                     child: Row(
                       children: [
                         Expanded(
@@ -320,6 +324,8 @@ class GameListTile extends StatelessWidget {
     GamePlatform.gb => colors.gbColor,
     GamePlatform.gbc => colors.gbcColor,
     GamePlatform.gba => colors.gbaColor,
+    GamePlatform.nes => colors.nesColor,
+    GamePlatform.snes => colors.snesColor,
     GamePlatform.unknown => colors.textMuted,
   };
 
@@ -329,8 +335,8 @@ class GameListTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: Image.file(
           File(game.coverPath!),
-          width: 48,
-          height: 48,
+          width: 56,
+          height: 56,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) => _buildPlatformBadge(colors),
         ),
@@ -342,8 +348,8 @@ class GameListTile extends StatelessWidget {
   Widget _buildPlatformBadge(AppColorTheme colors) {
     final pColor = _platformColor(colors);
     return Container(
-      width: 48,
-      height: 48,
+      width: 56,
+      height: 56,
       decoration: BoxDecoration(
         color: pColor.withAlpha(51),
         borderRadius: BorderRadius.circular(8),
