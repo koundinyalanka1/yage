@@ -103,9 +103,8 @@ class GameCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Cover/Icon area
+                // Cover/Icon area — fills remaining space after info
                 Expanded(
-                  flex: 4,
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -179,86 +178,82 @@ class GameCard extends StatelessWidget {
                   ),
                 ),
                 
-                // Info area
-                Expanded(
-                  flex: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8, right: 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Title
-                              Expanded(
-                                child: Text(
-                                  game.name,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: colors.textPrimary,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                // Info area — uses intrinsic height so details are never clipped
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8, right: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Title
+                            Text(
+                              game.name,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: colors.textPrimary,
                               ),
-                              
-                              const SizedBox(height: 4),
-                              
-                              // Size and play time
-                              Row(
-                                children: [
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            
+                            const SizedBox(height: 4),
+                            
+                            // Size and play time
+                            Row(
+                              children: [
+                                Text(
+                                  game.formattedSize,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: colors.textMuted,
+                                  ),
+                                ),
+                                if (game.totalPlayTimeSeconds > 0) ...[
                                   Text(
-                                    game.formattedSize,
+                                    '  •  ',
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: colors.textMuted,
                                     ),
                                   ),
-                                  if (game.totalPlayTimeSeconds > 0) ...[
-                                    Text(
-                                      '  •  ',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: colors.textMuted,
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.timer_outlined,
-                                      size: 11,
+                                  Icon(
+                                    Icons.timer_outlined,
+                                    size: 11,
+                                    color: colors.textMuted,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    game.formattedPlayTime,
+                                    style: TextStyle(
+                                      fontSize: 10,
                                       color: colors.textMuted,
                                     ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      game.formattedPlayTime,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: colors.textMuted,
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ],
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          ],
                         ),
-                        // More options hint
-                        if (onLongPress != null)
-                          GestureDetector(
-                            onTap: onLongPress,
-                            behavior: HitTestBehavior.opaque,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                              child: Icon(
-                                Icons.more_vert,
-                                size: 18,
-                                color: colors.textMuted.withAlpha(140),
-                              ),
+                      ),
+                      // More options hint
+                      if (onLongPress != null)
+                        GestureDetector(
+                          onTap: onLongPress,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                            child: Icon(
+                              Icons.more_vert,
+                              size: 18,
+                              color: colors.textMuted.withAlpha(140),
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ],
