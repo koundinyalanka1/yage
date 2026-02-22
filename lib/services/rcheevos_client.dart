@@ -103,6 +103,7 @@ class RcheevosClient extends ChangeNotifier {
 
   /// Safely read a Utf8 pointer to Dart string. Returns null if invalid.
   static String? _safeUtf8ToString(Pointer<Utf8>? ptr) {
+    if (ptr == null) return null;
     if (ptr == nullptr || ptr.address == 0) return null;
     try {
       return ptr.toDartString();

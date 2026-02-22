@@ -12,6 +12,7 @@ import 'providers/app_providers.dart';
 import 'screens/splash_screen.dart';
 import 'services/game_database.dart';
 import 'services/settings_service.dart';
+import 'services/ad_service.dart';
 import 'utils/device_memory.dart';
 import 'utils/theme.dart';
 import 'utils/tv_detector.dart';
@@ -60,6 +61,9 @@ void main() async {
 
   // Cache device memory for rewind buffer sizing (avoids OOM on low-RAM devices).
   await initDeviceMemory();
+
+  // Initialize AdMob (mobile only).
+  await AdService.instance.initialize();
 
   runApp(RetroPalApp(gameDatabase: gameDatabase));
 }

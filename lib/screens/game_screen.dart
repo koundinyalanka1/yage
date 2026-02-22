@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -17,6 +18,7 @@ import '../services/game_library_service.dart';
 import '../services/link_cable_service.dart';
 import '../services/ra_runtime_service.dart';
 import '../services/rcheevos_client.dart';
+import '../services/ad_service.dart';
 import '../services/retro_achievements_service.dart';
 import '../services/settings_service.dart';
 import '../services/gamepad_input.dart';
@@ -82,6 +84,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   StreamSubscription<RcEvent>? _rcheevosEventSub;
   SettingsService? _settingsServiceRef;
   GameLibraryService? _libraryRef;
+
+  /// Preloaded interstitial for exit. Shown when user confirms exit.
+  InterstitialAd? _interstitialAd;
 
   @override
   void initState() {
@@ -152,7 +157,50 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
       // Listen for native rcheevos events (achievement unlocks, etc.)
       _rcheevosEventSub = _rcheevosClientRef!.events.listen(_onRcheevosEvent);
+
+      // Preload exit interstitial (mobile + TV, not during gameplay)
+      if (AdService.instance.isAvailable) {
+        _loadExitInterstitial();
+      }
     });
+  }
+
+  void _loadExitInterstitial() {
+    InterstitialAd.load(
+      adUnitId: AdUnitIds.interstitial,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _interstitialAd = null;
+              _exitGame();
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              debugPrint('InterstitialAd: failed to show — ${error.message}');
+              ad.dispose();
+              _interstitialAd = null;
+              _exitGame();
+            },
+          );
+        },
+        onAdFailedToLoad: (error) {
+          debugPrint('InterstitialAd: failed to load — ${error.message}');
+        },
+      ),
+    );
+  }
+
+  /// Exit with interstitial ad. Shows ad if loaded, then exits.
+  void _onExitWithAd() {
+    if (_interstitialAd != null) {
+      _interstitialAd!.show();
+      _interstitialAd = null; // Will be disposed in callback
+    } else {
+      _exitGame();
+    }
   }
 
   /// Show a styled toast banner at the top of the screen with an optional
@@ -367,6 +415,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _linkCableRef = null;
       _raRuntimeRef = null;
       _libraryRef = null;
+
+      _interstitialAd?.dispose();
+      _interstitialAd = null;
 
       // Allow screen to sleep again
       WakelockPlus.disable();
@@ -924,7 +975,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
     
     if (result == true) {
-      _exitGame();
+      _onExitWithAd();
       return true;
     } else {
       // Resume if was running
@@ -1384,7 +1435,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   onSpeedChanged: (speed) {
                     emulator.setSpeed(speed);
                   },
-                  onExit: _exitGame,
+                  onExit: _onExitWithAd,
                   useJoystick: settings.useJoystick,
                   onToggleJoystick: () {
                     _settingsServiceRef!.toggleJoystick();

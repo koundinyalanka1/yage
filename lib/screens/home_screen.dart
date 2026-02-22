@@ -14,6 +14,7 @@ import '../services/retro_achievements_service.dart';
 
 import '../services/save_backup_service.dart';
 import '../utils/tv_detector.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
 import '../widgets/tv_file_browser.dart';
@@ -668,6 +669,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               // TV bumper hint bar
               if (TvDetector.isTV)
                 _buildTvHintBar(),
+              // Banner ad at bottom (mobile only, not during gameplay)
+              const BannerAdWidget(),
             ],
           ),
         ),
@@ -1497,8 +1500,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     if (_isGridView) {
-      // 3 items per row; larger cache extent for 100+ games (smoother scrolling)
-      const crossAxisCount = 3;
+      // 2 items per row; larger cache extent for 100+ games (smoother scrolling)
+      const crossAxisCount = 2;
       final cacheExtent = games.length > 100 ? 600.0 : 400.0;
 
       return TvScrollAccelerator(
@@ -1507,7 +1510,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           cacheExtent: cacheExtent,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            childAspectRatio: 0.58,
+            childAspectRatio: 0.65,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
           ),

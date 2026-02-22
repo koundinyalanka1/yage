@@ -15,6 +15,7 @@ import '../services/emulator_service.dart';
 import '../services/retro_achievements_service.dart';
 import '../services/save_backup_service.dart';
 import '../utils/theme.dart';
+import '../widgets/banner_ad_widget.dart';
 import '../widgets/tv_focusable.dart';
 import 'ra_login_screen.dart';
 
@@ -173,6 +174,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
+            const BannerAdWidget(),
           ],
         ),
       ),
