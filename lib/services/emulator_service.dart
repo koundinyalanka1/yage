@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/mgba_bindings.dart';
 import '../core/mgba_stub.dart';
+import '../utils/device_memory.dart';
 import '../models/game_rom.dart';
 import '../models/emulator_settings.dart';
 import 'link_cable_service.dart';
@@ -337,6 +338,7 @@ class EmulatorService extends ChangeNotifier {
     int deleted = 0;
     final saveDir = _getRomSaveDir(rom);
     final baseName = p.basenameWithoutExtension(rom.path);
+    final romBase = p.basename(rom.path);
 
     // Also check app-internal save dir in case saves were created there
     final dirs = <String>{saveDir};
@@ -345,19 +347,19 @@ class EmulatorService extends ChangeNotifier {
     }
 
     for (final dir in dirs) {
-      // SRAM (.sav)
+      // SRAM (.sav) — uses basenameWithoutExtension
       final sramFile = File(p.join(dir, '$baseName.sav'));
       if (sramFile.existsSync()) {
         try { sramFile.deleteSync(); deleted++; } catch (_) {}
       }
 
-      // Save states and thumbnails (slots 0-5)
+      // Save states and thumbnails (slots 0-5) — use full basename to match native
       for (int slot = 0; slot < 6; slot++) {
-        final stateFile = File(p.join(dir, '$baseName.ss$slot'));
+        final stateFile = File(p.join(dir, '$romBase.ss$slot'));
         if (stateFile.existsSync()) {
           try { stateFile.deleteSync(); deleted++; } catch (_) {}
         }
-        final ssFile = File(p.join(dir, '$baseName.ss$slot.png'));
+        final ssFile = File(p.join(dir, '$romBase.ss$slot.png'));
         if (ssFile.existsSync()) {
           try { ssFile.deleteSync(); deleted++; } catch (_) {}
         }
@@ -807,12 +809,18 @@ class EmulatorService extends ChangeNotifier {
 
   /// Initialize the rewind ring buffer based on current settings.
   /// Call after a ROM is loaded and the native state size is known.
+  /// Capacity is capped by device memory to avoid OOM on low-RAM devices.
   void _initRewind() {
     if (_useStub || _core == null) return;
 
     final capturesPerSecond = 60.0 / _rewindCaptureInterval;
-    final capacity = (capturesPerSecond * _settings.rewindBufferSeconds).round();
-    _core!.rewindInit(capacity.clamp(12, 720));
+    final requested = (capturesPerSecond * _settings.rewindBufferSeconds).round();
+    final cap = rewindCapacityCap();
+    final capacity = requested.clamp(12, cap);
+    if (capacity < requested) {
+      debugPrint('Rewind: capped to $capacity snapshots (device RAM)');
+    }
+    _core!.rewindInit(capacity);
     _rewindCaptureCounter = 0;
   }
 
@@ -1050,12 +1058,13 @@ class EmulatorService extends ChangeNotifier {
   }
 
   /// Get the save state file path for a slot — stored next to the ROM.
+  /// Uses full ROM filename (e.g. "Game.nes.ss0") to match native libretro.
   /// Searches all known save directories for an existing file; if none found,
   /// returns a path in the primary save directory (for creating new saves).
   String? getStatePath(int slot) {
     if (_currentRom == null) return null;
-    final romName = p.basenameWithoutExtension(_currentRom!.path);
-    final fileName = '$romName.ss$slot';
+    final romBase = p.basename(_currentRom!.path);
+    final fileName = '$romBase.ss$slot';
 
     // Search for existing state file
     for (final dir in _allSaveDirectories(_currentRom!)) {
@@ -1068,11 +1077,12 @@ class EmulatorService extends ChangeNotifier {
   }
 
   /// Get the screenshot file path for a save state slot.
+  /// Uses full ROM filename to match native save state naming.
   /// Searches all known save directories for an existing file.
   String? getStateScreenshotPath(int slot) {
     if (_currentRom == null) return null;
-    final romName = p.basenameWithoutExtension(_currentRom!.path);
-    final fileName = '$romName.ss$slot.png';
+    final romBase = p.basename(_currentRom!.path);
+    final fileName = '$romBase.ss$slot.png';
 
     // Search for existing screenshot
     for (final dir in _allSaveDirectories(_currentRom!)) {

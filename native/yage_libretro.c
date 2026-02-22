@@ -257,10 +257,14 @@ static int g_frames_since_reinit = 0;     /* VIDEO frames since last OpenSL rein
  * Zero-copy frame delivery to Flutter's Texture widget.
  * The ANativeWindow is backed by a SurfaceTexture registered with
  * Flutter's TextureRegistry.  Pixels are blitted directly from
- * g_video_buffer — no Dart-side allocation, no decodeImageFromPixels. */
+ * g_video_buffer — no Dart-side allocation, no decodeImageFromPixels.
+ *
+ * g_nw_mutex serializes blit_to_native_window and nativeReleaseSurface so
+ * we never release the window while a frame blit is in progress (use-after-free). */
 static ANativeWindow* g_native_window = NULL;
 static int g_nw_configured_w = 0;  /* last-configured buffer geometry width */
 static int g_nw_configured_h = 0;  /* last-configured buffer geometry height */
+static pthread_mutex_t g_nw_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Pre-buffer threshold — just enough for one OpenSL callback to avoid initial underrun */
 #define PREBUFFER_SAMPLES (AUDIO_BUFFER_FRAMES)
@@ -1960,15 +1964,23 @@ int yage_core_get_memory_size(YageCore* core, int32_t region_id) {
 
 #ifdef __ANDROID__
 
-/* Blit g_video_buffer → ANativeWindow.  Thread-safe (ANativeWindow_lock
- * serializes internally).  Returns 0 on success, -1 on failure. */
+/* Blit g_video_buffer → ANativeWindow.  Protected by g_nw_mutex so
+ * nativeReleaseSurface never releases while we're blitting (use-after-free).
+ * Returns 0 on success, -1 on failure. */
 static int blit_to_native_window(void) {
+    pthread_mutex_lock(&g_nw_mutex);
     ANativeWindow* win = g_native_window;
-    if (!win || !g_video_buffer) return -1;
+    if (!win || !g_video_buffer) {
+        pthread_mutex_unlock(&g_nw_mutex);
+        return -1;
+    }
 
     int w = g_width;
     int h = g_height;
-    if (w <= 0 || h <= 0) return -1;
+    if (w <= 0 || h <= 0) {
+        pthread_mutex_unlock(&g_nw_mutex);
+        return -1;
+    }
 
     /* Reconfigure buffer geometry when the resolution changes
      * (e.g. GB 160×144 → SGB 256×224). */
@@ -1980,7 +1992,10 @@ static int blit_to_native_window(void) {
     }
 
     ANativeWindow_Buffer buf;
-    if (ANativeWindow_lock(win, &buf, NULL) != 0) return -1;
+    if (ANativeWindow_lock(win, &buf, NULL) != 0) {
+        pthread_mutex_unlock(&g_nw_mutex);
+        return -1;
+    }
 
     uint32_t* dst = (uint32_t*)buf.bits;
     uint32_t* src = g_video_buffer;
@@ -1997,6 +2012,7 @@ static int blit_to_native_window(void) {
     }
 
     ANativeWindow_unlockAndPost(win);
+    pthread_mutex_unlock(&g_nw_mutex);
     return 0;
 }
 
@@ -2007,6 +2023,7 @@ Java_com_yourmateapps_retropal_YageTextureBridge_nativeSetSurface(
         JNIEnv* env, jclass clazz, jobject surface) {
     (void)clazz;
 
+    pthread_mutex_lock(&g_nw_mutex);
     /* Release any previously attached window */
     if (g_native_window) {
         ANativeWindow_release(g_native_window);
@@ -2027,6 +2044,7 @@ Java_com_yourmateapps_retropal_YageTextureBridge_nativeSetSurface(
             LOGE("ANativeWindow_fromSurface returned NULL");
         }
     }
+    pthread_mutex_unlock(&g_nw_mutex);
 }
 
 JNIEXPORT void JNICALL
@@ -2034,12 +2052,18 @@ Java_com_yourmateapps_retropal_YageTextureBridge_nativeReleaseSurface(
         JNIEnv* env, jclass clazz) {
     (void)env; (void)clazz;
 
+    pthread_mutex_lock(&g_nw_mutex);
     if (g_native_window) {
-        ANativeWindow_release(g_native_window);
+        ANativeWindow* old = g_native_window;
         g_native_window = NULL;
         g_nw_configured_w = 0;
         g_nw_configured_h = 0;
+        pthread_mutex_unlock(&g_nw_mutex);
+        /* Release outside lock — safe: no blit can start (g_native_window is NULL) */
+        ANativeWindow_release(old);
         LOGI("ANativeWindow released");
+    } else {
+        pthread_mutex_unlock(&g_nw_mutex);
     }
 }
 

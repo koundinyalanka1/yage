@@ -64,7 +64,7 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
 
-            <!-- Open ROM files directly (.gba, .gb, .gbc, .zip) -->
+            <!-- Open ROM files directly (.gba, .gb, .gbc, .nes, .sfc, .smc, .zip) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -75,10 +75,16 @@
                 <data android:pathPattern=".*\\.gba"/>
                 <data android:pathPattern=".*\\.gb"/>
                 <data android:pathPattern=".*\\.gbc"/>
+                <data android:pathPattern=".*\\.nes"/>
+                <data android:pathPattern=".*\\.sfc"/>
+                <data android:pathPattern=".*\\.smc"/>
                 <data android:pathPattern=".*\\.zip"/>
                 <data android:pathPattern=".*\\.GBA"/>
                 <data android:pathPattern=".*\\.GB"/>
                 <data android:pathPattern=".*\\.GBC"/>
+                <data android:pathPattern=".*\\.NES"/>
+                <data android:pathPattern=".*\\.SFC"/>
+                <data android:pathPattern=".*\\.SMC"/>
                 <data android:pathPattern=".*\\.ZIP"/>
             </intent-filter>
             <!-- Fallback for file managers that use host/path matching -->
@@ -90,6 +96,9 @@
                 <data android:pathPattern=".*\\.gba"/>
                 <data android:pathPattern=".*\\.gb"/>
                 <data android:pathPattern=".*\\.gbc"/>
+                <data android:pathPattern=".*\\.nes"/>
+                <data android:pathPattern=".*\\.sfc"/>
+                <data android:pathPattern=".*\\.smc"/>
                 <data android:pathPattern=".*\\.zip"/>
             </intent-filter>
         </activity>
@@ -108,6 +117,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Game mode config for low-latency / controller support (Android 12+) -->
+        <meta-data
+            android:name="android.app.game_mode_config"
+            android:resource="@xml/game_mode_config" />
     </application>
 
     <!-- Required for file picker on Android 11+ -->

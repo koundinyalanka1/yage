@@ -442,75 +442,88 @@ class RcheevosBindings {
   }
 
   /// Read a string from a native `Pointer<Utf8>`.
-  /// Returns null if the pointer is null (nullptr).
+  /// Returns null if the pointer is null (nullptr) or invalid.
   static String? _readNullableString(Pointer<Utf8> ptr) {
-    if (ptr == nullptr) return null;
-    return ptr.toDartString();
+    if (ptr == nullptr || ptr.address == 0) return null;
+    try {
+      return ptr.toDartString();
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Parse the raw event struct from the native event buffer.
   RcEvent? readEvent() {
-    if (_eventBuffer == null) return null;
+    if (_eventBuffer == null || _eventBuffer!.address == 0) return null;
 
-    final buf = _eventBuffer!.cast<Uint8>();
+    try {
+      final buf = _eventBuffer!.cast<Uint8>();
 
-    // Read fields according to struct layout
-    // uint32_t type (offset 0)
-    final type = buf.cast<Uint32>().value;
+      // Read fields according to struct layout
+      // uint32_t type (offset 0)
+      final type = buf.cast<Uint32>().value;
 
-    // uint32_t achievement_id (offset 4)
-    final achId = (buf + 4).cast<Uint32>().value;
+      // uint32_t achievement_id (offset 4)
+      final achId = (buf + 4).cast<Uint32>().value;
 
-    // uint32_t achievement_points (offset 8)
-    final achPoints = (buf + 8).cast<Uint32>().value;
+      // uint32_t achievement_points (offset 8)
+      final achPoints = (buf + 8).cast<Uint32>().value;
 
-    // char achievement_title[256] (offset 12)
-    final titlePtr = (buf + 12).cast<Utf8>();
-    final title = _readNullableString(titlePtr) ?? '';
+      // char achievement_title[256] (offset 12)
+      final titlePtr = (buf + 12).cast<Utf8>();
+      final title = _readNullableString(titlePtr) ?? '';
 
-    // char achievement_description[256] (offset 268)
-    final descPtr = (buf + 268).cast<Utf8>();
-    final desc = _readNullableString(descPtr) ?? '';
+      // char achievement_description[256] (offset 268)
+      final descPtr = (buf + 268).cast<Utf8>();
+      final desc = _readNullableString(descPtr) ?? '';
 
-    // char achievement_badge_url[512] (offset 524)
-    final badgePtr = (buf + 524).cast<Utf8>();
-    final badge = _readNullableString(badgePtr) ?? '';
+      // char achievement_badge_url[512] (offset 524)
+      final badgePtr = (buf + 524).cast<Utf8>();
+      final badge = _readNullableString(badgePtr) ?? '';
 
-    // float achievement_rarity (offset 1036)
-    final rarity = (buf + 1036).cast<Float>().value;
+      // float achievement_rarity (offset 1036)
+      final rarity = (buf + 1036).cast<Float>().value;
 
-    // float achievement_rarity_hardcore (offset 1040)
-    final rarityHc = (buf + 1040).cast<Float>().value;
+      // float achievement_rarity_hardcore (offset 1040)
+      final rarityHc = (buf + 1040).cast<Float>().value;
 
-    // uint8_t achievement_type (offset 1044)
-    final achType = (buf + 1044).value;
+      // uint8_t achievement_type (offset 1044)
+      final achType = (buf + 1044).value;
 
-    // char error_message[512] (offset 1045)
-    final errMsgPtr = (buf + 1045).cast<Utf8>();
-    final errMsg = _readNullableString(errMsgPtr) ?? '';
+      // char error_message[512] (offset 1045)
+      final errMsgPtr = (buf + 1045).cast<Utf8>();
+      final errMsg = _readNullableString(errMsgPtr) ?? '';
 
-    // int error_code (offset 1560, 4-byte aligned)
-    final errCode = (buf + 1560).cast<Int32>().value;
+      // int error_code (offset 1560, 4-byte aligned)
+      final errCode = (buf + 1560).cast<Int32>().value;
 
-    return RcEvent(
-      type: type,
-      achievementId: achId,
-      achievementPoints: achPoints,
-      achievementTitle: title,
-      achievementDescription: desc,
-      achievementBadgeUrl: badge,
-      achievementRarity: rarity,
-      achievementRarityHardcore: rarityHc,
-      achievementType: achType,
-      errorMessage: errMsg,
-      errorCode: errCode,
-    );
+      return RcEvent(
+        type: type,
+        achievementId: achId,
+        achievementPoints: achPoints,
+        achievementTitle: title,
+        achievementDescription: desc,
+        achievementBadgeUrl: badge,
+        achievementRarity: rarity,
+        achievementRarityHardcore: rarityHc,
+        achievementType: achType,
+        errorMessage: errMsg,
+        errorCode: errCode,
+      );
+    } catch (e) {
+      debugPrint('RcheevosBindings.readEvent: FFI error — $e');
+      return null;
+    }
   }
 
   /// Free the event buffer. Call on dispose.
   void dispose() {
     if (_eventBuffer != null) {
-      calloc.free(_eventBuffer!);
+      try {
+        calloc.free(_eventBuffer!);
+      } catch (e) {
+        debugPrint('RcheevosBindings.dispose: free failed — $e');
+      }
       _eventBuffer = null;
     }
   }

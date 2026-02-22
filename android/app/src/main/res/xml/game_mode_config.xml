@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Game Mode disabled — it clears memory and blocks notifications,
-     which interferes with the emulator's native core and RA unlock alerts. -->
-<game-mode-config 
+     which interferes with the emulator's native core and RA unlock alerts.
+     Controller support is declared via android.hardware.gamepad in manifest. -->
+<game-mode-config
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:supportsBatteryGameMode="false"
     android:supportsPerformanceGameMode="false"

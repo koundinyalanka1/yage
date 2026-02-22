@@ -62,6 +62,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   /// navigating away (settings, game screen) and coming back.
   int _lastFocusedGameIndex = 0;
 
+  /// Tab index when the last game card was focused. Restore only when
+  /// we're on the same tab (All=0, Recent=1, Favorites=2).
+  int _lastFocusedTabIndex = 0;
+
   /// Whether we should restore focus to [_lastFocusedGameIndex] on the
   /// next build (set to true after returning from a pushed route).
   bool _shouldRestoreFocus = false;
@@ -392,10 +396,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     } catch (_) {
       paths = null;
     }
+    if (!mounted) return;
 
     // On TV, fall back to built-in browser if system picker returned nothing
-    if ((paths == null || paths.isEmpty) && TvDetector.isTV && mounted) {
+    if ((paths == null || paths.isEmpty) && TvDetector.isTV) {
       paths = await TvFileBrowser.pickFiles(context);
+      if (!mounted) return;
       // TV file browser returns direct filesystem paths — extension is reliable
       if (paths != null) {
         for (final p in paths) {
@@ -432,6 +438,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       );
 
       for (final path in paths) {
+        if (!mounted) break;
         if (zipPaths.contains(path)) {
           // Extract ROM files from ZIP and import each one
           final games = await library.importRomZip(path);
@@ -443,7 +450,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
 
       // Dismiss loading dialog
-      if (navigator.mounted) navigator.pop();
+      if (mounted && navigator.mounted) navigator.pop();
 
       if (addedGames.isNotEmpty && mounted) {
         _tabController.animateTo(0);
@@ -480,10 +487,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     } catch (_) {
       importedPaths = null;
     }
+    if (!mounted) return;
 
     // On TV, fall back to built-in folder browser if SAF unavailable
     if (importedPaths == null && TvDetector.isTV && mounted) {
       final dirPath = await TvFileBrowser.pickDirectory(context);
+      if (!mounted) return;
       if (dirPath != null) {
         await library.addRomDirectory(dirPath);
         if (mounted) _tabController.animateTo(0);
@@ -519,12 +528,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
       final addedGames = <GameRom>[];
       for (final path in importedPaths) {
+        if (!mounted) break;
         final game = await library.addRom(path);
         if (game != null) addedGames.add(game);
       }
 
       // Dismiss loading dialog
-      if (navigator.mounted) navigator.pop();
+      if (mounted && navigator.mounted) navigator.pop();
 
       if (addedGames.isNotEmpty && mounted) {
         _tabController.animateTo(0);
@@ -546,7 +556,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           );
       }
+    } else if (importedPaths != null && importedPaths!.isEmpty && mounted) {
+      // User selected folder via SAF but it was empty
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('No ROM files found in selected folder'),
+            duration: Duration(seconds: 2),
+          ),
+        );
     }
+    // When importedPaths == null: user cancelled SAF picker — no message
   }
 
   /// Navigate to settings and restore game list focus on return.
@@ -676,31 +697,72 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(width: 12),
           
-          // Search bar - expanded
+          // Search bar - expanded (on TV in landscape: button opens dialog)
           Expanded(
-            child: SizedBox(
-              height: 40,
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search...',
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  prefixIcon: Icon(Icons.search, color: colors.textMuted, size: 20),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(Icons.clear, color: colors.textMuted, size: 18),
-                          onPressed: () {
-                            _searchDebounce?.cancel();
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
-                ),
-              ),
-            ),
+            child: TvDetector.isTV
+                ? TvFocusable(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _showTvSearchDialog(context),
+                    child: Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: colors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search, color: colors.textMuted, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _searchQuery.isEmpty ? 'Search...' : _searchQuery,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: _searchQuery.isEmpty ? colors.textMuted : colors.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: Icon(Icons.clear, color: colors.textMuted, size: 18),
+                              onPressed: () {
+                                _searchDebounce?.cancel();
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  )
+                : SizedBox(
+                    height: 40,
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: _onSearchChanged,
+                      keyboardType: TextInputType.text,
+                      textInputAction: TextInputAction.search,
+                      style: const TextStyle(fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: 'Search...',
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        prefixIcon: Icon(Icons.search, color: colors.textMuted, size: 20),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(Icons.clear, color: colors.textMuted, size: 18),
+                                onPressed: () {
+                                  _searchDebounce?.cancel();
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(width: 8),
           
@@ -876,27 +938,35 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ),
                 ),
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'RetroPal',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: colors.textPrimary,
-                        letterSpacing: 2,
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'RetroPal',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: colors.textPrimary,
+                          letterSpacing: 2,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                    ),
-                    Text(
-                      'Classic GB/GBC/GBA Games',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: colors.textMuted,
-                        letterSpacing: 0.5,
+                      Text(
+                        'Enjoy Classic Games',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: colors.textMuted,
+                          letterSpacing: 0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1004,11 +1074,63 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildSearchBar() {
     final colors = AppColorTheme.of(context);
+
+    // On TV: use a button that opens a full-screen search dialog.
+    // The dialog's TextField is more likely to trigger the on-screen keyboard
+    // than an inline field. Fallback for TVs where the platform keyboard
+    // doesn't appear in the main layout.
+    if (TvDetector.isTV) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: TvFocusable(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _showTvSearchDialog(context),
+          child: Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colors.surfaceLight, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.search, color: colors.textMuted, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _searchQuery.isEmpty ? 'Search games...' : _searchQuery,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _searchQuery.isEmpty ? colors.textMuted : colors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_searchQuery.isNotEmpty)
+                  IconButton(
+                    icon: Icon(Icons.clear, color: colors.textMuted, size: 20),
+                    onPressed: () {
+                      _searchDebounce?.cancel();
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(
         controller: _searchController,
         onChanged: _onSearchChanged,
+        keyboardType: TextInputType.text,
+        textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           hintText: 'Search games...',
           prefixIcon: Icon(Icons.search, color: colors.textMuted),
@@ -1025,6 +1147,61 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ),
     );
+  }
+
+  void _showTvSearchDialog(BuildContext context) {
+    final colors = AppColorTheme.of(context);
+    final controller = TextEditingController(text: _searchController.text);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent &&
+              (event.logicalKey == LogicalKeyboardKey.escape ||
+               event.logicalKey == LogicalKeyboardKey.goBack ||
+               event.logicalKey == LogicalKeyboardKey.gameButtonB ||
+               event.logicalKey == LogicalKeyboardKey.browserBack)) {
+            Navigator.of(ctx).pop();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: AlertDialog(
+          title: const Text('Search games'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Type to search...',
+              border: const OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => Navigator.of(ctx).pop(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Cancel', style: TextStyle(color: colors.textMuted)),
+            ),
+            FilledButton(
+              onPressed: () {
+                final query = controller.text;
+                _searchController.text = query;
+                _searchDebounce?.cancel();
+                setState(() => _searchQuery = query);
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Search'),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      controller.dispose();
+    });
   }
 
   Widget _buildPlatformFilter() {
@@ -1178,7 +1355,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final colors = AppColorTheme.of(context);
     return Consumer<GameLibraryService>(
       builder: (context, library, _) {
-        if (library.isLoading) {
+        // Only show full-screen spinner on initial load (empty library).
+        // During refresh, keep games visible with a subtle overlay.
+        if (library.isLoading && library.games.isEmpty) {
           return const Center(
             child: CircularProgressIndicator(),
           );
@@ -1196,23 +1375,63 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           return _buildEmptyState();
         }
 
-        return Column(
+        return Stack(
           children: [
-            if (_searchQuery.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '${games.length} result${games.length == 1 ? '' : 's'} for \'$_searchQuery\'',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colors.textMuted,
+            Column(
+              children: [
+                if (_searchQuery.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${games.length} result${games.length == 1 ? '' : 's'} for \'$_searchQuery\'',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.textMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+                Expanded(child: _buildGameList(games)),
+              ],
+            ),
+            if (library.isLoading)
+              Positioned(
+                top: 8,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Material(
+                    color: colors.surface.withAlpha(230),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Refreshing library…',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            Expanded(child: _buildGameList(games)),
           ],
         );
       },
@@ -1256,11 +1475,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   /// Determines which game card index should receive autofocus.
-  /// On TV: uses the last-focused index when restoring focus, otherwise
-  /// defaults to 0 on the initial build.
+  /// On TV: uses the last-focused index when restoring focus (only if
+  /// we're on the same tab), otherwise defaults to 0 on the initial build.
   bool _shouldAutofocusIndex(int index, int itemCount) {
     if (!TvDetector.isTV) return false;
-    if (_shouldRestoreFocus) {
+    if (_shouldRestoreFocus &&
+        _tabController.index == _lastFocusedTabIndex &&
+        itemCount > 0) {
       return index == _lastFocusedGameIndex.clamp(0, itemCount - 1);
     }
     return index == 0;
@@ -1276,51 +1497,49 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     if (_isGridView) {
-      // Adaptive column count: more columns on TV / large screens
-      return TvScrollAccelerator(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            int crossAxisCount = 2;
-            if (TvDetector.isTV || constraints.maxWidth > 900) {
-              crossAxisCount = 5;
-            } else if (constraints.maxWidth > 600) {
-              crossAxisCount = 3;
-            }
+      // 3 items per row; larger cache extent for 100+ games (smoother scrolling)
+      const crossAxisCount = 3;
+      final cacheExtent = games.length > 100 ? 600.0 : 400.0;
 
-            return GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
-                childAspectRatio: 0.65,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: games.length,
-              itemBuilder: (context, index) {
-                final game = games[index];
-                return TvFocusable(
-                  autofocus: _shouldAutofocusIndex(index, games.length),
-                  onTap: () => _launchGame(game),
-                  onLongPress: () => _showGameOptions(game),
-                  onFocusChanged: (focused) {
-                    if (focused) _lastFocusedGameIndex = index;
-                  },
-                  child: GameCard(
-                    game: game,
-                    onTap: () => _launchGame(game),
-                    onLongPress: () => _showGameOptions(game),
-                  ),
-                );
+      return TvScrollAccelerator(
+        child: GridView.builder(
+          padding: const EdgeInsets.all(16),
+          cacheExtent: cacheExtent,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 0.58,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: games.length,
+          itemBuilder: (context, index) {
+            final game = games[index];
+            return TvFocusable(
+              autofocus: _shouldAutofocusIndex(index, games.length),
+              onTap: () => _launchGame(game),
+              onLongPress: () => _showGameOptions(game),
+              onFocusChanged: (focused) {
+                if (focused) {
+                  _lastFocusedGameIndex = index;
+                  _lastFocusedTabIndex = _tabController.index;
+                }
               },
+              child: GameCard(
+                game: game,
+                onTap: () => _launchGame(game),
+                onLongPress: () => _showGameOptions(game),
+              ),
             );
           },
         ),
       );
     }
 
+    final listCacheExtent = games.length > 100 ? 600.0 : 400.0;
     return TvScrollAccelerator(
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
+        cacheExtent: listCacheExtent,
         itemCount: games.length,
         separatorBuilder: (context, index) => const SizedBox(height: 4),
         itemBuilder: (context, index) {
@@ -1331,7 +1550,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onTap: () => _launchGame(game),
             onLongPress: () => _showGameOptions(game),
             onFocusChanged: (focused) {
-              if (focused) _lastFocusedGameIndex = index;
+              if (focused) {
+                _lastFocusedGameIndex = index;
+                _lastFocusedTabIndex = _tabController.index;
+              }
             },
             child: GameListTile(
               game: game,
@@ -1437,6 +1659,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       type: FileType.image,
       allowMultiple: false,
     );
+    if (!mounted) return;
     
     if (result != null && result.files.isNotEmpty) {
       final path = result.files.first.path;

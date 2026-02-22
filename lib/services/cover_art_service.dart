@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/mgba_bindings.dart';
 import '../models/game_rom.dart';
+import '../utils/device_memory.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CoverArtService — fuzzy-matched cover art from LibRetro Thumbnails
@@ -47,6 +48,8 @@ class CoverArtService extends ChangeNotifier {
   };
 
   // ── In-memory game-name index (per system) ─────────────────────────
+  // LRU eviction: on low-RAM devices, cap cached platforms to avoid OOM.
+  // ~200 KB per platform; 5 platforms ≈ 1 MB. Cap at 2–3 on <2 GB RAM.
 
   /// system → list of thumbnail filenames (without .png)
   final Map<String, List<String>> _indexCache = {};
@@ -54,17 +57,47 @@ class CoverArtService extends ChangeNotifier {
   /// system → normalized versions for fast matching
   final Map<String, List<String>> _indexNormCache = {};
 
+  /// LRU order: most recently used last.
+  final List<String> _indexLruOrder = [];
+
+  int get _maxCachedPlatforms {
+    final mb = deviceMemoryMB;
+    if (mb == null || mb < 2048) return 2;  // <2 GB: 2 platforms (~400 KB)
+    if (mb < 4096) return 3;                // 2–4 GB: 3 platforms
+    return 5;                               // 4+ GB: all platforms
+  }
+
+  void _evictIndexIfNeeded(String system) {
+    if (_indexCache.length < _maxCachedPlatforms) return;
+    if (_indexCache.containsKey(system)) {
+      _indexLruOrder.remove(system);
+      _indexLruOrder.add(system);
+      return;
+    }
+    while (_indexCache.length >= _maxCachedPlatforms && _indexLruOrder.isNotEmpty) {
+      final evict = _indexLruOrder.removeAt(0);
+      _indexCache.remove(evict);
+      _indexNormCache.remove(evict);
+      debugPrint('CoverArt: evicted index for "$evict" (LRU)');
+    }
+  }
+
   // ── Cache directory ────────────────────────────────────────────────
 
   String? _cacheDir;
 
   Future<String> _getCoverCacheDir() async {
     if (_cacheDir != null) return _cacheDir!;
-    final appDir = await getApplicationSupportDirectory();
-    final dir = Directory(p.join(appDir.path, 'cover_art'));
-    if (!await dir.exists()) await dir.create(recursive: true);
-    _cacheDir = dir.path;
-    return _cacheDir!;
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      final dir = Directory(p.join(appDir.path, 'cover_art'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      _cacheDir = dir.path;
+      return _cacheDir!;
+    } catch (e) {
+      debugPrint('CoverArt: _getCoverCacheDir failed — $e');
+      rethrow;
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════════
@@ -152,14 +185,22 @@ class CoverArtService extends ChangeNotifier {
 
   /// Get the game-name index for a platform (memory → disk → network).
   Future<List<String>> _getIndex(String system) async {
+    _evictIndexIfNeeded(system);
+
     // 1. Memory cache
-    if (_indexCache.containsKey(system)) return _indexCache[system]!;
+    if (_indexCache.containsKey(system)) {
+      _indexLruOrder.remove(system);
+      _indexLruOrder.add(system);
+      return _indexCache[system]!;
+    }
 
     // 2. Disk cache
     final diskNames = await _readIndexFromDisk(system);
     if (diskNames != null && diskNames.isNotEmpty) {
+      _evictIndexIfNeeded(system);
       _indexCache[system] = diskNames;
       _indexNormCache[system] = diskNames.map(_normalize).toList();
+      _indexLruOrder.add(system);
       debugPrint('CoverArt: loaded ${diskNames.length} names from disk '
           'for "$system"');
       return diskNames;
@@ -169,8 +210,10 @@ class CoverArtService extends ChangeNotifier {
     debugPrint('CoverArt: fetching index for "$system" from LibRetro…');
     final names = await _fetchIndexFromNetwork(system);
     if (names.isNotEmpty) {
+      _evictIndexIfNeeded(system);
       _indexCache[system] = names;
       _indexNormCache[system] = names.map(_normalize).toList();
+      _indexLruOrder.add(system);
       _writeIndexToDisk(system, names); // fire-and-forget
       debugPrint('CoverArt: indexed ${names.length} games for "$system"');
     }
@@ -391,7 +434,12 @@ class CoverArtService extends ChangeNotifier {
 
       final dir = await _getCoverCacheDir();
       final localPath = p.join(dir, '$cacheKey.png');
-      await File(localPath).writeAsBytes(resp.bodyBytes);
+      try {
+        await File(localPath).writeAsBytes(resp.bodyBytes);
+      } catch (e) {
+        debugPrint('CoverArt: file write failed (disk full?): $e');
+        return null;
+      }
       debugPrint('CoverArt: saved → $localPath');
       return localPath;
     } catch (e) {
@@ -403,9 +451,13 @@ class CoverArtService extends ChangeNotifier {
   // ── Helpers ────────────────────────────────────────────────────────
 
   Future<String?> _getCachedCover(String cacheKey) async {
-    final dir = await _getCoverCacheDir();
-    final file = File(p.join(dir, '$cacheKey.png'));
-    if (await file.exists() && await file.length() > 200) return file.path;
+    try {
+      final dir = await _getCoverCacheDir();
+      final file = File(p.join(dir, '$cacheKey.png'));
+      if (await file.exists() && await file.length() > 200) return file.path;
+    } catch (e) {
+      debugPrint('CoverArt: _getCachedCover error: $e');
+    }
     return null;
   }
 

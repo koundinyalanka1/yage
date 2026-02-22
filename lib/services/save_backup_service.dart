@@ -444,6 +444,7 @@ class SaveBackupService {
     for (var i = 0; i < games.length; i++) {
       final game = games[i];
       final baseName = p.basenameWithoutExtension(game.path);
+      final romBase = p.basename(game.path);
       final romDir = p.dirname(game.path);
 
       // Directories to scan for this game's saves
@@ -456,10 +457,10 @@ class SaveBackupService {
         // SRAM
         _tryAddFile(files, dir, '$baseName.sav', baseName);
 
-        // Save states + thumbnails
+        // Save states + thumbnails — use full basename to match native
         for (int slot = 0; slot < 6; slot++) {
-          _tryAddFile(files, dir, '$baseName.ss$slot', baseName);
-          _tryAddFile(files, dir, '$baseName.ss$slot.png', baseName);
+          _tryAddFile(files, dir, '$romBase.ss$slot', baseName);
+          _tryAddFile(files, dir, '$romBase.ss$slot.png', baseName);
         }
 
         // Timestamped screenshots

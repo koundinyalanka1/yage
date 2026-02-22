@@ -12,7 +12,9 @@ import 'providers/app_providers.dart';
 import 'screens/splash_screen.dart';
 import 'services/game_database.dart';
 import 'services/settings_service.dart';
+import 'utils/device_memory.dart';
 import 'utils/theme.dart';
+import 'utils/tv_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,8 +55,12 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  // Everything else (TV detection, notifications, provider init)
-  // happens inside the SplashScreen so the user sees branding immediately.
+  // Initialize TV detection before any widget reads TvDetector.isTV.
+  await TvDetector.initialize();
+
+  // Cache device memory for rewind buffer sizing (avoids OOM on low-RAM devices).
+  await initDeviceMemory();
+
   runApp(RetroPalApp(gameDatabase: gameDatabase));
 }
 

@@ -168,6 +168,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     Color accentColor = Colors.amber,
     Duration duration = const Duration(seconds: 4),
   }) {
+    if (!mounted) return;
     // Remove existing toast if any
     _raToastEntry?.remove();
     _raToastEntry = null;
@@ -343,7 +344,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _raServiceRef = null;
       _rcheevosEventSub?.cancel();
       _rcheevosEventSub = null;
-      _rcheevosClientRef = null;
       // Remove any lingering RA toast.  Wrapped in try-catch because the
       // overlay entry may have been removed already by its own animation.
       try { _raToastEntry?.remove(); } catch (_) {}
@@ -361,6 +361,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // singleton stays in _initialized=true / _gameLoaded=false limbo
       // and the next session never loads the game → no achievement events.
       _rcheevosClientRef?.shutdown();
+      _rcheevosClientRef = null;
 
       _emulatorRef = null;
       _linkCableRef = null;
@@ -1648,6 +1649,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     } else {
       await settingsService.setGamepadLayoutPortrait(_tempLayout!);
     }
+    if (!mounted) return;
     
     setState(() {
       _editingLayout = false;

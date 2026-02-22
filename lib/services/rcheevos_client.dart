@@ -101,6 +101,16 @@ class RcheevosClient extends ChangeNotifier {
 
   RcheevosClient(this._bindings);
 
+  /// Safely read a Utf8 pointer to Dart string. Returns null if invalid.
+  static String? _safeUtf8ToString(Pointer<Utf8>? ptr) {
+    if (ptr == nullptr || ptr.address == 0) return null;
+    try {
+      return ptr.toDartString();
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   //  Lifecycle
   // ═══════════════════════════════════════════════════════════════════
@@ -114,10 +124,19 @@ class RcheevosClient extends ChangeNotifier {
       debugPrint('RcheevosClient: bindings not loaded');
       return false;
     }
+    if (yageCorePtr == nullptr || yageCorePtr.address == 0) {
+      debugPrint('RcheevosClient: invalid yageCore pointer');
+      return false;
+    }
 
-    final result = _bindings.rcInit!(yageCorePtr);
-    if (result != 0) {
-      debugPrint('RcheevosClient: rc_init failed ($result)');
+    try {
+      final result = _bindings.rcInit!(yageCorePtr);
+      if (result != 0) {
+        debugPrint('RcheevosClient: rc_init failed ($result)');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('RcheevosClient: rc_init FFI error — $e');
       return false;
     }
 
@@ -136,7 +155,11 @@ class RcheevosClient extends ChangeNotifier {
     _stopPolling();
 
     if (_initialized && _bindings.isLoaded) {
-      _bindings.rcDestroy!();
+      try {
+        _bindings.rcDestroy!();
+      } catch (e) {
+        debugPrint('RcheevosClient: rc_destroy FFI error — $e');
+      }
     }
 
     _initialized = false;
@@ -379,18 +402,17 @@ class RcheevosClient extends ChangeNotifier {
     if (requestId == 0) return false;
 
     try {
-      // Get request details
+      // Get request details (FFI pointer reads — wrap for safety)
       final urlPtr = _bindings.rcGetRequestUrl!(requestId);
-      if (urlPtr == nullptr) return false;
-      final url = urlPtr.toDartString();
+      if (urlPtr == nullptr || urlPtr.address == 0) return false;
+      final url = _safeUtf8ToString(urlPtr);
+      if (url == null) return false;
 
       final postDataPtr = _bindings.rcGetRequestPostData!(requestId);
-      final postData =
-          postDataPtr != nullptr ? postDataPtr.toDartString() : null;
+      final postData = _safeUtf8ToString(postDataPtr);
 
       final contentTypePtr = _bindings.rcGetRequestContentType!(requestId);
-      final contentType =
-          contentTypePtr != nullptr ? contentTypePtr.toDartString() : null;
+      final contentType = _safeUtf8ToString(contentTypePtr);
 
       // Build user-agent
       final rcClause = getUserAgentClause() ?? '';
@@ -443,16 +465,21 @@ class RcheevosClient extends ChangeNotifier {
       int requestId, String? body, int bodyLength, int httpStatus) {
     if (!_initialized) return;
 
-    if (body != null && body.isNotEmpty) {
-      final bodyPtr = body.toNativeUtf8();
-      try {
+    try {
+      if (body != null && body.isNotEmpty) {
+        final bodyPtr = body.toNativeUtf8();
+        try {
+          _bindings.rcSubmitResponse!(
+              requestId, bodyPtr, body.length, httpStatus);
+        } finally {
+          calloc.free(bodyPtr);
+        }
+      } else {
         _bindings.rcSubmitResponse!(
-            requestId, bodyPtr, body.length, httpStatus);
-      } finally {
-        calloc.free(bodyPtr);
+            requestId, nullptr.cast<Utf8>(), 0, httpStatus);
       }
-    } else {
-      _bindings.rcSubmitResponse!(requestId, nullptr.cast<Utf8>(), 0, httpStatus);
+    } catch (e) {
+      debugPrint('RcheevosClient: rc_submit_response FFI error — $e');
     }
   }
 
@@ -466,30 +493,35 @@ class RcheevosClient extends ChangeNotifier {
     if (!_initialized) return false;
 
     bool didWork = false;
-    while (_bindings.rcHasPendingEvent!() != 0) {
-      // Read event into buffer
-      final result =
-          _bindings.rcGetPendingEvent!(_bindings.eventBuffer!);
-      if (result == 0) break;
+    try {
+      while (_bindings.rcHasPendingEvent!() != 0) {
+        // Read event into buffer
+        final buf = _bindings.eventBuffer;
+        if (buf == null) break;
+        final result = _bindings.rcGetPendingEvent!(buf);
+        if (result == 0) break;
 
-      // Parse the event
-      final event = _bindings.readEvent();
-      if (event == null) {
+        // Parse the event
+        final event = _bindings.readEvent();
+        if (event == null) {
+          _bindings.rcConsumeEvent!();
+          continue;
+        }
+
+        debugPrint('RcheevosClient event: $event');
+
+        // Handle state changes
+        _handleEvent(event);
+
+        // Emit to stream
+        _eventController.add(event);
+
+        // Consume the event
         _bindings.rcConsumeEvent!();
-        continue;
+        didWork = true;
       }
-
-      debugPrint('RcheevosClient event: $event');
-
-      // Handle state changes
-      _handleEvent(event);
-
-      // Emit to stream
-      _eventController.add(event);
-
-      // Consume the event
-      _bindings.rcConsumeEvent!();
-      didWork = true;
+    } catch (e) {
+      debugPrint('RcheevosClient: _drainEvents FFI error — $e');
     }
     return didWork;
   }
@@ -551,18 +583,24 @@ class RcheevosClient extends ChangeNotifier {
   void _updateGameInfo() {
     if (!_initialized) return;
 
-    final titlePtr = _bindings.rcGetGameTitle!();
-    _gameTitle =
-        titlePtr != nullptr ? titlePtr.toDartString() : null;
+    try {
+      final titlePtr = _bindings.rcGetGameTitle!();
+      _gameTitle = (titlePtr != nullptr && titlePtr.address != 0)
+          ? titlePtr.toDartString()
+          : null;
 
-    _gameId = _bindings.rcGetGameId!();
+      _gameId = _bindings.rcGetGameId!();
 
-    final badgePtr = _bindings.rcGetGameBadgeUrl!();
-    _gameBadgeUrl =
-        badgePtr != nullptr ? badgePtr.toDartString() : null;
+      final badgePtr = _bindings.rcGetGameBadgeUrl!();
+      _gameBadgeUrl = (badgePtr != nullptr && badgePtr.address != 0)
+          ? badgePtr.toDartString()
+          : null;
 
-    debugPrint('RcheevosClient: Game info updated — '
-        'title="$_gameTitle", id=$_gameId');
+      debugPrint('RcheevosClient: Game info updated — '
+          'title="$_gameTitle", id=$_gameId');
+    } catch (e) {
+      debugPrint('RcheevosClient: _updateGameInfo FFI error — $e');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════

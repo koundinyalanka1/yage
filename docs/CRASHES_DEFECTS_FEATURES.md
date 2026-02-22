@@ -18,16 +18,19 @@ A detailed reference for debugging, optimization, and feature planning. Use each
 ### 1.2 Provider / Context in dispose
 **Prompt:** "Audit all dispose() methods: ensure we never call context.read, Navigator, or any Provider lookup in dispose. Replace with early-captured references."
 
-- **game_screen.dart**: Uses saved refs (`_emulatorRef`, etc.) — good. Verify no late context.read in dispose paths.
+- **game_screen.dart**: Uses saved refs (`_emulatorRef`, `_linkCableRef`, etc.) — no context/Provider in dispose. Fixed: `_rcheevosClientRef?.shutdown()` now called before nulling ref.
 - **home_screen.dart**: dispose cancels timers and disposes controllers — no context use.
+- **settings_screen.dart**, **splash_screen.dart**, **achievements_screen.dart**, **tv_focusable.dart**, **game_display.dart**: dispose only disposes controllers/nodes — no context use.
+- **tv_file_browser.dart**: No dispose override.
 - Risk: Any widget that calls `context.read<T>()` or `Provider.of` inside dispose will throw.
 
 ### 1.3 Native / FFI Crashes
 **Prompt:** "Add null checks and try-catch around all FFI/native calls in mgba_bindings.dart and rcheevos_bindings.dart. Handle symbol lookup failures and invalid pointers gracefully."
 
-- **mgba_bindings.dart**: `coreCreate`, `coreInit`, `loadROM`, `setKeys`, etc. — null core or failed init can cause native crash.
-- **rcheevos_bindings.dart**: `rc_client`, memory reads — invalid pointers can crash.
-- **game_display.dart**: MethodChannel `createGameTexture` / `destroyGameTexture` — platform exceptions can propagate.
+- **mgba_bindings.dart**: Wrapped `initialize`, `loadROM`, `runFrame`, `setKeys`, `getVideoBuffer`, `getAudioBuffer`, `getDisplayBuffer`, `_updateDimensions`, `setCoreLibrary`, `dispose` in try-catch. Null checks for `core == nullptr`, `buffer.address == 0`.
+- **rcheevos_bindings.dart**: `_readNullableString` and `readEvent` wrapped in try-catch; null checks for `ptr.address == 0`; `dispose` guards `calloc.free`.
+- **rcheevos_client.dart**: `initialize`, `shutdown`, `_submitNativeResponse`, `_drainEvents`, `_updateGameInfo` wrapped; `_safeUtf8ToString` for pointer reads; null checks for `yageCorePtr`.
+- **game_display.dart**: `createGameTexture` already had try-catch; added try-catch around `destroyGameTexture` in `_destroyTexture` and dispose path.
 
 ### 1.4 Texture / ANativeWindow Lifecycle
 **Prompt:** "Ensure GameDisplay and YageTextureBridge never access ANativeWindow or TextureRegistry after dispose. Add guards for disposed state and async texture creation."

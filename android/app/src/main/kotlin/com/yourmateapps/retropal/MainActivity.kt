@@ -1,5 +1,6 @@
 package com.yourmateapps.retropal
 
+import android.app.ActivityManager
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
@@ -47,6 +48,11 @@ class MainActivity : FlutterActivity() {
                         val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
                         val isTV = uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
                         result.success(isTV)
+                    }
+                    "getDeviceMemoryMB" -> {
+                        val memInfo = ActivityManager.MemoryInfo()
+                        (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memInfo)
+                        result.success((memInfo.totalMem / (1024 * 1024)).toInt())
                     }
                     "getOpenFilePath" -> {
                         val path = pendingFilePath

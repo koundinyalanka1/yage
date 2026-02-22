@@ -35,40 +35,51 @@ class GameDatabase {
 
   /// Open (or create) the database and run any pending migrations.
   /// If legacy SharedPreferences data exists it is migrated automatically.
+  /// Throws on disk full, permission denied, or corrupt SQLite.
   Future<void> open() async {
     if (_db != null) return;
 
-    final dbPath = p.join(await getDatabasesPath(), _dbName);
-    _db = await openDatabase(
-      dbPath,
-      version: _version,
-      onCreate: _onCreate,
-    );
+    try {
+      final dbPath = p.join(await getDatabasesPath(), _dbName);
+      _db = await openDatabase(
+        dbPath,
+        version: _version,
+        onCreate: _onCreate,
+      );
 
-    // One-time migration from SharedPreferences → SQLite.
-    await _migrateLegacyData();
+      // One-time migration from SharedPreferences → SQLite.
+      await _migrateLegacyData();
+    } catch (e) {
+      _db = null;
+      rethrow;
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE games (
-        path         TEXT PRIMARY KEY,
-        name         TEXT NOT NULL,
-        extension    TEXT NOT NULL,
-        platform     TEXT NOT NULL,
-        size_bytes   INTEGER NOT NULL,
-        last_played  TEXT,
-        cover_path   TEXT,
-        is_favorite  INTEGER NOT NULL DEFAULT 0,
-        total_play_time_seconds INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
+    try {
+      await db.execute('''
+        CREATE TABLE games (
+          path         TEXT PRIMARY KEY,
+          name         TEXT NOT NULL,
+          extension    TEXT NOT NULL,
+          platform     TEXT NOT NULL,
+          size_bytes   INTEGER NOT NULL,
+          last_played  TEXT,
+          cover_path   TEXT,
+          is_favorite  INTEGER NOT NULL DEFAULT 0,
+          total_play_time_seconds INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
 
-    await db.execute('''
-      CREATE TABLE rom_directories (
-        path TEXT PRIMARY KEY
-      )
-    ''');
+      await db.execute('''
+        CREATE TABLE rom_directories (
+          path TEXT PRIMARY KEY
+        )
+      ''');
+    } catch (e) {
+      debugPrint('GameDatabase: onCreate failed — $e');
+      rethrow;
+    }
   }
 
   // ──────────── Legacy migration ────────────
@@ -163,62 +174,114 @@ class GameDatabase {
   // ──────────── CRUD helpers ────────────
 
   /// Read all games from the database, ordered by name.
+  /// Returns empty list on SQLiteException, disk full, or corrupt DB.
   Future<List<GameRom>> getAllGames() async {
-    final rows = await db.query('games', orderBy: 'name COLLATE NOCASE ASC');
-    return rows.map(_rowToGameRom).toList();
+    try {
+      final rows = await db.query('games', orderBy: 'name COLLATE NOCASE ASC');
+      return rows.map(_rowToGameRom).toList();
+    } catch (e) {
+      debugPrint('GameDatabase: getAllGames failed — $e');
+      return [];
+    }
   }
 
   /// Insert or replace a single game.
-  Future<void> upsertGame(GameRom game) async {
-    await db.insert('games', _gameRomToRow(game),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+  Future<bool> upsertGame(GameRom game) async {
+    try {
+      await db.insert('games', _gameRomToRow(game),
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: upsertGame failed — $e');
+      return false;
+    }
   }
 
   /// Insert or replace many games in a single transaction.
-  Future<void> upsertGames(List<GameRom> games) async {
-    final batch = db.batch();
-    for (final game in games) {
-      batch.insert('games', _gameRomToRow(game),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+  Future<bool> upsertGames(List<GameRom> games) async {
+    try {
+      final batch = db.batch();
+      for (final game in games) {
+        batch.insert('games', _gameRomToRow(game),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: upsertGames failed — $e');
+      return false;
     }
-    await batch.commit(noResult: true);
   }
 
   /// Delete a game by path.
-  Future<void> deleteGame(String path) async {
-    await db.delete('games', where: 'path = ?', whereArgs: [path]);
+  Future<bool> deleteGame(String path) async {
+    try {
+      await db.delete('games', where: 'path = ?', whereArgs: [path]);
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: deleteGame failed — $e');
+      return false;
+    }
   }
 
   /// Delete all games whose path starts with [prefix].
-  Future<void> deleteGamesWithPrefix(String prefix) async {
-    // Use the LIKE operator with the prefix escaped for safety.
-    final escaped = prefix.replaceAll('%', r'\%').replaceAll('_', r'\_');
-    await db.delete(
-      'games',
-      where: "path LIKE ? ESCAPE '\\'",
-      whereArgs: ['$escaped%'],
-    );
+  Future<bool> deleteGamesWithPrefix(String prefix) async {
+    try {
+      final escaped = prefix.replaceAll('%', r'\%').replaceAll('_', r'\_');
+      await db.delete(
+        'games',
+        where: "path LIKE ? ESCAPE '\\'",
+        whereArgs: ['$escaped%'],
+      );
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: deleteGamesWithPrefix failed — $e');
+      return false;
+    }
   }
 
   /// Update specific columns for a game identified by [path].
-  Future<void> updateGame(String path, Map<String, Object?> values) async {
-    await db.update('games', values, where: 'path = ?', whereArgs: [path]);
+  Future<bool> updateGame(String path, Map<String, Object?> values) async {
+    try {
+      await db.update('games', values, where: 'path = ?', whereArgs: [path]);
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: updateGame failed — $e');
+      return false;
+    }
   }
 
   // ──────────── ROM directories ────────────
 
   Future<List<String>> getRomDirectories() async {
-    final rows = await db.query('rom_directories');
-    return rows.map((r) => r['path'] as String).toList();
+    try {
+      final rows = await db.query('rom_directories');
+      return rows.map((r) => r['path'] as String).toList();
+    } catch (e) {
+      debugPrint('GameDatabase: getRomDirectories failed — $e');
+      return [];
+    }
   }
 
-  Future<void> addRomDirectory(String path) async {
-    await db.insert('rom_directories', {'path': path},
-        conflictAlgorithm: ConflictAlgorithm.ignore);
+  Future<bool> addRomDirectory(String path) async {
+    try {
+      await db.insert('rom_directories', {'path': path},
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: addRomDirectory failed — $e');
+      return false;
+    }
   }
 
-  Future<void> removeRomDirectory(String path) async {
-    await db.delete('rom_directories', where: 'path = ?', whereArgs: [path]);
+  Future<bool> removeRomDirectory(String path) async {
+    try {
+      await db.delete('rom_directories', where: 'path = ?', whereArgs: [path]);
+      return true;
+    } catch (e) {
+      debugPrint('GameDatabase: removeRomDirectory failed — $e');
+      return false;
+    }
   }
 
   // ──────────── Row ↔ GameRom conversion ────────────
@@ -263,7 +326,12 @@ class GameDatabase {
   // ──────────── Lifecycle ────────────
 
   Future<void> close() async {
-    await _db?.close();
-    _db = null;
+    try {
+      await _db?.close();
+    } catch (e) {
+      debugPrint('GameDatabase: close failed — $e');
+    } finally {
+      _db = null;
+    }
   }
 }

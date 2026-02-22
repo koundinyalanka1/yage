@@ -19,7 +19,7 @@ import '../widgets/tv_focusable.dart';
 import 'ra_login_screen.dart';
 
 /// Settings screen — organized into 5 focused tabs for quick D-pad / touch
-/// navigation: Display, Audio, Controls, Data, Achievements.
+/// navigation: Display, Audio, Controls, Trophies, Data.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -137,11 +137,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icon(Icons.sports_esports, size: 20),
                         text: 'Controls'),
                     Tab(
-                        icon: Icon(Icons.folder_copy, size: 20),
-                        text: 'Data'),
-                    Tab(
                         icon: Icon(Icons.emoji_events, size: 20),
                         text: 'Trophies'),
+                    Tab(
+                        icon: Icon(Icons.folder_copy, size: 20),
+                        text: 'Data'),
                   ],
                 ),
               ),
@@ -163,9 +163,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                             context, settings, settingsService, colors),
                         _buildControlsTab(
                             context, settings, settingsService, colors),
-                        _buildDataTab(
-                            context, settings, settingsService, colors),
                         _buildAchievementsTab(
+                            context, settings, settingsService, colors),
+                        _buildDataTab(
                             context, settings, settingsService, colors),
                       ],
                     );
@@ -413,7 +413,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  Tab 4 — Data (Library + Backup + About)
+  //  Tab 5 — Data (Library + Backup + About)
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildDataTab(
@@ -489,13 +489,22 @@ class _SettingsScreenState extends State<SettingsScreen>
             _InfoTile(
               icon: Icons.info_outline,
               title: 'RetroPal',
-              subtitle: 'Classic GB/GBC/GBA Games\nVersion 0.1.0',
+              subtitle: 'Classic GB/GBC/GBA/NES/SNES Games\nVersion 0.1.0',
             ),
             const Divider(height: 1),
             _InfoTile(
               icon: Icons.memory,
-              title: 'Powered by mGBA',
-              subtitle: 'mGBA is licensed under the Mozilla Public License 2.0 (MPL-2.0).\n© endrift and contributors.\nhttps://mgba.io',
+              title: 'Emulator Cores',
+              subtitle: 'This app uses the following emulator cores:\n\n'
+                  '• mGBA (GB/GBC/GBA)\n'
+                  '  Mozilla Public License 2.0 (MPL-2.0)\n'
+                  '  © endrift and contributors — https://mgba.io\n\n'
+                  '• FCEUmm (NES)\n'
+                  '  GNU General Public License v2 (GPL-2.0)\n'
+                  '  © libretro and FCEUmm contributors\n\n'
+                  '• Snes9x 2010 (SNES)\n'
+                  '  Non-commercial license\n'
+                  '  © Snes9x Team — https://www.snes9x.com',
             ),
             const Divider(height: 1),
             _ActionTile(
@@ -525,7 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  Tab 5 — Achievements
+  //  Tab 4 — Trophies (RetroAchievements)
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildAchievementsTab(
@@ -724,9 +733,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                             onTap: () async {
                               final result =
                                   await FilePicker.platform.getDirectoryPath();
+                              if (!context.mounted) return;
                               if (result != null) {
                                 await library.addRomDirectory(result);
-                                setState(() {});
+                                if (context.mounted) setState(() {});
                               }
                             },
                             borderRadius: BorderRadius.circular(8),
@@ -734,9 +744,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                               onPressed: () async {
                                 final result = await FilePicker.platform
                                     .getDirectoryPath();
+                                if (!context.mounted) return;
                                 if (result != null) {
                                   await library.addRomDirectory(result);
-                                  setState(() {});
+                                  if (context.mounted) setState(() {});
                                 }
                               },
                               icon: const Icon(Icons.add),
@@ -1827,7 +1838,7 @@ class _RetroAchievementsTile extends StatelessWidget {
                       ],
                     ),
                   );
-                  if (confirm == true) {
+                  if (confirm == true && context.mounted) {
                     raService.logout();
                   }
                 },
@@ -2693,6 +2704,7 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
 
     try {
       final zipPath = await SaveBackupService.downloadFromDrive(backup.id!);
+      if (!mounted) return;
       if (zipPath == null) {
         if (mounted) {
           setState(() {

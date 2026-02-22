@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -7,6 +8,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/theme.dart';
 import 'tv_focusable.dart';
+
+/// Count non-hidden items in a directory. Runs in isolate to avoid blocking UI.
+int _countDirItemsIsolate(String dirPath) {
+  try {
+    return Directory(dirPath)
+        .listSync()
+        .where((e) => !p.basename(e.path).startsWith('.'))
+        .length;
+  } catch (_) {
+    return 0;
+  }
+}
 
 const _deviceChannel = MethodChannel('com.yourmateapps.retropal/device');
 
@@ -70,6 +83,10 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   bool _permissionDenied = false;
   final _listKey = GlobalKey();
 
+  /// Cached dir item counts (path → count). Populated via compute to avoid
+  /// blocking UI with listSync on large directories.
+  final Map<String, int> _dirCountCache = {};
+
   // Common Android storage roots to start from
   static const _storageRoots = [
     '/storage/emulated/0',
@@ -123,6 +140,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
 
     // Restore the last browsed directory if it still exists
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     final lastDir = prefs.getString(_lastDirKey);
     if (lastDir != null && Directory(lastDir).existsSync()) {
       _currentDir = Directory(lastDir);
@@ -151,6 +169,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     setState(() {
       _loading = true;
       _error = null;
+      _dirCountCache.clear();
     });
 
     try {
@@ -180,11 +199,31 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
             .compareTo(p.basename(b.path).toLowerCase());
       });
 
-      if (!mounted) return;
-      setState(() {
-        _entries = entities;
-        _loading = false;
-      });
+      // Compute dir item counts in background isolate to avoid ANR on
+      // directories with thousands of files.
+      final dirs = entities.whereType<Directory>().toList();
+      if (dirs.isNotEmpty) {
+        final counts = await Future.wait(
+          dirs.map((d) => compute(_countDirItemsIsolate, d.path)),
+        );
+        if (!mounted) return;
+        final cache = <String, int>{};
+        for (var i = 0; i < dirs.length; i++) {
+          cache[dirs[i].path] = counts[i];
+        }
+        if (!mounted) return;
+        setState(() {
+          _entries = entities;
+          _dirCountCache.addAll(cache);
+          _loading = false;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _entries = entities;
+          _loading = false;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -298,14 +337,12 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   int get _dirCount => _entries.whereType<Directory>().length;
 
   /// Counts immediate children inside [dir] (non-hidden).
+  /// Uses pre-computed cache from _loadDirectory (via compute) to avoid
+  /// blocking UI with listSync on large directories.
   String _dirItemCount(Directory dir) {
-    try {
-      final count =
-          dir.listSync().where((e) => !p.basename(e.path).startsWith('.')).length;
-      return '$count item${count == 1 ? '' : 's'}';
-    } catch (_) {
-      return '';
-    }
+    final count = _dirCountCache[dir.path];
+    if (count == null) return '';
+    return '$count item${count == 1 ? '' : 's'}';
   }
 
   List<_BreadcrumbSegment> get _breadcrumbs {

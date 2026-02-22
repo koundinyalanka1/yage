@@ -53,34 +53,51 @@ class GameLibraryService extends ChangeNotifier {
   /// Returns the path to the app-internal ROMs directory, creating it if needed.
   Future<String> getInternalRomsDir() async {
     if (_internalRomsDir != null) return _internalRomsDir!;
-    final appDir = await getApplicationSupportDirectory();
-    final romsDir = Directory(p.join(appDir.path, 'roms'));
-    if (!romsDir.existsSync()) romsDir.createSync(recursive: true);
-    _internalRomsDir = romsDir.path;
-    return _internalRomsDir!;
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      final romsDir = Directory(p.join(appDir.path, 'roms'));
+      if (!await romsDir.exists()) {
+        await romsDir.create(recursive: true);
+      }
+      _internalRomsDir = romsDir.path;
+      return _internalRomsDir!;
+    } catch (e) {
+      debugPrint('GameLibraryService: getInternalRomsDir failed — $e');
+      rethrow;
+    }
   }
 
   // ──────────── Initialize ────────────
 
   /// Load the game library from SQLite.
+  /// Uses async file.exists() instead of existsSync() to avoid ANR on
+  /// large libraries or slow storage.
   Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // Load games from the database, filtering out deleted files.
       final allGames = await _database.getAllGames();
-      _games = allGames.where((game) => File(game.path).existsSync()).toList();
+      final existing = <GameRom>[];
+      final stalePaths = <String>[];
 
-      // Remove stale entries (files that no longer exist) from the database.
-      final stale = allGames.length - _games.length;
-      if (stale > 0) {
-        final stalePaths = allGames
-            .where((g) => !File(g.path).existsSync())
-            .map((g) => g.path);
-        for (final path in stalePaths) {
-          await _database.deleteGame(path);
+      for (final game in allGames) {
+        try {
+          if (await File(game.path).exists()) {
+            existing.add(game);
+          } else {
+            stalePaths.add(game.path);
+          }
+        } catch (_) {
+          // Permission denied, I/O error — treat as stale
+          stalePaths.add(game.path);
         }
+      }
+
+      _games = existing;
+
+      for (final path in stalePaths) {
+        await _database.deleteGame(path);
       }
 
       _romDirectories = await _database.getRomDirectories();
@@ -151,7 +168,7 @@ class GameLibraryService extends ChangeNotifier {
         final destPath = p.join(romsDir, fileName);
 
         // Skip if a ROM with the same name already exists on disk
-        if (File(destPath).existsSync()) {
+        if (await File(destPath).exists()) {
           // Still try to register it in case it's not in the library yet
           final game = await addRom(destPath);
           if (game != null) addedGames.add(game);
@@ -175,7 +192,7 @@ class GameLibraryService extends ChangeNotifier {
     // by a VIEW intent), delete it after extraction to save space.
     try {
       final zipFile = File(zipPath);
-      if (zipFile.existsSync() && p.dirname(zipPath) == romsDir) {
+      if (await zipFile.exists() && p.dirname(zipPath) == romsDir) {
         await zipFile.delete();
       }
     } catch (_) {}
@@ -194,7 +211,10 @@ class GameLibraryService extends ChangeNotifier {
     if (_games.any((g) => g.path == path)) return null;
 
     _games.add(game);
-    await _database.upsertGame(game);
+    if (!await _database.upsertGame(game)) {
+      _games.removeLast();
+      return null;
+    }
     notifyListeners();
     return game;
   }
@@ -203,8 +223,8 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> addRomDirectory(String path) async {
     if (_romDirectories.contains(path)) return;
 
+    if (!await _database.addRomDirectory(path)) return;
     _romDirectories.add(path);
-    await _database.addRomDirectory(path);
     await scanDirectory(path);
   }
 
@@ -215,14 +235,14 @@ class GameLibraryService extends ChangeNotifier {
 
     try {
       final dir = Directory(path);
-      if (!dir.existsSync()) {
+      if (!await dir.exists()) {
         _error = 'Directory does not exist: $path';
         _isLoading = false;
         notifyListeners();
         return;
       }
 
-      final entities = dir.listSync(recursive: true);
+      final entities = await dir.list(recursive: true).toList();
       final newGames = <GameRom>[];
 
       for (final entity in entities) {
@@ -239,7 +259,11 @@ class GameLibraryService extends ChangeNotifier {
       }
 
       if (newGames.isNotEmpty) {
-        await _database.upsertGames(newGames);
+        try {
+          await _database.upsertGames(newGames);
+        } catch (e) {
+          debugPrint('GameLibraryService: scanDirectory upsert failed — $e');
+        }
       }
 
       _isLoading = false;
@@ -255,7 +279,11 @@ class GameLibraryService extends ChangeNotifier {
   /// Remove a ROM from library
   Future<void> removeRom(GameRom game) async {
     _games.removeWhere((g) => g.path == game.path);
-    await _database.deleteGame(game.path);
+    try {
+      await _database.deleteGame(game.path);
+    } catch (e) {
+      debugPrint('GameLibraryService: removeRom delete failed — $e');
+    }
     notifyListeners();
   }
 
@@ -263,11 +291,13 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> removeRomDirectory(String path) async {
     _romDirectories.remove(path);
     final prefix = path.endsWith(p.separator) ? path : '$path${p.separator}';
-    // Use both prefix match AND exact match to avoid false positives
-    // (e.g. "/roms" must not match "/roms2/game.gba").
     _games.removeWhere((g) => g.path.startsWith(prefix) || g.path == path);
-    await _database.removeRomDirectory(path);
-    await _database.deleteGamesWithPrefix(prefix);
+    try {
+      await _database.removeRomDirectory(path);
+      await _database.deleteGamesWithPrefix(prefix);
+    } catch (e) {
+      debugPrint('GameLibraryService: removeRomDirectory failed — $e');
+    }
     notifyListeners();
   }
 
@@ -276,9 +306,14 @@ class GameLibraryService extends ChangeNotifier {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
       _games[index] = _games[index].copyWith(isFavorite: !_games[index].isFavorite);
-      await _database.updateGame(game.path, {
-        'is_favorite': _games[index].isFavorite ? 1 : 0,
-      });
+      try {
+        await _database.updateGame(game.path, {
+          'is_favorite': _games[index].isFavorite ? 1 : 0,
+        });
+      } catch (e) {
+        _games[index] = _games[index].copyWith(isFavorite: !_games[index].isFavorite);
+        debugPrint('GameLibraryService: toggleFavorite failed — $e');
+      }
       notifyListeners();
     }
   }
@@ -289,9 +324,13 @@ class GameLibraryService extends ChangeNotifier {
     if (index != -1) {
       final now = DateTime.now();
       _games[index] = _games[index].copyWith(lastPlayed: now);
-      await _database.updateGame(game.path, {
-        'last_played': now.toIso8601String(),
-      });
+      try {
+        await _database.updateGame(game.path, {
+          'last_played': now.toIso8601String(),
+        });
+      } catch (e) {
+        debugPrint('GameLibraryService: updateLastPlayed failed — $e');
+      }
       notifyListeners();
     }
   }
@@ -303,9 +342,15 @@ class GameLibraryService extends ChangeNotifier {
     if (index != -1) {
       final newTotal = _games[index].totalPlayTimeSeconds + seconds;
       _games[index] = _games[index].copyWith(totalPlayTimeSeconds: newTotal);
-      await _database.updateGame(game.path, {
-        'total_play_time_seconds': newTotal,
-      });
+      try {
+        await _database.updateGame(game.path, {
+          'total_play_time_seconds': newTotal,
+        });
+      } catch (e) {
+        _games[index] = _games[index].copyWith(
+            totalPlayTimeSeconds: _games[index].totalPlayTimeSeconds - seconds);
+        debugPrint('GameLibraryService: addPlayTime failed — $e');
+      }
       notifyListeners();
     }
   }
@@ -314,8 +359,14 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> setCoverArt(GameRom game, String coverPath) async {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
+      final prev = _games[index].coverPath;
       _games[index] = _games[index].copyWith(coverPath: coverPath);
-      await _database.updateGame(game.path, {'cover_path': coverPath});
+      try {
+        await _database.updateGame(game.path, {'cover_path': coverPath});
+      } catch (e) {
+        _games[index] = _games[index].copyWith(coverPath: prev);
+        debugPrint('GameLibraryService: setCoverArt failed — $e');
+      }
       notifyListeners();
     }
   }
@@ -324,8 +375,14 @@ class GameLibraryService extends ChangeNotifier {
   Future<void> removeCoverArt(GameRom game) async {
     final index = _games.indexWhere((g) => g.path == game.path);
     if (index != -1) {
+      final prev = _games[index].coverPath;
       _games[index] = _games[index].copyWith(coverPath: null);
-      await _database.updateGame(game.path, {'cover_path': null});
+      try {
+        await _database.updateGame(game.path, {'cover_path': null});
+      } catch (e) {
+        _games[index] = _games[index].copyWith(coverPath: prev);
+        debugPrint('GameLibraryService: removeCoverArt failed — $e');
+      }
       notifyListeners();
     }
   }
@@ -351,9 +408,9 @@ class GameLibraryService extends ChangeNotifier {
     for (final dir in _romDirectories) {
       try {
         final dirObj = Directory(dir);
-        if (!dirObj.existsSync()) continue;
+        if (!await dirObj.exists()) continue;
 
-        final entities = dirObj.listSync(recursive: true);
+        final entities = await dirObj.list(recursive: true).toList();
         for (final entity in entities) {
           if (entity is File) {
             final ext = p.extension(entity.path).toLowerCase();
@@ -387,11 +444,14 @@ class GameLibraryService extends ChangeNotifier {
     }
 
     // Atomic swap — old library is only replaced after scanning succeeds.
-    // A plain assignment ensures _games is never transiently empty.
     _games = freshGames;
 
     // Persist the refreshed list to the database in a single batch.
-    await _database.upsertGames(freshGames);
+    try {
+      await _database.upsertGames(freshGames);
+    } catch (e) {
+      debugPrint('GameLibraryService: refresh upsert failed — $e');
+    }
     _isLoading = false;
     _error = null;
     notifyListeners();

@@ -637,6 +637,8 @@ class MGBACore {
     final pathPtr = coreLib.toNativeUtf8();
     try {
       _bindings.coreSetCore!(pathPtr);
+    } catch (e) {
+      debugPrint('MGBACore.setCoreLibrary: FFI error — $e');
     } finally {
       calloc.free(pathPtr);
     }
@@ -648,17 +650,26 @@ class MGBACore {
       if (!_bindings.load()) return false;
     }
 
-    final core = _bindings.coreCreate();
-    if (core == nullptr) return false;
+    try {
+      final core = _bindings.coreCreate();
+      if (core == nullptr || core.address == 0) return false;
 
-    final result = _bindings.coreInit(core);
-    if (result != 0) {
-      _bindings.coreDestroy(core);
+      final result = _bindings.coreInit(core);
+      if (result != 0) {
+        try {
+          _bindings.coreDestroy(core);
+        } catch (e) {
+          debugPrint('MGBACore.initialize: coreDestroy failed after init error: $e');
+        }
+        return false;
+      }
+
+      _corePtr = core;
+      return true;
+    } catch (e) {
+      debugPrint('MGBACore.initialize: FFI error — $e');
       return false;
     }
-
-    _corePtr = core;
-    return true;
   }
 
   /// Load a ROM file
@@ -673,6 +684,9 @@ class MGBACore {
         _isRunning = true;
         return true;
       }
+      return false;
+    } catch (e) {
+      debugPrint('MGBACore.loadROM: FFI error — $e');
       return false;
     } finally {
       calloc.free(pathPtr);
@@ -707,24 +721,32 @@ class MGBACore {
   void _updateDimensions() {
     if (_corePtr == null) return;
 
-    _width = _bindings.coreGetWidth(_corePtr as Pointer<Void>);
-    _height = _bindings.coreGetHeight(_corePtr as Pointer<Void>);
-    
-    final platformInt = _bindings.coreGetPlatform(_corePtr as Pointer<Void>);
-    _platform = switch (platformInt) {
-      1 => GamePlatform.gb,
-      2 => GamePlatform.gbc,
-      3 => GamePlatform.gba,
-      4 => GamePlatform.nes,
-      5 => GamePlatform.snes,
-      _ => GamePlatform.unknown,
-    };
+    try {
+      _width = _bindings.coreGetWidth(_corePtr as Pointer<Void>);
+      _height = _bindings.coreGetHeight(_corePtr as Pointer<Void>);
+
+      final platformInt = _bindings.coreGetPlatform(_corePtr as Pointer<Void>);
+      _platform = switch (platformInt) {
+        1 => GamePlatform.gb,
+        2 => GamePlatform.gbc,
+        3 => GamePlatform.gba,
+        4 => GamePlatform.nes,
+        5 => GamePlatform.snes,
+        _ => GamePlatform.unknown,
+      };
+    } catch (e) {
+      debugPrint('MGBACore._updateDimensions: FFI error — $e');
+    }
   }
 
   /// Run a single frame
   void runFrame() {
     if (_corePtr == null || !_isRunning) return;
-    _bindings.coreRunFrame(_corePtr as Pointer<Void>);
+    try {
+      _bindings.coreRunFrame(_corePtr as Pointer<Void>);
+    } catch (e) {
+      debugPrint('MGBACore.runFrame: FFI error — $e');
+    }
   }
 
   /// Set key states
@@ -739,7 +761,11 @@ class MGBACore {
     if (kDebugMode && keys != 0) {
       debugPrint('Input: MGBACore.setKeys -> native keys=0x${keys.toRadixString(16)} platform=$_platform');
     }
-    _bindings.coreSetKeys(_corePtr as Pointer<Void>, keys);
+    try {
+      _bindings.coreSetKeys(_corePtr as Pointer<Void>, keys);
+    } catch (e) {
+      debugPrint('MGBACore.setKeys: FFI error — $e');
+    }
   }
 
   /// Press a key
@@ -763,31 +789,41 @@ class MGBACore {
   Uint8List? getVideoBuffer() {
     if (_corePtr == null) return null;
 
-    final buffer = _bindings.coreGetVideoBuffer(_corePtr as Pointer<Void>);
-    if (buffer == nullptr) return null;
+    try {
+      final buffer = _bindings.coreGetVideoBuffer(_corePtr as Pointer<Void>);
+      if (buffer == nullptr || buffer.address == 0) return null;
 
-    final byteCount = _width * _height * 4;
-    // Copy native memory into a Dart-owned Uint8List so the data remains
-    // valid even after the native side reuses the buffer on the next frame.
-    return Uint8List.fromList(buffer.cast<Uint8>().asTypedList(byteCount));
+      final byteCount = _width * _height * 4;
+      // Copy native memory into a Dart-owned Uint8List so the data remains
+      // valid even after the native side reuses the buffer on the next frame.
+      return Uint8List.fromList(buffer.cast<Uint8>().asTypedList(byteCount));
+    } catch (e) {
+      debugPrint('MGBACore.getVideoBuffer: FFI error — $e');
+      return null;
+    }
   }
 
   /// Get audio samples
   (Int16List?, int) getAudioBuffer() {
     if (_corePtr == null) return (null, 0);
 
-    final samples = _bindings.coreGetAudioSamples(_corePtr as Pointer<Void>);
-    if (samples == 0) return (null, 0);
+    try {
+      final samples = _bindings.coreGetAudioSamples(_corePtr as Pointer<Void>);
+      if (samples == 0) return (null, 0);
 
-    final buffer = _bindings.coreGetAudioBuffer(_corePtr as Pointer<Void>);
-    if (buffer == nullptr) return (null, 0);
+      final buffer = _bindings.coreGetAudioBuffer(_corePtr as Pointer<Void>);
+      if (buffer == nullptr || buffer.address == 0) return (null, 0);
 
-    // Bulk-copy native audio samples into a Dart-owned Int16List using
-    // asTypedList + Int16List.fromList instead of a manual per-element loop.
-    final sampleCount = samples * 2; // Stereo: 2 channels
-    final audioData = Int16List.fromList(buffer.asTypedList(sampleCount));
+      // Bulk-copy native audio samples into a Dart-owned Int16List using
+      // asTypedList + Int16List.fromList instead of a manual per-element loop.
+      final sampleCount = samples * 2; // Stereo: 2 channels
+      final audioData = Int16List.fromList(buffer.asTypedList(sampleCount));
 
-    return (audioData, samples);
+      return (audioData, samples);
+    } catch (e) {
+      debugPrint('MGBACore.getAudioBuffer: FFI error — $e');
+      return (null, 0);
+    }
   }
 
   /// Save state to slot
@@ -1031,15 +1067,20 @@ class MGBACore {
   Uint8List? getDisplayBuffer() {
     if (_corePtr == null || !_bindings.isFrameLoopLoaded) return null;
 
-    final buffer = _bindings.frameLoopGetDisplayBuffer!(_corePtr as Pointer<Void>);
-    if (buffer == nullptr) return null;
+    try {
+      final buffer = _bindings.frameLoopGetDisplayBuffer!(_corePtr as Pointer<Void>);
+      if (buffer == nullptr || buffer.address == 0) return null;
 
-    final w = _bindings.frameLoopGetDisplayWidth!(_corePtr as Pointer<Void>);
-    final h = _bindings.frameLoopGetDisplayHeight!(_corePtr as Pointer<Void>);
-    if (w <= 0 || h <= 0) return null;
+      final w = _bindings.frameLoopGetDisplayWidth!(_corePtr as Pointer<Void>);
+      final h = _bindings.frameLoopGetDisplayHeight!(_corePtr as Pointer<Void>);
+      if (w <= 0 || h <= 0) return null;
 
-    final byteCount = w * h * 4;
-    return Uint8List.fromList(buffer.cast<Uint8>().asTypedList(byteCount));
+      final byteCount = w * h * 4;
+      return Uint8List.fromList(buffer.cast<Uint8>().asTypedList(byteCount));
+    } catch (e) {
+      debugPrint('MGBACore.getDisplayBuffer: FFI error — $e');
+      return null;
+    }
   }
 
   /// Display dimensions from the native frame loop (may differ from core
@@ -1086,14 +1127,22 @@ class MGBACore {
   void dispose() {
     // Stop native frame loop if running
     if (isFrameLoopRunning) {
-      stopFrameLoop();
+      try {
+        stopFrameLoop();
+      } catch (e) {
+        debugPrint('MGBACore.dispose: stopFrameLoop failed — $e');
+      }
     }
     if (_readBuf != null) {
       calloc.free(_readBuf!);
       _readBuf = null;
     }
     if (_corePtr != null) {
-      _bindings.coreDestroy(_corePtr as Pointer<Void>);
+      try {
+        _bindings.coreDestroy(_corePtr as Pointer<Void>);
+      } catch (e) {
+        debugPrint('MGBACore.dispose: coreDestroy failed — $e');
+      }
       _corePtr = null;
     }
     _isRunning = false;

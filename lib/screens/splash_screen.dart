@@ -71,6 +71,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (elapsed < minDisplayMs) {
       await Future.delayed(Duration(milliseconds: minDisplayMs - elapsed));
     }
+    if (!mounted) return;
 
     _goToHome();
   }
@@ -94,6 +95,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (settingsReady && libraryReady && raReady) break;
       await Future.delayed(const Duration(milliseconds: 50));
+      if (!mounted) return;
     }
   }
 
@@ -180,7 +182,7 @@ class _SplashScreenState extends State<SplashScreen>
 
               // ── Tagline ──────────────────────────────────────────
               Text(
-                'Classic GB · GBC · GBA Games',
+                'Classic GB · GBC · GBA · NES · SNES Games',
                 style: TextStyle(
                   fontSize: 13,
                   color: colors.textMuted,

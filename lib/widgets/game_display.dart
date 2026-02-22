@@ -65,7 +65,11 @@ class _GameDisplayState extends State<GameDisplay> {
   void didUpdateWidget(GameDisplay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.emulator != widget.emulator) {
-      // Emulator instance changed — re-register
+      // Emulator instance changed — destroy old texture, then recreate.
+      // Reset _textureRequested so _tryCreateTexture can run (Kotlin
+      // createTexture calls destroy() first, so we must clear our state).
+      _destroyTexture();
+      _textureRequested = false;
       _tryCreateTexture();
     }
   }
@@ -105,14 +109,20 @@ class _GameDisplayState extends State<GameDisplay> {
       });
 
       if (_isDisposed) {
-        // Widget was disposed while we awaited
+        // Widget was disposed while we awaited — always destroy to avoid
+        // orphaned ANativeWindow / TextureRegistry entry.
         if (id != null) {
-          _channel.invokeMethod('destroyGameTexture');
+          try {
+            _channel.invokeMethod('destroyGameTexture');
+          } catch (e) {
+            debugPrint('GameDisplay: destroyGameTexture (dispose path) — $e');
+          }
         }
+        _textureRequested = false;
         return;
       }
 
-      if (id != null) {
+      if (id != null && mounted) {
         setState(() {
           _textureId = id;
         });
@@ -134,7 +144,11 @@ class _GameDisplayState extends State<GameDisplay> {
   void _destroyTexture() {
     if (_textureId != null) {
       widget.emulator.setTextureRendering(false);
-      _channel.invokeMethod('destroyGameTexture');
+      try {
+        _channel.invokeMethod('destroyGameTexture');
+      } catch (e) {
+        debugPrint('GameDisplay: destroyGameTexture platform error — $e');
+      }
       _textureId = null;
       _textureRequested = false;
     }
@@ -244,7 +258,8 @@ class _GameDisplayState extends State<GameDisplay> {
 
   Widget _buildDisplay() {
     // ── Texture path (Android zero-copy) ──
-    if (_textureId != null) {
+    // Guard: never build texture UI after dispose (async create may complete late).
+    if (!_isDisposed && _textureId != null) {
       return _buildTextureDisplay();
     }
 

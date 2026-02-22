@@ -149,7 +149,7 @@ class _TvFocusableState extends State<TvFocusable>
             final glowAlpha = widget.animate
                 ? (_pulseAnimation.value * baseAlpha).toInt()
                 : (_focused ? staticAlpha : 0);
-            final borderWidth = widget.subtleFocus ? 1.0 : 2.5;
+            final borderWidth = 2.5;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               decoration: _focused
