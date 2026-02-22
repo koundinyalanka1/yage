@@ -82,9 +82,15 @@ class GamepadMapper {
   };
 
   /// Get the appropriate mapping for the given platform.
+  /// NES and GB/GBC/GBA use defaultMapping (A, B, L, R, Start, Select, D-pad).
+  /// SNES uses snesMapping (adds distinct X, Y face buttons).
   static Map<LogicalKeyboardKey, int> mappingForPlatform(GamePlatform platform) {
     return switch (platform) {
       GamePlatform.snes => snesMapping,
+      GamePlatform.nes => defaultMapping,
+      GamePlatform.gb => defaultMapping,
+      GamePlatform.gbc => defaultMapping,
+      GamePlatform.gba => defaultMapping,
       _ => defaultMapping,
     };
   }
@@ -112,10 +118,17 @@ class GamepadMapper {
   /// Whether an actual gamepad controller has been detected this session
   bool _controllerDetected = false;
 
-  final Map<LogicalKeyboardKey, int> _mapping;
+  Map<LogicalKeyboardKey, int> _mapping;
 
   GamepadMapper({Map<LogicalKeyboardKey, int>? mapping})
       : _mapping = mapping ?? defaultMapping;
+
+  /// Update the key mapping (e.g. when switching between NES/SNES/GBA).
+  /// Call when the game platform changes so the controller maps correctly.
+  void updateMapping(Map<LogicalKeyboardKey, int> mapping) {
+    _mapping = mapping;
+    _rebuildBitmask();
+  }
 
   /// Current GBA key bitmask from physical input
   int get keys => _pressedKeys;

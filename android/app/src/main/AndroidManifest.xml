@@ -23,6 +23,11 @@
     <uses-feature
         android:name="android.software.leanback"
         android:required="false"/>
+
+    <!-- Gamepad support (optional — Bluetooth/USB controllers work when present) -->
+    <uses-feature
+        android:name="android.hardware.gamepad"
+        android:required="false"/>
     
     <application
         android:label="RetroPal"

@@ -192,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ..clearSnackBars()
             ..showSnackBar(
               const SnackBar(
-                content: Text('No valid ROM files (.gb, .gbc, .gba) found inside the ZIP.'),
+                content: Text('No valid ROM files (.gb, .gbc, .gba, .nes, .sfc, .smc) found inside the ZIP.'),
               ),
             );
         }
@@ -459,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             SnackBar(
               content: Text(
                 hasZip
-                    ? 'No valid ROM files (.gb, .gbc, .gba) found inside the ZIP.'
+                    ? 'No valid ROM files (.gb, .gbc, .gba, .nes, .sfc, .smc) found inside the ZIP.'
                     : 'No valid ROM files were imported.',
               ),
             ),

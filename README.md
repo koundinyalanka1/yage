@@ -55,6 +55,30 @@ RetroPal requires a native wrapper library that interfaces with mGBA. Follow the
    - Linux: Copy `libyage_core.so` and `libmgba.so` to the appropriate location
    - macOS: Copy `libyage_core.dylib` and `libmgba.dylib` to the app bundle
 
+### NES and SNES Cores (Android)
+
+For NES and SNES support on Android, download the LibRetro cores and place them in `android/app/src/main/jniLibs/`:
+
+**Option 1 — Run the fetch script (recommended):**
+```powershell
+# Windows
+.\scripts\fetch_libretro_cores.ps1
+```
+```bash
+# Linux/macOS
+chmod +x scripts/fetch_libretro_cores.sh
+./scripts/fetch_libretro_cores.sh
+```
+
+**Option 2 — Manual download:**
+1. Go to https://buildbot.libretro.com/nightly/android/latest/
+2. For each ABI (`armeabi-v7a`, `arm64-v8a`, `x86_64`):
+   - Download `fceumm_libretro_android.so.zip` (NES)
+   - Download `snes9x2010_libretro_android.so.zip` (SNES)
+3. Extract each zip into `android/app/src/main/jniLibs/<abi>/`
+
+Then rebuild: `flutter clean && flutter build apk`
+
 ### Running the App
 
 ```bash

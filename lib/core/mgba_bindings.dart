@@ -306,6 +306,7 @@ class MGBABindings {
   String _selectedCoreLib = 'libmgba_libretro_android.so';
 
   /// Map from [GamePlatform] to the Android .so name of the libretro core.
+  /// NES/SNES: use name without "lib" prefix (dlopen resolves to lib*.so).
   static const platformCoreLibs = <GamePlatform, String>{
     GamePlatform.gb:   'libmgba_libretro_android.so',
     GamePlatform.gbc:  'libmgba_libretro_android.so',
@@ -728,8 +729,16 @@ class MGBACore {
 
   /// Set key states
   void setKeys(int keys) {
-    if (_corePtr == null) return;
+    if (_corePtr == null) {
+      if (kDebugMode && keys != 0) {
+        debugPrint('Input: MGBACore.setKeys SKIPPED - _corePtr is null! keys=0x${keys.toRadixString(16)}');
+      }
+      return;
+    }
     _currentKeys = keys;
+    if (kDebugMode && keys != 0) {
+      debugPrint('Input: MGBACore.setKeys -> native keys=0x${keys.toRadixString(16)} platform=$_platform');
+    }
     _bindings.coreSetKeys(_corePtr as Pointer<Void>, keys);
   }
 

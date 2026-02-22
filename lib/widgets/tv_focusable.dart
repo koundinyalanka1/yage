@@ -22,6 +22,10 @@ class TvFocusable extends StatefulWidget {
   /// where the pulse can look like a distracting blink.
   final bool animate;
 
+  /// When true, use a subtle focus ring (thinner border, lower glow) so the
+  /// focus highlight does not dominate secondary actions like Cancel.
+  final bool subtleFocus;
+
   /// Called when the focus state changes. Useful for tracking which widget
   /// in a list/grid was last focused so focus can be restored later.
   final ValueChanged<bool>? onFocusChanged;
@@ -36,6 +40,7 @@ class TvFocusable extends StatefulWidget {
     this.focusNode,
     this.borderRadius = const BorderRadius.all(Radius.circular(16)),
     this.animate = true,
+    this.subtleFocus = false,
     this.onFocusChanged,
   });
 
@@ -139,31 +144,36 @@ class _TvFocusableState extends State<TvFocusable>
         child: AnimatedBuilder(
           animation: _pulseAnimation,
           builder: (context, child) {
+            final baseAlpha = widget.subtleFocus ? 40 : 120;
+            final staticAlpha = widget.subtleFocus ? 35 : 100;
             final glowAlpha = widget.animate
-                ? (_pulseAnimation.value * 120).toInt()
-                : (_focused ? 100 : 0);
+                ? (_pulseAnimation.value * baseAlpha).toInt()
+                : (_focused ? staticAlpha : 0);
+            final borderWidth = widget.subtleFocus ? 1.0 : 2.5;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               decoration: _focused
                   ? BoxDecoration(
                       borderRadius: widget.borderRadius,
-                      boxShadow: [
-                        BoxShadow(
-                          color: colors.accent.withAlpha(glowAlpha),
-                          blurRadius: 12,
-                          spreadRadius: 2,
-                        ),
-                      ],
+                      boxShadow: widget.subtleFocus
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: colors.accent.withAlpha(glowAlpha),
+                                blurRadius: 12,
+                                spreadRadius: 2,
+                              ),
+                            ],
                       border: Border.all(
-                        color: colors.accent,
-                        width: 2.5,
+                        color: colors.accent.withAlpha(widget.subtleFocus ? 80 : 255),
+                        width: borderWidth,
                       ),
                     )
                   : BoxDecoration(
                       borderRadius: widget.borderRadius,
                       border: Border.all(
                         color: Colors.transparent,
-                        width: 2.5,
+                        width: borderWidth,
                       ),
                     ),
               child: child,

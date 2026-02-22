@@ -46,13 +46,16 @@ extern "C" {
 #define RETRO_DEVICE_ID_JOYPAD_X      9
 #define RETRO_DEVICE_ID_JOYPAD_L      10
 #define RETRO_DEVICE_ID_JOYPAD_R      11
+#define RETRO_DEVICE_ID_JOYPAD_MASK   256
 
 /* Platform types */
 typedef enum {
     YAGE_PLATFORM_UNKNOWN = 0,
     YAGE_PLATFORM_GB = 1,
     YAGE_PLATFORM_GBC = 2,
-    YAGE_PLATFORM_GBA = 3
+    YAGE_PLATFORM_GBA = 3,
+    YAGE_PLATFORM_NES = 4,
+    YAGE_PLATFORM_SNES = 5
 } YagePlatform;
 
 /* Opaque handle */
@@ -64,6 +67,17 @@ typedef struct YageCore YageCore;
 YAGE_API YageCore* yage_core_create(void);
 YAGE_API int yage_core_init(YageCore* core);
 YAGE_API void yage_core_destroy(YageCore* core);
+
+/*
+ * Core selection (multi-core support)
+ *
+ * Call before yage_core_init() to load a different libretro core.
+ * path: e.g. "libfceumm_libretro_android.so" (NES) or
+ *       "libsnes9x2010_libretro_android.so" (SNES).
+ * If not called, defaults to mGBA (libmgba_libretro_android.so).
+ * Returns 0 on success.
+ */
+YAGE_API int yage_core_set_core(const char* path);
 
 /*
  * ROM loading

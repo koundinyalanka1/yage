@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#ifndef _WIN32
+#include <stdatomic.h>
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -145,6 +148,15 @@ struct retro_system_av_info {
 #define SGB_WIDTH 256
 #define SGB_HEIGHT 224
 
+/* NES / SNES dimensions */
+#define NES_WIDTH 256
+#define NES_HEIGHT 240
+#define SNES_WIDTH 256
+#define SNES_HEIGHT 224
+
+/* Selected libretro core path (set via yage_core_set_core before init) */
+static char* g_core_lib_path = NULL;
+
 #define AUDIO_BUFFER_SIZE 8192
 /* Initial capacity must accommodate the largest possible resolution (SGB) */
 #define VIDEO_BUFFER_SIZE (SGB_WIDTH * SGB_HEIGHT)
@@ -157,7 +169,11 @@ static int16_t* g_audio_buffer = NULL;
 static int g_audio_samples = 0;
 static int g_width = GBA_WIDTH;
 static int g_height = GBA_HEIGHT;
+#ifndef _WIN32
+static _Atomic uint32_t g_keys = 0;
+#else
 static uint32_t g_keys = 0;
+#endif
 static int g_pixel_format = RETRO_PIXEL_FORMAT_RGB565; /* Default format */
 
 /* Audio volume control (0.0 = mute, 1.0 = full volume) */
@@ -895,18 +911,47 @@ static int16_t input_state_callback(unsigned port, unsigned device, unsigned ind
     
     if (port != 0 || device != RETRO_DEVICE_JOYPAD) return 0;
     
+#ifndef _WIN32
+    uint32_t keys = atomic_load_explicit(&g_keys, memory_order_relaxed);
+#else
+    uint32_t keys = g_keys;
+#endif
+    /* Debug: log when core polls for input and we have keys (rate-limited) */
+    static unsigned poll_log = 0;
+    if (keys != 0 && (poll_log++ % 300) == 0) {
+        LOGI("Input: input_state_callback id=%u keys=0x%X (core is polling)", id, (unsigned)keys);
+    }
     /* Map libretro buttons to our key bits */
     switch (id) {
-        case RETRO_DEVICE_ID_JOYPAD_A:      return (g_keys & (1 << 0)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_B:      return (g_keys & (1 << 1)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_SELECT: return (g_keys & (1 << 2)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_START:  return (g_keys & (1 << 3)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_RIGHT:  return (g_keys & (1 << 4)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_LEFT:   return (g_keys & (1 << 5)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_UP:     return (g_keys & (1 << 6)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_DOWN:   return (g_keys & (1 << 7)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_R:      return (g_keys & (1 << 8)) ? 1 : 0;
-        case RETRO_DEVICE_ID_JOYPAD_L:      return (g_keys & (1 << 9)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_A:      return (keys & (1 << 0)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_B:      return (keys & (1 << 1)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_SELECT: return (keys & (1 << 2)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_START:  return (keys & (1 << 3)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_RIGHT:  return (keys & (1 << 4)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_LEFT:   return (keys & (1 << 5)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_UP:     return (keys & (1 << 6)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_DOWN:   return (keys & (1 << 7)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_R:      return (keys & (1 << 8)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_L:      return (keys & (1 << 9)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_X:      return (keys & (1 << 10)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_Y:      return (keys & (1 << 11)) ? 1 : 0;
+        case RETRO_DEVICE_ID_JOYPAD_MASK: {
+            /* NES/SNES cores request full joypad state as bitmask; convert g_keys to libretro order */
+            uint32_t mask = 0;
+            if (keys & (1 << 0))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_A);      /* A */
+            if (keys & (1 << 1))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_B);      /* B */
+            if (keys & (1 << 2))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_SELECT); /* SELECT */
+            if (keys & (1 << 3))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_START);  /* START */
+            if (keys & (1 << 4))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_RIGHT);  /* RIGHT */
+            if (keys & (1 << 5))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_LEFT);   /* LEFT */
+            if (keys & (1 << 6))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_UP);     /* UP */
+            if (keys & (1 << 7))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_DOWN);   /* DOWN */
+            if (keys & (1 << 8))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_R);      /* R */
+            if (keys & (1 << 9))  mask |= (1 << RETRO_DEVICE_ID_JOYPAD_L);      /* L */
+            if (keys & (1 << 10)) mask |= (1 << RETRO_DEVICE_ID_JOYPAD_X);      /* X */
+            if (keys & (1 << 11)) mask |= (1 << RETRO_DEVICE_ID_JOYPAD_Y);      /* Y */
+            return (int16_t)mask;
+        }
         default: return 0;
     }
 }
@@ -1056,11 +1101,19 @@ static bool environment_callback(unsigned cmd, void* data) {
             return true;
         case 40: /* RETRO_ENVIRONMENT_GET_INPUT_BITMASKS */
             return true;
-        default:
+        default: {
+            /* NES/SNES cores need these — mGBA breaks if we return true for 11/35 */
+            int is_nes_snes = (g_core_lib_path && (strstr(g_core_lib_path, "fceumm") || strstr(g_core_lib_path, "snes9x")));
+            if (is_nes_snes && (cmd == 11 || cmd == 35 || cmd == 52 || cmd == 53 || cmd == 54 ||
+                cmd == 55 || cmd == 59 || cmd == 65 || cmd == 66 || cmd == 69 || cmd == 70 ||
+                cmd == 0x10033 || cmd == 0x1000A || cmd == 0x1000D || cmd == 0x10013)) {
+                return true;
+            }
             if (g_log_frame_count < 5) {
                 LOGI("Unhandled env cmd: %u", cmd);
             }
             return false;
+        }
     }
 }
 
@@ -1088,20 +1141,35 @@ YageCore* yage_core_create(void) {
     return core;
 }
 
+YAGE_API int yage_core_set_core(const char* path) {
+    if (g_core_lib_path) {
+        free(g_core_lib_path);
+        g_core_lib_path = NULL;
+    }
+    if (path && path[0]) {
+        g_core_lib_path = strdup(path);
+        LOGI("Core selection: %s", g_core_lib_path);
+    }
+    return 0;
+}
+
 int yage_core_init(YageCore* core) {
     if (!core) return -1;
     
-    /* Try to load the libretro core */
+    /* Load the libretro core — use g_core_lib_path if set via yage_core_set_core */
+    const char* lib_name;
 #ifdef _WIN32
-    core->lib = LOAD_LIBRARY("mgba_libretro.dll");
+    lib_name = g_core_lib_path ? g_core_lib_path : "mgba_libretro.dll";
 #elif defined(__ANDROID__)
-    /* Try the standard Android libretro naming */
-    core->lib = LOAD_LIBRARY("libmgba_libretro_android.so");
+    lib_name = g_core_lib_path ? g_core_lib_path : "libmgba_libretro_android.so";
 #else
-    core->lib = LOAD_LIBRARY("libmgba_libretro.so");
+    lib_name = g_core_lib_path ? g_core_lib_path : "libmgba_libretro.so";
 #endif
     
+    core->lib = LOAD_LIBRARY(lib_name);
+    
     if (!core->lib) {
+        LOGE("Failed to load libretro core: %s", lib_name);
         return -1;
     }
     
@@ -1168,6 +1236,13 @@ void yage_core_destroy(YageCore* core) {
 
     /* Clear the global pointer so callbacks don't use a stale core */
     if (g_current_core == core) g_current_core = NULL;
+
+    /* Reset input state so the next core starts with clean keys */
+#ifndef _WIN32
+    atomic_store_explicit(&g_keys, 0, memory_order_relaxed);
+#else
+    g_keys = 0;
+#endif
     
     /* Free rewind buffer */
     yage_core_rewind_deinit(core);
@@ -1234,22 +1309,60 @@ int yage_core_load_rom(YageCore* core, const char* path) {
             core->platform = YAGE_PLATFORM_GB;
             g_width = GB_WIDTH;
             g_height = GB_HEIGHT;
+        } else if (strcasecmp(ext, ".nes") == 0) {
+            core->platform = YAGE_PLATFORM_NES;
+            g_width = NES_WIDTH;
+            g_height = NES_HEIGHT;
+        } else if (strcasecmp(ext, ".sfc") == 0 || strcasecmp(ext, ".smc") == 0) {
+            core->platform = YAGE_PLATFORM_SNES;
+            g_width = SNES_WIDTH;
+            g_height = SNES_HEIGHT;
         }
     }
     
     /* Mark variables dirty so the core re-reads SGB border setting */
     g_variables_dirty = 1;
     
-    /* Load the ROM */
+    /* Load the ROM — check need_fullpath; some cores need data in memory */
     struct retro_game_info info = {0};
     info.path = path;
     info.data = NULL;
     info.size = 0;
     info.meta = NULL;
     
+    void* rom_data = NULL;
+    if (core->retro_get_system_info) {
+        struct retro_system_info sys_info = {0};
+        core->retro_get_system_info(&sys_info);
+        if (!sys_info.need_fullpath) {
+            FILE* f = fopen(path, "rb");
+            if (f) {
+                fseek(f, 0, SEEK_END);
+                long sz = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (sz > 0 && sz < (long)(64 * 1024 * 1024)) { /* max 64MB */
+                    rom_data = malloc((size_t)sz);
+                    if (rom_data && fread(rom_data, 1, (size_t)sz, f) == (size_t)sz) {
+                        info.data = rom_data;
+                        info.size = (size_t)sz;
+                        info.path = NULL;
+                        LOGI("Loaded ROM into memory: %zu bytes", info.size);
+                    } else {
+                        if (rom_data) free(rom_data);
+                        rom_data = NULL;
+                    }
+                }
+                fclose(f);
+            }
+        }
+    }
+    
     if (!core->retro_load_game(&info)) {
+        if (rom_data) free(rom_data);
+        LOGE("retro_load_game failed for: %s", path ? path : "(null)");
         return -1;
     }
+    if (rom_data) free(rom_data); /* Core copies data; we can free */
     
     /* Store path */
     if (core->rom_path) free(core->rom_path);
@@ -1301,11 +1414,20 @@ int yage_core_load_rom(YageCore* core, const char* path) {
     g_overflow_count = 0;
     g_log_frame_count = 0;
     
-    /* Don't start OpenSL ES yet — wait for first 15 video frames to confirm
-     * audio is flowing, then init at the reported sample rate.  This avoids
-     * garbled audio from starting too early. */
-    LOGI("Audio will init after 15 video frames at reported rate: %.0f Hz",
-         reported_sample_rate);
+    /* NES/SNES (48kHz): init OpenSL immediately — these cores report stable
+     * rates.  GB/GBC/GBA: wait 15 video frames to validate measured rate. */
+    if (reported_sample_rate >= 44000.0 && reported_sample_rate <= 50000.0) {
+        g_detected_rate = reported_sample_rate;
+        init_opensl_audio(g_detected_rate);
+        g_rate_detected = 1;
+        g_frames_since_reinit = 0;
+        g_monitor_frames = 0;
+        g_monitor_samples = 0;
+        LOGI("Audio init at reported rate: %.0f Hz (NES/SNES path)", reported_sample_rate);
+    } else {
+        LOGI("Audio will init after 15 video frames at reported rate: %.0f Hz",
+             reported_sample_rate);
+    }
 #endif
     
     /* Allocate state buffer */
@@ -1346,7 +1468,16 @@ void yage_core_run_frame(YageCore* core) {
 
 void yage_core_set_keys(YageCore* core, uint32_t keys) {
     (void)core;
+#ifndef _WIN32
+    atomic_store_explicit(&g_keys, keys, memory_order_relaxed);
+#else
     g_keys = keys;
+#endif
+    /* Debug: log when keys are pressed (rate-limited to avoid spam) */
+    static unsigned log_count = 0;
+    if (keys != 0 && (log_count++ % 60) == 0) {
+        LOGI("Input: yage_core_set_keys keys=0x%X", (unsigned)keys);
+    }
 }
 
 uint32_t* yage_core_get_video_buffer(YageCore* core) {

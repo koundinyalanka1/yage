@@ -125,7 +125,7 @@ class GameLibraryService extends ChangeNotifier {
 
   /// Import ROMs from a ZIP archive.
   ///
-  /// Extracts any `.gba`, `.gb`, `.gbc`, or `.sgb` files found inside the ZIP,
+  /// Extracts any `.gba`, `.gb`, `.gbc`, `.sgb`, `.nes`, `.sfc`, or `.smc` files found inside the ZIP,
   /// copies them to internal storage, and adds them to the library.
   /// Returns the list of successfully imported [GameRom]s.
   ///

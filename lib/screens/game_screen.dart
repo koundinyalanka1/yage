@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -137,6 +138,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       emulator.updateSettings(_settingsServiceRef!.settings);
 
       emulator.start();
+      _syncKeys(); // Ensure keys are synced on load (clear stale state)
       _maybeShowShortcutsHelp();
 
       // Capture RetroAchievements service early — _detectRetroAchievements()
@@ -321,6 +323,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   @override
+  void didUpdateWidget(covariant GameScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.game.platform != widget.game.platform) {
+      _gamepadMapper.updateMapping(
+        GamepadMapper.mappingForPlatform(widget.game.platform),
+      );
+    }
+  }
+
+  @override
   void dispose() {
     try {
       WidgetsBinding.instance.removeObserver(this);
@@ -424,7 +436,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// Merge virtual and physical keys and push to emulator
   void _syncKeys() {
-    _emulatorRef?.setKeys(_virtualKeys | _physicalKeys);
+    final keys = _virtualKeys | _physicalKeys;
+    if (kDebugMode && keys != 0) {
+      debugPrint('Input: _syncKeys keys=0x${keys.toRadixString(16)} (v=$_virtualKeys p=$_physicalKeys) core=${_emulatorRef?.core != null}');
+    }
+    _emulatorRef?.setKeys(keys);
   }
 
   /// Called by VirtualGamepad when touch keys change
@@ -868,6 +884,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           TvFocusable(
             autofocus: true,
             animate: true,
+            subtleFocus: true,
             onTap: () => Navigator.of(context).pop(false),
             borderRadius: BorderRadius.circular(20),
             child: Container(
@@ -1465,6 +1482,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       selectButton: layout.selectButton.copyWith(
         y: (layout.selectButton.y + portraitUpShift).clamp(0.0, 1.0),
       ),
+      xButton: layout.xButton != null
+          ? layout.xButton!.copyWith(
+              y: (layout.xButton!.y + portraitUpShift).clamp(0.0, 1.0),
+            )
+          : null,
+      yButton: layout.yButton != null
+          ? layout.yButton!.copyWith(
+              y: (layout.yButton!.y + portraitUpShift).clamp(0.0, 1.0),
+            )
+          : null,
     );
     
     return Stack(

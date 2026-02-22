@@ -120,14 +120,14 @@ class GamepadLayout {
       size: 1.30,
     ),
 
-    // A button: bottom-right, primary action
+    // A button: 50% closer to B (SNES diamond: X A / B Y)
     aButton: ButtonLayout(
       x: 0.78,
       y: 0.57,
       size: 1.20,
     ),
 
-    // B button: left of A, slightly lower
+    // B button: bottom-left (SNES diamond)
     bButton: ButtonLayout(
       x: 0.58,
       y: 0.72,
@@ -162,17 +162,17 @@ class GamepadLayout {
       size: 1.05,
     ),
 
-    // SNES X: above A (diamond top)
+    // SNES X: top-left, same row as A (diamond: X A / B Y)
     xButton: ButtonLayout(
-      x: 0.78,
-      y: 0.42,
+      x: 0.58,
+      y: 0.57,
       size: 1.10,
     ),
 
-    // SNES Y: left of A (diamond left)
+    // SNES Y: bottom-right (diamond: X A / B Y)
     yButton: ButtonLayout(
-      x: 0.58,
-      y: 0.57,
+      x: 0.78,
+      y: 0.72,
       size: 1.10,
     ),
   );
@@ -192,14 +192,14 @@ class GamepadLayout {
       size: 1.25,
     ),
 
-    // A button: right zone, upper-right (diagonal layout, near game)
+    // A button: 50% closer to B (SNES diamond: X A / B Y)
     aButton: ButtonLayout(
       x: 0.35,
-      y: 0.28,
+      y: 0.35,
       size: 1.15,
     ),
 
-    // B button: right zone, lower-left of A (diagonal layout, near game)
+    // B button: bottom-left (SNES diamond)
     bButton: ButtonLayout(
       x: 0.05,
       y: 0.52,
@@ -234,17 +234,17 @@ class GamepadLayout {
       size: 1.00,
     ),
 
-    // SNES X: above A (diamond top) — in landscape right zone
+    // SNES X: top-left, same row as A (diamond: X A / B Y)
     xButton: ButtonLayout(
-      x: 0.20,
-      y: 0.18,
+      x: 0.05,
+      y: 0.35,
       size: 1.05,
     ),
 
-    // SNES Y: left of A (diamond left) — in landscape right zone
+    // SNES Y: bottom-right (diamond: X A / B Y)
     yButton: ButtonLayout(
-      x: 0.05,
-      y: 0.38,
+      x: 0.35,
+      y: 0.52,
       size: 1.05,
     ),
   );

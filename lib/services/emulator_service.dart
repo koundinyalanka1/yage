@@ -198,11 +198,17 @@ class EmulatorService extends ChangeNotifier {
         _core = MGBACore(_bindings);
 
         // If the native wrapper supports multi-core, tell it which core
-        // to load before initializing.
+        // to load before initializing. NES/SNES: set explicit path.
+        // GB/GBC/GBA: clear path so we use default mGBA (avoids input regression).
         if (platform != null && _bindings.isCoreSelectionLoaded) {
-          final coreLib = MGBABindings.platformCoreLibs[platform];
-          if (coreLib != null) {
-            _core!.setCoreLibrary(coreLib);
+          if (platform == GamePlatform.nes || platform == GamePlatform.snes) {
+            final coreLib = MGBABindings.platformCoreLibs[platform];
+            if (coreLib != null) {
+              _core!.setCoreLibrary(coreLib);
+            }
+          } else {
+            // GB/GBC/GBA: explicitly clear so we use default (handles switch from NES/SNES)
+            _core!.setCoreLibrary('');
           }
         }
 
@@ -215,6 +221,9 @@ class EmulatorService extends ChangeNotifier {
           notifyListeners();
           return true;
         }
+        if (platform == GamePlatform.nes || platform == GamePlatform.snes) {
+          debugPrint('NES/SNES core failed to load. Run scripts/fetch_libretro_cores.ps1 to download cores.');
+        }
       }
       
       // Fall back to stub implementation
@@ -223,7 +232,9 @@ class EmulatorService extends ChangeNotifier {
       _stub!.initialize();
       _useStub = true;
       _state = EmulatorState.ready;
-      _errorMessage = 'Running in demo mode (native library not found)';
+      _errorMessage = platform == GamePlatform.nes || platform == GamePlatform.snes
+          ? 'NES/SNES core not found. Run scripts/fetch_libretro_cores.ps1 to download.'
+          : 'Running in demo mode (native library not found)';
       notifyListeners();
       return true;
     } catch (e) {
@@ -374,6 +385,17 @@ class EmulatorService extends ChangeNotifier {
 
   /// Load a ROM file
   Future<bool> loadRom(GameRom rom) async {
+    // Re-initialize when switching platforms (e.g. SNES→GBA or GBA→NES).
+    // Also when _currentRom is null but we have core/stub — previous load may have failed.
+    final platformChanged = _currentRom?.platform != rom.platform;
+    if (platformChanged || (_currentRom == null && (_core != null || _stub != null))) {
+      _stub?.dispose();
+      _stub = null;
+      _core?.dispose();
+      _core = null;
+      _currentRom = null;
+      _state = EmulatorState.uninitialized;
+    }
     if (_state == EmulatorState.uninitialized) {
       if (!await initialize(platform: rom.platform)) return false;
     }
@@ -426,6 +448,8 @@ class EmulatorService extends ChangeNotifier {
 
       _currentRom = rom.copyWith(lastPlayed: DateTime.now());
       _state = EmulatorState.paused;
+      // Reset input state so NES/SNES cores start with clean keys after platform switch
+      setKeys(0);
       notifyListeners();
       return true;
     } catch (e) {
@@ -989,6 +1013,9 @@ class EmulatorService extends ChangeNotifier {
 
   /// Set key states
   void setKeys(int keys) {
+    if (kDebugMode && keys != 0) {
+      debugPrint('Input: EmulatorService.setKeys keys=0x${keys.toRadixString(16)} useStub=$_useStub core=${_core != null}');
+    }
     if (_useStub) {
       _stub?.setKeys(keys);
     } else {
