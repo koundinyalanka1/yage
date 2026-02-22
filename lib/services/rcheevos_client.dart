@@ -152,7 +152,10 @@ class RcheevosClient extends ChangeNotifier {
   }
 
   /// Destroy rc_client and stop all polling.
-  void shutdown() {
+  ///
+  /// [notify] Whether to call [notifyListeners]. Defaults to true.
+  /// Set to false when calling from [dispose] to avoid Flutter tree-locked errors.
+  void shutdown({bool notify = true}) {
     _stopPolling();
 
     if (_initialized && _bindings.isLoaded) {
@@ -172,7 +175,9 @@ class RcheevosClient extends ChangeNotifier {
     _notificationQueue.clear();
 
     debugPrint('RcheevosClient: shutdown');
-    notifyListeners();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -610,7 +615,7 @@ class RcheevosClient extends ChangeNotifier {
 
   @override
   void dispose() {
-    shutdown();
+    shutdown(notify: false);
     _eventController.close();
     _bindings.dispose();
     super.dispose();

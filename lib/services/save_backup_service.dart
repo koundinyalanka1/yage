@@ -313,7 +313,10 @@ class SaveBackupService {
   /// Returns the Drive file ID, or null on failure.
   static Future<String?> uploadToDrive(String zipPath) async {
     try {
-      final httpClient = await _signIn.authenticatedClient();
+      final account = _signIn.currentUser;
+      if (account == null) return null;
+      
+      final httpClient = await account.authenticatedClient();
       if (httpClient == null) return null;
 
       final driveApi = drive.DriveApi(httpClient);
@@ -349,7 +352,6 @@ class SaveBackupService {
           ..parents = [folderId];
         result = await driveApi.files.create(driveFile, uploadMedia: media);
       }
-      httpClient.close();
       return result.id;
     } catch (e) {
       debugPrint('Drive upload error: $e');
@@ -360,7 +362,10 @@ class SaveBackupService {
   /// List backup ZIPs in the "RetroPal" Drive folder.
   static Future<List<drive.File>> listDriveBackups() async {
     try {
-      final httpClient = await _signIn.authenticatedClient();
+      final account = _signIn.currentUser;
+      if (account == null) return [];
+      
+      final httpClient = await account.authenticatedClient();
       if (httpClient == null) return [];
 
       final driveApi = drive.DriveApi(httpClient);
@@ -372,7 +377,6 @@ class SaveBackupService {
         $fields: 'files(id,name,modifiedTime,size)',
       );
 
-      httpClient.close();
       return result.files ?? [];
     } catch (e) {
       debugPrint('Drive list error: $e');
@@ -383,7 +387,10 @@ class SaveBackupService {
   /// Download a backup ZIP from Google Drive to a temp path.
   static Future<String?> downloadFromDrive(String fileId) async {
     try {
-      final httpClient = await _signIn.authenticatedClient();
+      final account = _signIn.currentUser;
+      if (account == null) return null;
+      
+      final httpClient = await account.authenticatedClient();
       if (httpClient == null) return null;
 
       final driveApi = drive.DriveApi(httpClient);
@@ -398,7 +405,6 @@ class SaveBackupService {
       await media.stream.pipe(sink);
       await sink.close();
 
-      httpClient.close();
       return tempPath;
     } catch (e) {
       debugPrint('Drive download error: $e');

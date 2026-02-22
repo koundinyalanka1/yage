@@ -17,8 +17,4 @@
 
     <!-- RA achievement cache -->
     <include domain="file" path="ra_cache/" />
-
-    <!-- Exclude large / transient files -->
-    <exclude domain="database" path="." />
-    <exclude domain="file" path="app_flutter/cache/" />
 </full-backup-content>

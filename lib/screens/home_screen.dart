@@ -1645,12 +1645,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildFAB() {
-    return TvFocusable(
-      borderRadius: BorderRadius.circular(16),
-      onTap: _addRomFile,
-      child: FloatingActionButton(
-        onPressed: _addRomFile,
-        child: const Icon(Icons.add),
+    return Padding(
+      // Push the FAB up so it stays above the BannerAd (approx 50-60dp)
+      padding: const EdgeInsets.only(bottom: 60),
+      child: TvFocusable(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _addRomFile,
+        child: FloatingActionButton(
+          onPressed: _addRomFile,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -2303,8 +2307,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
         content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'This will permanently delete all save data for:',
@@ -2383,4 +2386,3 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (mounted) _gameListFocusNode.requestFocus();
   }
 }
-

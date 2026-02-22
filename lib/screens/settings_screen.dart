@@ -491,7 +491,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             _InfoTile(
               icon: Icons.info_outline,
               title: 'RetroPal',
-              subtitle: 'Classic GB/GBC/GBA/NES/SNES Games\nVersion 0.1.0',
+              subtitle: 'Classic GB/GBC/GBA/NES/SNES Games\nVersion 1.0.0',
             ),
             const Divider(height: 1),
             _InfoTile(

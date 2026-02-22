@@ -211,7 +211,7 @@ class _AchievementsScreenState extends State<AchievementsScreen>
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: achievements.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final ach = achievements[index];
         return TvFocusable(
@@ -282,7 +282,7 @@ class _AchievementTile extends StatelessWidget {
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                placeholder: (_, _) => Container(
+                placeholder: (_, __) => Container(
                   color: colors.backgroundLight,
                   child: const Center(
                     child: SizedBox(
@@ -292,7 +292,7 @@ class _AchievementTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                errorWidget: (_, _, _) => Container(
+                errorWidget: (context, url, error) => Container(
                   color: colors.backgroundLight,
                   child: Icon(
                     _isEarned
