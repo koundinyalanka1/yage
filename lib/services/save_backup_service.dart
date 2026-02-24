@@ -535,7 +535,6 @@ class SaveBackupService {
       }
 
       final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) return null;
 
       final tempDir = await getTemporaryDirectory();
       final timestamp = DateTime.now()

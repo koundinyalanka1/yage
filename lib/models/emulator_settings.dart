@@ -34,6 +34,9 @@ class EmulatorSettings {
   final bool raEnabled; // master toggle for RetroAchievements
   final bool raHardcoreMode; // RetroAchievements hardcore mode
   final bool enableSgbBorders; // SGB border rendering for GB games
+  /// User-selected ROMs folder URI (Android SAF) or path (legacy).
+  /// When set, ROMs are imported from here on reinstall, and saves are synced here.
+  final String? userRomsFolderUri;
   const EmulatorSettings({
     this.volume = 0.8,
     this.enableSound = true,
@@ -64,6 +67,7 @@ class EmulatorSettings {
     this.raEnabled = true,
     this.raHardcoreMode = false,
     this.enableSgbBorders = true,
+    this.userRomsFolderUri,
   });
 
   EmulatorSettings copyWith({
@@ -96,6 +100,7 @@ class EmulatorSettings {
     bool? raEnabled,
     bool? raHardcoreMode,
     bool? enableSgbBorders,
+    String? userRomsFolderUri,
   }) {
     return EmulatorSettings(
       volume: volume ?? this.volume,
@@ -127,13 +132,14 @@ class EmulatorSettings {
       raEnabled: raEnabled ?? this.raEnabled,
       raHardcoreMode: raHardcoreMode ?? this.raHardcoreMode,
       enableSgbBorders: enableSgbBorders ?? this.enableSgbBorders,
+      userRomsFolderUri: userRomsFolderUri ?? this.userRomsFolderUri,
     );
   }
 
   /// Current schema version for the persisted settings JSON.
   /// Bump this when adding / removing / renaming fields so that future
   /// migration logic can detect the old format and upgrade it.
-  static const int _jsonVersion = 1;
+  static const int _jsonVersion = 2;
 
   Map<String, dynamic> toJson() {
     return {
@@ -167,6 +173,7 @@ class EmulatorSettings {
       'raEnabled': raEnabled,
       'raHardcoreMode': raHardcoreMode,
       'enableSgbBorders': enableSgbBorders,
+      'userRomsFolderUri': userRomsFolderUri,
     };
   }
 
@@ -205,6 +212,7 @@ class EmulatorSettings {
       raEnabled: json['raEnabled'] as bool? ?? true,
       raHardcoreMode: json['raHardcoreMode'] as bool? ?? false,
       enableSgbBorders: json['enableSgbBorders'] as bool? ?? true,
+      userRomsFolderUri: json['userRomsFolderUri'] as String?,
     );
   }
 
@@ -240,7 +248,8 @@ class EmulatorSettings {
           isGridView == other.isGridView &&
           raEnabled == other.raEnabled &&
           raHardcoreMode == other.raHardcoreMode &&
-          enableSgbBorders == other.enableSgbBorders;
+          enableSgbBorders == other.enableSgbBorders &&
+          userRomsFolderUri == other.userRomsFolderUri;
 
   @override
   int get hashCode => Object.hashAll([
@@ -251,7 +260,7 @@ class EmulatorSettings {
         autoSaveInterval, gamepadLayoutPortrait, gamepadLayoutLandscape,
         useJoystick, enableExternalGamepad, gamepadSkin, selectedTheme,
         enableRewind, rewindBufferSeconds, sortOption, isGridView,
-        raEnabled, raHardcoreMode, enableSgbBorders,
+        raEnabled, raHardcoreMode, enableSgbBorders, userRomsFolderUri,
       ]);
 
   /// Parse gamepad skin from JSON, supporting both the current string format

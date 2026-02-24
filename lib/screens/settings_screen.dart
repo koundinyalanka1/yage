@@ -21,6 +21,7 @@ import '../services/cover_art_service.dart';
 import '../utils/theme.dart';
 import '../widgets/banner_ad_widget.dart';
 import '../widgets/tv_focusable.dart';
+import '../widgets/rom_folder_setup_dialog.dart';
 import 'ra_login_screen.dart';
 
 const _deviceChannel = MethodChannel('com.yourmateapps.retropal/device');
@@ -396,7 +397,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             _SwitchTile(
               icon: Icons.fast_rewind,
               title: 'Rewind',
-              subtitle: 'Hold button to step backward in time',
+              subtitle: 'Hold button to step backward in time (GB/GBC/GBA only)',
               value: settings.enableRewind,
               onChanged: (_) => settingsService.toggleRewind(),
             ),
@@ -738,15 +739,30 @@ class _SettingsScreenState extends State<SettingsScreen>
                           }),
                         Padding(
                           padding: const EdgeInsets.all(16),
-                          child: TvFocusable(
-                            autofocus: library.romDirectories.isEmpty,
-                            onTap: () => _addFolderFromSettings(context, library, setState),
-                            borderRadius: BorderRadius.circular(8),
-                            child: ElevatedButton.icon(
-                              onPressed: () => _addFolderFromSettings(context, library, setState),
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add Folder'),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TvFocusable(
+                                onTap: () => _openRomFolderSetup(context, setState),
+                                borderRadius: BorderRadius.circular(8),
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _openRomFolderSetup(context, setState),
+                                  icon: const Icon(Icons.folder_open),
+                                  label: const Text('Set up ROM folder (sync saves)'),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TvFocusable(
+                                autofocus: library.romDirectories.isEmpty,
+                                onTap: () => _addFolderFromSettings(context, library, setState),
+                                borderRadius: BorderRadius.circular(8),
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _addFolderFromSettings(context, library, setState),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add Folder'),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -759,6 +775,19 @@ class _SettingsScreenState extends State<SettingsScreen>
         );
       },
     );
+  }
+
+  /// Open the ROM folder setup dialog (set folder for sync, import on reinstall).
+  Future<void> _openRomFolderSetup(
+    BuildContext context,
+    void Function(void Function()) setState,
+  ) async {
+    await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const RomFolderSetupDialog(allowSkip: true),
+    );
+    if (context.mounted) setState(() {});
   }
 
   /// Add folder: on Android use native SAF (works with scoped storage);
@@ -787,7 +816,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (!context.mounted) return;
       if (dirPath != null) {
         await library.addRomDirectory(dirPath);
-        if (context.mounted) setState(() {});
+        if (!context.mounted) return;
+        setState(() {});
         ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           const SnackBar(content: Text('Folder added. Refreshing...')),
         );
@@ -836,7 +866,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (!context.mounted) return;
       if (result != null) {
         await library.addRomDirectory(result);
-        if (context.mounted) setState(() {});
+        if (!context.mounted) return;
+        setState(() {});
         ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
           const SnackBar(content: Text('Folder added')),
         );
@@ -1025,7 +1056,7 @@ class _CollapsibleSection extends StatefulWidget {
   const _CollapsibleSection({
     required this.title,
     required this.icon,
-    this.initiallyExpanded = false,
+    this.initiallyExpanded = false, // ignore: unused_element_parameter
     required this.child,
   });
 
@@ -2531,10 +2562,10 @@ class _ImportRestoreDialogState extends State<_ImportRestoreDialog> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.orange.withOpacity(0.3),
+                    color: Colors.orange.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(

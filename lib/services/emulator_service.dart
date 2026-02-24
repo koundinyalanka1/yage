@@ -15,6 +15,7 @@ import '../models/game_rom.dart';
 import '../models/emulator_settings.dart';
 import 'link_cable_service.dart';
 import 'rcheevos_client.dart';
+import 'rom_folder_service.dart';
 
 /// State of the emulator
 enum EmulatorState {
@@ -96,6 +97,14 @@ class EmulatorService extends ChangeNotifier {
   bool get isLinkSupported {
     if (_useStub) return _stub?.isLinkSupported ?? false;
     return _core?.isLinkSupported ?? false;
+  }
+
+  /// Whether rewind is supported for the current platform.
+  /// NES and SNES (libretro cores) do not support rewind.
+  bool get isRewindSupported {
+    if (_useStub) return false;
+    final p = _currentRom?.platform ?? platform;
+    return p != GamePlatform.nes && p != GamePlatform.snes;
   }
 
   // Rewind state
@@ -323,12 +332,21 @@ class EmulatorService extends ChangeNotifier {
         final sramPath = _getSramPath(_currentRom!);
         final success = _core!.saveSram(sramPath);
         debugPrint('Saved SRAM to $sramPath: $success');
+        if (success) _syncSaveToUserFolder(sramPath);
       } catch (e) {
         debugPrint('Error saving SRAM: $e');
       }
     }).whenComplete(() {
       completer.complete();
     });
+  }
+
+  /// Sync a save file to the user's ROMs folder if one is configured.
+  /// Fire-and-forget; failures are logged.
+  void _syncSaveToUserFolder(String sourcePath) {
+    final folderUri = _settings.userRomsFolderUri;
+    if (folderUri == null || folderUri.isEmpty) return;
+    unawaited(RomFolderService.copySaveToUserFolder(folderUri, sourcePath));
   }
 
   /// Delete all save data for a game: SRAM (.sav), save states (.ss0-5),
@@ -443,8 +461,10 @@ class EmulatorService extends ChangeNotifier {
       // Apply color palette (for original GB games only)
       _applyColorPalette();
 
-      // Initialize rewind buffer if enabled
-      if (_settings.enableRewind) {
+      // Initialize rewind buffer if enabled (not supported for NES/SNES)
+      if (_settings.enableRewind &&
+          rom.platform != GamePlatform.nes &&
+          rom.platform != GamePlatform.snes) {
         _initRewind();
       }
 
@@ -599,7 +619,7 @@ class EmulatorService extends ChangeNotifier {
     final core = _core!;
     core.frameLoopSetSpeed((_speedMultiplier * 100).round());
     core.frameLoopSetRewind(
-      enabled: _settings.enableRewind,
+      enabled: _settings.enableRewind && isRewindSupported,
       interval: _rewindCaptureInterval,
     );
     core.frameLoopSetRcheevos(enabled: rcheevosClient != null);
@@ -750,8 +770,8 @@ class EmulatorService extends ChangeNotifier {
       // Note: Audio is now handled natively by OpenSL ES on Android
       // No need to process audio buffer in Dart
 
-      // Capture rewind snapshot every N frames
-      if (_settings.enableRewind) {
+      // Capture rewind snapshot every N frames (not for NES/SNES)
+      if (_settings.enableRewind && isRewindSupported) {
         _rewindCaptureCounter++;
         if (_rewindCaptureCounter >= _rewindCaptureInterval) {
           _rewindCaptureCounter = 0;
@@ -827,6 +847,7 @@ class EmulatorService extends ChangeNotifier {
   /// Start rewinding (call while the rewind button is held).
   void startRewind() {
     if (!_settings.enableRewind || _useStub) return;
+    if (!isRewindSupported) return;
     if (_state != EmulatorState.running || _core == null) return;
 
     // Stop native frame loop — rewind needs Dart-side step control
@@ -1111,6 +1132,10 @@ class EmulatorService extends ChangeNotifier {
     }
     if (success) {
       await _saveStateScreenshot(slot);
+      final statePath = getStatePath(slot);
+      final screenshotPath = getStateScreenshotPath(slot);
+      if (statePath != null) _syncSaveToUserFolder(statePath);
+      if (screenshotPath != null) _syncSaveToUserFolder(screenshotPath);
     }
 
     if (wasNative && _state == EmulatorState.running) _startNativeFrameLoop();
@@ -1261,14 +1286,15 @@ class EmulatorService extends ChangeNotifier {
     if (_useNativeFrameLoop &&
         (oldSettings.enableRewind != newSettings.enableRewind)) {
       _core?.frameLoopSetRewind(
-          enabled: newSettings.enableRewind,
+          enabled: newSettings.enableRewind && isRewindSupported,
           interval: _rewindCaptureInterval);
     }
 
     // Handle rewind setting changes
     if (oldSettings.enableRewind != newSettings.enableRewind) {
       if (newSettings.enableRewind && !_useStub && _core != null &&
-          _state != EmulatorState.uninitialized && _currentRom != null) {
+          _state != EmulatorState.uninitialized && _currentRom != null &&
+          isRewindSupported) {
         _initRewind();
       } else if (!newSettings.enableRewind) {
         if (_isRewinding) stopRewind();
@@ -1277,7 +1303,7 @@ class EmulatorService extends ChangeNotifier {
     }
     if (oldSettings.rewindBufferSeconds != newSettings.rewindBufferSeconds &&
         newSettings.enableRewind && !_useStub && _core != null &&
-        _state != EmulatorState.uninitialized) {
+        _state != EmulatorState.uninitialized && isRewindSupported) {
       _initRewind(); // Reinitialize with new capacity
     }
 
@@ -1414,6 +1440,7 @@ class EmulatorService extends ChangeNotifier {
         } else {
           _core?.saveSram(sramPath);
         }
+        _syncSaveToUserFolder(sramPath);
       }
     } catch (e) {
       debugPrint('dispose: SRAM flush failed — $e');

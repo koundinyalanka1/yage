@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
+import android.webkit.MimeTypeMap
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -29,8 +30,12 @@ class MainActivity : FlutterActivity() {
     // Texture bridge for zero-copy frame delivery
     private var textureBridge: YageTextureBridge? = null
 
+    // Callback for picking folder (setup) — returns URI only
+    private var pickFolderResultHandler: ((String?) -> Unit)? = null
+
     companion object {
         private const val SAF_IMPORT_FOLDER_CODE = 2001
+        private const val SAF_PICK_FOLDER_CODE = 2002
         private const val STORAGE_PERMISSION_CODE = 1001
         private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb", "nes", "sfc", "smc")
     }
@@ -69,6 +74,53 @@ class MainActivity : FlutterActivity() {
                         }
                         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                         startActivityForResult(intent, SAF_IMPORT_FOLDER_CODE)
+                    }
+
+                    // ── Pick folder for setup (returns URI only, no import) ──
+                    "pickRomsFolder" -> {
+                        pickFolderResultHandler = { uri ->
+                            result.success(uri)
+                        }
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                        startActivityForResult(intent, SAF_PICK_FOLDER_CODE)
+                    }
+
+                    // ── Import from persisted folder URI (no picker) ──
+                    "importFromFolderUri" -> {
+                        val treeUri = call.argument<String>("treeUri")
+                        if (treeUri == null) {
+                            result.success(emptyList<String>())
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val uri = Uri.parse(treeUri)
+                                val importedPaths = importRomsFromTree(uri)
+                                runOnUiThread { result.success(importedPaths) }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                runOnUiThread { result.success(emptyList<String>()) }
+                            }
+                        }.start()
+                    }
+
+                    // ── Copy a save file from internal storage to user folder (SAF tree) ──
+                    "copySaveToUserFolder" -> {
+                        val treeUri = call.argument<String>("treeUri")
+                        val sourcePath = call.argument<String>("sourcePath")
+                        if (treeUri == null || sourcePath == null) {
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val success = copyFileToTree(Uri.parse(treeUri), sourcePath)
+                                runOnUiThread { result.success(success) }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                runOnUiThread { result.success(false) }
+                            }
+                        }.start()
                     }
 
                     // ── Internal ROM storage directory ──
@@ -212,6 +264,37 @@ class MainActivity : FlutterActivity() {
         }
 
         return importedPaths
+    }
+
+    /**
+     * Copy a file from internal storage to the user's SAF document tree.
+     * Used to sync battery saves and save states to the user folder.
+     */
+    private fun copyFileToTree(treeUri: Uri, sourcePath: String): Boolean {
+        val sourceFile = File(sourcePath)
+        if (!sourceFile.exists()) return false
+        val fileName = sourceFile.name
+        val docId = DocumentsContract.getTreeDocumentId(treeUri)
+        val mimeType = getMimeType(fileName)
+        return try {
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val childUri = DocumentsContract.createDocument(contentResolver, docUri, mimeType, fileName)
+                ?: return false
+            contentResolver.openOutputStream(childUri)?.use { output ->
+                sourceFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun getMimeType(fileName: String): String {
+        val ext = fileName.substringAfterLast('.', "")
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
     }
 
     /**
@@ -412,7 +495,7 @@ class MainActivity : FlutterActivity() {
                 // Persist read permission so folder can be re-scanned later
                 try {
                     contentResolver.takePersistableUriPermission(
-                        treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
                 } catch (_: Exception) {}
 
@@ -428,6 +511,24 @@ class MainActivity : FlutterActivity() {
                 importRomsResultHandler?.invoke(null)
                 importRomsResultHandler = null
             }
+        }
+
+        if (requestCode == SAF_PICK_FOLDER_CODE) {
+            if (resultCode == RESULT_OK && data?.data != null) {
+                val treeUri = data.data!!
+
+                // Persist read+write so we can sync saves to this folder
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+
+                pickFolderResultHandler?.invoke(treeUri.toString())
+            } else {
+                pickFolderResultHandler?.invoke(null)
+            }
+            pickFolderResultHandler = null
         }
     }
 }

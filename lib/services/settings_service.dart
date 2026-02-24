@@ -22,8 +22,13 @@ class SettingsService extends ChangeNotifier {
   Timer? _saveDebounceTimer;
   bool _hasPendingSave = false;
 
+  final Completer<void> _loadCompleter = Completer<void>();
+
   EmulatorSettings get settings => _settings;
   bool get isLoaded => _isLoaded;
+
+  /// Future that completes when [load] has finished.
+  Future<void> get whenLoaded => _loadCompleter.future;
 
   /// Load settings from storage
   Future<void> load() async {
@@ -42,6 +47,8 @@ class SettingsService extends ChangeNotifier {
       _settings = const EmulatorSettings();
       _isLoaded = true;
       notifyListeners();
+    } finally {
+      if (!_loadCompleter.isCompleted) _loadCompleter.complete();
     }
   }
 
@@ -265,7 +272,33 @@ class SettingsService extends ChangeNotifier {
     await update((s) => s.copyWith(enableSgbBorders: !s.enableSgbBorders));
   }
 
+  /// Set the user-selected ROMs folder URI (Android SAF) or path.
+  /// When set, saves are synced here and ROMs/saves are imported on reinstall.
+  Future<void> setUserRomsFolderUri(String? uri) async {
+    await update((s) => s.copyWith(userRomsFolderUri: uri));
+  }
+
   // ── One-time flags (stored outside the main settings blob) ──────────
+
+  static const String _setupCompletedKey = 'rom_folder_setup_completed';
+
+  /// Whether the user has completed the ROM folder setup (selected a folder).
+  Future<bool> hasCompletedRomFolderSetup() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_setupCompletedKey) ?? false;
+  }
+
+  /// Mark ROM folder setup as completed (user selected a folder).
+  Future<void> markRomFolderSetupCompleted() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_setupCompletedKey, true);
+  }
+
+  /// Reset setup flag (e.g. for testing).
+  Future<void> resetRomFolderSetup() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_setupCompletedKey);
+  }
 
   /// Whether the shortcuts help dialog has already been shown once.
   Future<bool> isShortcutsHelpShown() async {

@@ -786,6 +786,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         );
         return;
       }
+      // NES/SNES do not support rewind
+      if (!_emulatorRef!.isRewindSupported) {
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Rewind is not available for ${widget.game.platformShortName} games.',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
       _emulatorRef!.startRewind();
     } else {
       _emulatorRef!.stopRewind();
@@ -1054,20 +1066,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           // ── Proportional HUD metrics ──
           // All HUD element sizes & positions are derived from screen
           // dimensions so the layout scales across phones and tablets.
-          final _sw = MediaQuery.of(context).size.width;
-          final _sh = MediaQuery.of(context).size.height;
-          final _safeTop = MediaQuery.of(context).padding.top;
-          final _safeBottom = MediaQuery.of(context).padding.bottom;
+          final sw = MediaQuery.of(context).size.width;
+          final sh = MediaQuery.of(context).size.height;
+          final safeTop = MediaQuery.of(context).padding.top;
+          final safeBottom = MediaQuery.of(context).padding.bottom;
           // In landscape for GBA (wide aspect ratio), shrink HUD buttons
           // so they don't eat into the already-narrow side zones.
           final bool isGbaLandscape = _isLandscape &&
               widget.game.platform == GamePlatform.gba;
           final hudBtn = isGbaLandscape
-              ? (_sw * 0.082).clamp(30.0, 44.0)    // ~23% smaller for GBA landscape
-              : (_sw * 0.107).clamp(36.0, 56.0);   // normal size
-          final hudEdge = _sw * 0.02;                         // edge margin
-          final hudGap = _sw * 0.03;                          // gap between btns
-          final hudTop = _safeTop + _sh * 0.005;              // top offset
+              ? (sw * 0.082).clamp(30.0, 44.0)    // ~23% smaller for GBA landscape
+              : (sw * 0.107).clamp(36.0, 56.0);   // normal size
+          final hudEdge = sw * 0.02;                         // edge margin
+          final hudGap = sw * 0.03;                          // gap between btns
+          final hudTop = safeTop + sh * 0.005;              // top offset
           final hudStep = hudBtn + hudGap;                    // one btn + gap
           
           return Stack(
@@ -1207,8 +1219,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     }
 
                     return Positioned(
-                      bottom: _safeBottom + _sh * 0.02,
-                      left: _sw * 0.04,
+                      bottom: safeBottom + sh * 0.02,
+                      left: sw * 0.04,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -1243,8 +1255,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     if (!raRuntime.isHardcore) return const SizedBox.shrink();
 
                     return Positioned(
-                      bottom: _safeBottom + _sh * 0.02,
-                      right: _sw * 0.04,
+                      bottom: safeBottom + sh * 0.02,
+                      right: sw * 0.04,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -1282,7 +1294,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 ),
               
               // Rewind button (hold to rewind) - next to menu
-              if (!_editingLayout && settings.enableRewind)
+              // Hidden for NES/SNES — rewind is not supported by libretro cores
+              if (!_editingLayout && settings.enableRewind && emulator.isRewindSupported)
                 Positioned(
                   top: hudTop,
                   left: hudEdge + hudStep,
@@ -1297,7 +1310,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               if (!_editingLayout)
                 Positioned(
                   top: hudTop,
-                  left: hudEdge + hudStep * (settings.enableRewind ? 2.5 : 1.5),
+                  left: hudEdge + hudStep * (settings.enableRewind && emulator.isRewindSupported ? 2.5 : 1.5),
                   child: _FastForwardButton(
                     isActive: emulator.speedMultiplier > 1.0,
                     speed: emulator.speedMultiplier,
@@ -1334,10 +1347,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               if (_editingLayout)
                 Positioned(
                   top: _isLandscape 
-                      ? _sh * 0.35
-                      : _safeTop + hudBtn + hudGap * 2,
-                  left: _isLandscape ? _sw * 0.30 : _sw * 0.04,
-                  right: _isLandscape ? _sw * 0.30 : _sw * 0.04,
+                      ? sh * 0.35
+                      : safeTop + hudBtn + hudGap * 2,
+                  left: _isLandscape ? sw * 0.30 : sw * 0.04,
+                  right: _isLandscape ? sw * 0.30 : sw * 0.04,
                   child: _LayoutEditorToolbar(
                     onSave: _saveLayout,
                     onCancel: _cancelEditLayout,
@@ -1525,16 +1538,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       selectButton: layout.selectButton.copyWith(
         y: (layout.selectButton.y + portraitUpShift).clamp(0.0, 1.0),
       ),
-      xButton: layout.xButton != null
-          ? layout.xButton!.copyWith(
-              y: (layout.xButton!.y + portraitUpShift).clamp(0.0, 1.0),
-            )
-          : null,
-      yButton: layout.yButton != null
-          ? layout.yButton!.copyWith(
-              y: (layout.yButton!.y + portraitUpShift).clamp(0.0, 1.0),
-            )
-          : null,
+      xButton: layout.xButton?.copyWith(
+        y: ((layout.xButton?.y ?? 0) + portraitUpShift).clamp(0.0, 1.0),
+      ),
+      yButton: layout.yButton?.copyWith(
+        y: ((layout.yButton?.y ?? 0) + portraitUpShift).clamp(0.0, 1.0),
+      ),
     );
     
     return Stack(

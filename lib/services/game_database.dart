@@ -14,7 +14,7 @@ import '../models/game_rom.dart';
 /// scale well as the library grows because every mutation rewrites the entire
 /// blob.  With SQLite each operation is an efficient row-level write.
 class GameDatabase {
-  static const int _version = 1;
+  static const int _version = 2;
   static const String _dbName = 'game_library.db';
 
   /// SharedPreferences keys used by the legacy JSON storage.
@@ -45,6 +45,7 @@ class GameDatabase {
         dbPath,
         version: _version,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
       );
 
       // One-time migration from SharedPreferences → SQLite.
@@ -67,7 +68,8 @@ class GameDatabase {
           last_played  TEXT,
           cover_path   TEXT,
           is_favorite  INTEGER NOT NULL DEFAULT 0,
-          total_play_time_seconds INTEGER NOT NULL DEFAULT 0
+          total_play_time_seconds INTEGER NOT NULL DEFAULT 0,
+          rom_hash     TEXT
         )
       ''');
 
@@ -76,9 +78,22 @@ class GameDatabase {
           path TEXT PRIMARY KEY
         )
       ''');
+
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_games_rom_hash ON games(rom_hash)',
+      );
     } catch (e) {
       debugPrint('GameDatabase: onCreate failed — $e');
       rethrow;
+    }
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE games ADD COLUMN rom_hash TEXT');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_games_rom_hash ON games(rom_hash)',
+      );
     }
   }
 
@@ -168,6 +183,7 @@ class GameDatabase {
       'cover_path': json['coverPath'] as String?,
       'is_favorite': (json['isFavorite'] as bool? ?? false) ? 1 : 0,
       'total_play_time_seconds': json['totalPlayTimeSeconds'] as int? ?? 0,
+      'rom_hash': json['romHash'] as String?,
     };
   }
 
@@ -186,9 +202,9 @@ class GameDatabase {
   }
 
   /// Insert or replace a single game.
-  Future<bool> upsertGame(GameRom game) async {
+  Future<bool> upsertGame(GameRom game, {String? romHash}) async {
     try {
-      await db.insert('games', _gameRomToRow(game),
+      await db.insert('games', _gameRomToRow(game, romHash: romHash),
           conflictAlgorithm: ConflictAlgorithm.replace);
       return true;
     } catch (e) {
@@ -198,11 +214,12 @@ class GameDatabase {
   }
 
   /// Insert or replace many games in a single transaction.
-  Future<bool> upsertGames(List<GameRom> games) async {
+  Future<bool> upsertGames(List<GameRom> games, {Map<String, String>? romHashes}) async {
     try {
       final batch = db.batch();
       for (final game in games) {
-        batch.insert('games', _gameRomToRow(game),
+        final hash = romHashes?[game.path];
+        batch.insert('games', _gameRomToRow(game, romHash: hash),
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
@@ -210,6 +227,25 @@ class GameDatabase {
     } catch (e) {
       debugPrint('GameDatabase: upsertGames failed — $e');
       return false;
+    }
+  }
+
+  /// Check if a game with the given content hash already exists.
+  /// Returns the existing game's path if found, null otherwise.
+  Future<String?> getPathByRomHash(String romHash) async {
+    try {
+      final rows = await db.query(
+        'games',
+        columns: ['path'],
+        where: 'rom_hash = ?',
+        whereArgs: [romHash],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first['path'] as String;
+    } catch (e) {
+      debugPrint('GameDatabase: getPathByRomHash failed — $e');
+      return null;
     }
   }
 
@@ -302,7 +338,7 @@ class GameDatabase {
     );
   }
 
-  static Map<String, Object?> _gameRomToRow(GameRom game) {
+  static Map<String, Object?> _gameRomToRow(GameRom game, {String? romHash}) {
     return {
       'path': game.path,
       'name': game.name,
@@ -313,6 +349,7 @@ class GameDatabase {
       'cover_path': game.coverPath,
       'is_favorite': game.isFavorite ? 1 : 0,
       'total_play_time_seconds': game.totalPlayTimeSeconds,
+      'rom_hash': romHash,
     };
   }
 

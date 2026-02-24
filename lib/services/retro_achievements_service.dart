@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -207,6 +208,11 @@ class RetroAchievementsService extends ChangeNotifier {
   /// Cleared on successful login, logout, or explicit [clearError].
   String? get lastError => _lastError;
 
+  final Completer<void> _initCompleter = Completer<void>();
+
+  /// Future that completes when [initialize] has finished.
+  Future<void> get whenReady => _initCompleter.future;
+
   /// The active game session, if a ROM has been identified.
   RAGameSession? get activeSession => _activeSession;
 
@@ -273,6 +279,7 @@ class RetroAchievementsService extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+    if (!_initCompleter.isCompleted) _initCompleter.complete();
   }
 
   /// Build a minimal profile from username (no web API call needed).
@@ -620,6 +627,40 @@ class RetroAchievementsService extends ChangeNotifier {
       return digest.toString(); // lowercase hex string
     } catch (e) {
       debugPrint('RA hash error: $e');
+      return null;
+    }
+  }
+
+  /// Compute content hash from bytes (for in-memory ROM data, e.g. ZIP extraction).
+  /// Uses same platform-specific rules as [computeRAHash].
+  static String? computeRAHashFromBytes(Uint8List bytes, String extension) {
+    try {
+      final ext = extension.toLowerCase();
+
+      if (ext == '.nes') {
+        if (bytes.length < 16) return null;
+        final hasHeader = bytes[0] == 0x4E && bytes[1] == 0x45 &&
+                          bytes[2] == 0x53 && bytes[3] == 0x1A;
+        if (hasHeader) {
+          final hasTrainer = (bytes[6] & 0x04) != 0;
+          final offset = 16 + (hasTrainer ? 512 : 0);
+          if (offset >= bytes.length) return null;
+          return md5.convert(bytes.sublist(offset)).toString();
+        }
+        return md5.convert(bytes).toString();
+      }
+
+      if (ext == '.sfc' || ext == '.smc') {
+        final hasHeader = (bytes.length % 1024) == 512;
+        if (hasHeader && bytes.length > 512) {
+          return md5.convert(bytes.sublist(512)).toString();
+        }
+        return md5.convert(bytes).toString();
+      }
+
+      return md5.convert(bytes).toString();
+    } catch (e) {
+      debugPrint('RA hash from bytes error: $e');
       return null;
     }
   }

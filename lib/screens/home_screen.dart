@@ -19,6 +19,7 @@ import '../widgets/game_card.dart';
 import '../widgets/platform_filter.dart';
 import '../widgets/tv_file_browser.dart';
 import '../widgets/tv_focusable.dart';
+import '../widgets/rom_folder_setup_dialog.dart';
 import '../services/settings_service.dart';
 import '../utils/theme.dart';
 import 'achievements_screen.dart';
@@ -87,6 +88,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     // Check if the app was opened via a file intent
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkIncomingFile());
+    // Encourage ROM folder setup on first launch
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowRomFolderSetup());
+  }
+
+  Future<void> _maybeShowRomFolderSetup() async {
+    final completed = await context.read<SettingsService>().hasCompletedRomFolderSetup();
+    if (!completed && mounted) {
+      await maybeShowRomFolderSetupDialog(context);
+    }
   }
 
   final FocusNode _keyFocusNode = FocusNode();
@@ -370,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // NOTE: We check the original filename (f.name) instead of the cached
     // path (f.path) because on some Android devices the SAF file picker
     // caches files under a temporary name without the original extension.
-    const _allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'};
+    const allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'};
     // Track which cached paths are actually ZIPs (by original name), because
     // the cached file path may not preserve the original extension on some
     // Android devices.
@@ -388,9 +398,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           final dot = name.lastIndexOf('.');
           if (dot == -1) continue;
           final ext = name.substring(dot);
-          if (!_allowedExtensions.contains(ext)) continue;
+          if (!allowedExtensions.contains(ext)) continue;
           paths ??= [];
-          paths!.add(f.path!);
+          paths.add(f.path!);
           if (ext == '.zip') zipPaths.add(f.path!);
         }
       }
@@ -558,7 +568,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           );
       }
-    } else if (importedPaths != null && importedPaths!.isEmpty && mounted) {
+    } else if (importedPaths != null && importedPaths.isEmpty && mounted) {
       // User selected folder via SAF but it was empty
       ScaffoldMessenger.of(context)
         ..clearSnackBars()

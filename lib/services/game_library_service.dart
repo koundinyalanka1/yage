@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -8,6 +9,7 @@ import 'package:path/path.dart' as p;
 import '../models/game_rom.dart';
 import '../core/mgba_bindings.dart';
 import 'game_database.dart';
+import 'retro_achievements_service.dart';
 
 
 /// Service for managing the game library.
@@ -31,6 +33,11 @@ class GameLibraryService extends ChangeNotifier {
   List<String> get romDirectories => _romDirectories;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  final Completer<void> _initCompleter = Completer<void>();
+
+  /// Future that completes when [initialize] has finished.
+  Future<void> get whenReady => _initCompleter.future;
 
   /// Get games filtered by platform
   List<GameRom> getGamesByPlatform(GamePlatform? platform) {
@@ -109,6 +116,8 @@ class GameLibraryService extends ChangeNotifier {
       _error = 'Failed to load library: $e';
       _isLoading = false;
       notifyListeners();
+    } finally {
+      if (!_initCompleter.isCompleted) _initCompleter.complete();
     }
   }
 
@@ -118,7 +127,7 @@ class GameLibraryService extends ChangeNotifier {
   ///
   /// Use this when the source file might be in a cache or SAF-provided location
   /// that could be cleaned up. The ROM is copied to the app's permanent internal
-  /// roms directory.
+  /// roms directory. Skips duplicates (same content hash).
   Future<GameRom?> importRom(String sourcePath) async {
     final romsDir = await getInternalRomsDir();
     final fileName = p.basename(sourcePath);
@@ -137,7 +146,14 @@ class GameLibraryService extends ChangeNotifier {
       return null;
     }
 
-    return addRom(destPath);
+    final game = await addRom(destPath);
+    if (game == null) {
+      // Duplicate - remove the copied file to avoid wasting space
+      try {
+        await File(destPath).delete();
+      } catch (_) {}
+    }
+    return game;
   }
 
   /// Import ROMs from a ZIP archive.
@@ -169,15 +185,28 @@ class GameLibraryService extends ChangeNotifier {
 
         // Skip if a ROM with the same name already exists on disk
         if (await File(destPath).exists()) {
-          // Still try to register it in case it's not in the library yet
           final game = await addRom(destPath);
           if (game != null) addedGames.add(game);
           continue;
         }
 
+        // Check for duplicate by content hash before writing (avoids writing then deleting)
+        final bytes = entry.content as List<int>;
+        final contentHash = RetroAchievementsService.computeRAHashFromBytes(
+          bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+          ext,
+        );
+        if (contentHash != null) {
+          final existingPath = await _database.getPathByRomHash(contentHash);
+          if (existingPath != null) {
+            debugPrint('GameLibraryService: skipping duplicate ROM in ZIP (hash $contentHash)');
+            continue;
+          }
+        }
+
         // Write extracted ROM to internal storage
         try {
-          await File(destPath).writeAsBytes(entry.content as List<int>);
+          await File(destPath).writeAsBytes(bytes);
           final game = await addRom(destPath);
           if (game != null) addedGames.add(game);
         } catch (e) {
@@ -202,21 +231,83 @@ class GameLibraryService extends ChangeNotifier {
 
   // ──────────── ROM management ────────────
 
-  /// Add a single ROM file - returns the added game or null
+  /// Add a single ROM file - returns the added game or null.
+  /// Skips duplicates (same content hash) to avoid duplicate entries in the library.
   Future<GameRom?> addRom(String path) async {
     final game = GameRom.fromPath(path);
     if (game == null) return null;
 
-    // Check if already exists
+    // Check if already exists by path
     if (_games.any((g) => g.path == path)) return null;
 
+    // Compute content hash and check for duplicate (same ROM, different path)
+    final hash = await RetroAchievementsService.computeRAHash(path);
+    if (hash != null) {
+      final existingPath = await _database.getPathByRomHash(hash);
+      if (existingPath != null && existingPath != path) {
+        debugPrint('GameLibraryService: skipping duplicate ROM (hash $hash)');
+        return null;
+      }
+    }
+
     _games.add(game);
-    if (!await _database.upsertGame(game)) {
+    if (!await _database.upsertGame(game, romHash: hash)) {
       _games.removeLast();
       return null;
     }
     notifyListeners();
     return game;
+  }
+
+  /// Import ROMs and saves from a directory by copying to internal storage.
+  /// Use this when setting up a user folder (e.g. on TV or reinstall).
+  /// Returns the list of imported games.
+  Future<List<GameRom>> importFromDirectory(
+    String path, {
+    String? appSaveDir,
+  }) async {
+    final addedGames = <GameRom>[];
+    final dir = Directory(path);
+    if (!await dir.exists()) return addedGames;
+
+    final romExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'};
+    final entities = await dir.list(recursive: true).toList();
+
+    for (final entity in entities) {
+      if (entity is! File) continue;
+      final ext = p.extension(entity.path).toLowerCase();
+      if (!romExtensions.contains(ext)) continue;
+
+      final game = await importRom(entity.path);
+      if (game != null) addedGames.add(game);
+    }
+
+    if (appSaveDir != null) {
+      final saveDir = Directory(appSaveDir);
+      if (!await saveDir.exists()) await saveDir.create(recursive: true);
+
+      for (final entity in entities) {
+        if (entity is! File) continue;
+        final name = p.basename(entity.path);
+        final ext = p.extension(entity.path).toLowerCase();
+
+        final isSram = ext == '.sav';
+        final isSaveState = RegExp(r'\.ss[0-5]$').hasMatch(name) ||
+            RegExp(r'\.ss[0-5]\.png$').hasMatch(name);
+
+        if (isSram || isSaveState) {
+          try {
+            final dest = File(p.join(appSaveDir, name));
+            if (!await dest.exists()) {
+              await entity.copy(dest.path);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (addedGames.isNotEmpty) notifyListeners();
+    return addedGames;
   }
 
   /// Add a ROM directory to scan (legacy — works only when filesystem is accessible)
@@ -250,17 +341,29 @@ class GameLibraryService extends ChangeNotifier {
           final ext = p.extension(entity.path).toLowerCase();
           if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
             final game = GameRom.fromPath(entity.path);
-            if (game != null && !_games.any((g) => g.path == entity.path)) {
-              _games.add(game);
-              newGames.add(game);
+            if (game == null || _games.any((g) => g.path == entity.path)) continue;
+
+            // Skip duplicates by content hash
+            final hash = await RetroAchievementsService.computeRAHash(entity.path);
+            if (hash != null) {
+              final existingPath = await _database.getPathByRomHash(hash);
+              if (existingPath != null) continue;
             }
+
+            _games.add(game);
+            newGames.add(game);
           }
         }
       }
 
       if (newGames.isNotEmpty) {
         try {
-          await _database.upsertGames(newGames);
+          final hashes = <String, String>{};
+          for (final g in newGames) {
+            final h = await RetroAchievementsService.computeRAHash(g.path);
+            if (h != null) hashes[g.path] = h;
+          }
+          await _database.upsertGames(newGames, romHashes: hashes);
         } catch (e) {
           debugPrint('GameLibraryService: scanDirectory upsert failed — $e');
         }

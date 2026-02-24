@@ -76,27 +76,18 @@ class _SplashScreenState extends State<SplashScreen>
     _goToHome();
   }
 
-  /// Polls the providers that are already initialising (kicked off in
-  /// [AppProviders]) and returns when they are all ready.
-  ///
-  /// Uses a simple polling loop with a short sleep rather than adding
-  /// listeners, because the providers usually finish within a few hundred
-  /// milliseconds and this keeps the code straightforward.
+  /// Waits for the providers that are already initialising (kicked off in
+  /// [AppProviders]) to finish. Uses explicit ready futures instead of polling.
   Future<void> _waitForProviders() async {
     final settings = context.read<SettingsService>();
     final library = context.read<GameLibraryService>();
     final ra = context.read<RetroAchievementsService>();
 
-    // Poll until all three are done (typically < 500 ms)
-    while (true) {
-      final settingsReady = settings.isLoaded;
-      final libraryReady = !library.isLoading;
-      final raReady = !ra.isLoading;
-
-      if (settingsReady && libraryReady && raReady) break;
-      await Future.delayed(const Duration(milliseconds: 50));
-      if (!mounted) return;
-    }
+    await Future.wait([
+      settings.whenLoaded,
+      library.whenReady,
+      ra.whenReady,
+    ]);
   }
 
   void _goToHome() {
