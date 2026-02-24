@@ -17,7 +17,8 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.yourmateapps.retropal"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // NDK r28+ required for 16 KB page size (Google Play Nov 2025+)
+    ndkVersion = "28.0.12674018"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -53,7 +54,10 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags("")
-                arguments("-DANDROID_STL=none")
+                arguments(
+                    "-DANDROID_STL=none",
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"  // 16 KB page size for Google Play (Nov 2025+)
+                )
             }
         }
     }

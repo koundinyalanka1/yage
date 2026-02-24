@@ -91,4 +91,7 @@ if(ANDROID)
     set_target_properties(yage_core PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
     )
+    # 16 KB page size support for Google Play (required for Android 15+ from Nov 2025)
+    # Ensures ELF segments are aligned for devices with 16 KB memory pages
+    target_link_options(yage_core PRIVATE "LINKER:-z,max-page-size=16384")
 endif()
