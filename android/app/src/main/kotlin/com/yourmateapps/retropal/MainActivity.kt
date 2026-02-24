@@ -178,29 +178,34 @@ class MainActivity : FlutterActivity() {
     // ══════════════════════════════════════════════════════════════
 
     /**
+     * ROM file with parent doc ID (for finding sibling save files).
+     */
+    private data class RomEntry(val fileUri: Uri, val name: String, val parentDocId: String)
+
+    /**
      * Recursively scan a SAF document tree for ROM files and copy them
-     * to the app's internal ROM directory.
+     * to the app's internal ROM directory. Also copies matching save files
+     * (.sav, .ss0-.ss5, .ss0.png-.ss5.png, baseName_*.png) from the same folder.
      */
     private fun importRomsFromTree(treeUri: Uri): List<String> {
         val romsDir = File(filesDir, "roms")
         if (!romsDir.exists()) romsDir.mkdirs()
 
-        // Collect all ROM file URIs + names
-        val romFiles = mutableListOf<Pair<Uri, String>>() // (fileUri, displayName)
+        val romFiles = mutableListOf<RomEntry>()
         val docId = DocumentsContract.getTreeDocumentId(treeUri)
-        scanTreeRecursive(treeUri, docId, romFiles)
+        scanTreeRecursive(treeUri, docId, null, romFiles)
 
-        // Copy each ROM file to internal storage
         val importedPaths = mutableListOf<String>()
-        for ((fileUri, name) in romFiles) {
+        for (entry in romFiles) {
             try {
-                val destFile = File(romsDir, name)
-                contentResolver.openInputStream(fileUri)?.use { input ->
+                val destFile = File(romsDir, entry.name)
+                contentResolver.openInputStream(entry.fileUri)?.use { input ->
                     destFile.outputStream().use { output ->
                         input.copyTo(output)
                     }
                 }
                 importedPaths.add(destFile.absolutePath)
+                copyMatchingSaves(treeUri, entry.parentDocId, entry.name, romsDir)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -210,15 +215,74 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * Copy save files that match the ROM from the same directory.
+     * Patterns: baseName.sav, romBase.ss0-5, romBase.ss0-5.png, baseName_*.png
+     */
+    private fun copyMatchingSaves(treeUri: Uri, parentDocId: String, romName: String, romsDir: File) {
+        val baseName = romName.substringBeforeLast('.', romName)
+        val savePrefixes = listOf(
+            "$baseName.sav",
+            "$romName.ss0", "$romName.ss1", "$romName.ss2",
+            "$romName.ss3", "$romName.ss4", "$romName.ss5",
+            "$romName.ss0.png", "$romName.ss1.png", "$romName.ss2.png",
+            "$romName.ss3.png", "$romName.ss4.png", "$romName.ss5.png"
+        ).toSet()
+        val screenshotPrefix = "${baseName}_"
+        val screenshotSuffix = ".png"
+
+        val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+        try {
+            contentResolver.query(
+                childUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null, null, null
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+
+                while (cursor.moveToNext()) {
+                    val docId = cursor.getString(idCol)
+                    val name = cursor.getString(nameCol) ?: continue
+                    val mime = cursor.getString(cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE))
+
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) continue
+
+                    val shouldCopy = name in savePrefixes ||
+                        (name.startsWith(screenshotPrefix) && name.endsWith(screenshotSuffix))
+
+                    if (shouldCopy) {
+                        try {
+                            val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            val destFile = File(romsDir, name)
+                            contentResolver.openInputStream(fileUri)?.use { input ->
+                                destFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
      * Recursively enumerate children of a SAF document tree node,
      * collecting ROM files that match [ROM_EXTENSIONS].
+     * [parentDocIdForSaves] is the doc ID of the directory containing these files (for save-file lookup).
      */
     private fun scanTreeRecursive(
         treeUri: Uri,
         parentDocId: String,
-        results: MutableList<Pair<Uri, String>>
+        parentDocIdForSaves: String?,
+        results: MutableList<RomEntry>
     ) {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+        val currentDirAsParent = parentDocIdForSaves ?: parentDocId
 
         try {
             contentResolver.query(
@@ -239,21 +303,48 @@ class MainActivity : FlutterActivity() {
                     val name = cursor.getString(nameCol) ?: continue
                     val mime = cursor.getString(mimeCol)
 
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        // Recurse into sub-directories
-                        scanTreeRecursive(treeUri, docId, results)
+                    val isDirectory = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    val mightBeDirectory = mime.isNullOrEmpty()
+
+                    if (isDirectory) {
+                        scanTreeRecursive(treeUri, docId, docId, results)
+                    } else if (mightBeDirectory) {
+                        val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+                        try {
+                            contentResolver.query(childUri, null, null, null, null)?.use { childCursor ->
+                                if (childCursor.moveToFirst()) {
+                                    scanTreeRecursive(treeUri, docId, docId, results)
+                                } else {
+                                    val ext = name.substringAfterLast('.', "").lowercase()
+                                    if (ext in ROM_EXTENSIONS) {
+                                        val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                                        results.add(RomEntry(fileUri, name, currentDirAsParent))
+                                    }
+                                }
+                            } ?: run {
+                                val ext = name.substringAfterLast('.', "").lowercase()
+                                if (ext in ROM_EXTENSIONS) {
+                                    val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                                    results.add(RomEntry(fileUri, name, currentDirAsParent))
+                                }
+                            }
+                        } catch (_: Exception) {
+                            val ext = name.substringAfterLast('.', "").lowercase()
+                            if (ext in ROM_EXTENSIONS) {
+                                val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                                results.add(RomEntry(fileUri, name, currentDirAsParent))
+                            }
+                        }
                     } else {
-                        // Check file extension
                         val ext = name.substringAfterLast('.', "").lowercase()
                         if (ext in ROM_EXTENSIONS) {
                             val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-                            results.add(Pair(fileUri, name))
+                            results.add(RomEntry(fileUri, name, currentDirAsParent))
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            // Some directories may not be accessible — skip them
             e.printStackTrace()
         }
     }

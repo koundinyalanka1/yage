@@ -539,6 +539,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
       if (addedGames.isNotEmpty && mounted) {
         _tabController.animateTo(0);
+        _autoFetchCovers(addedGames, library);
         messenger
           ..clearSnackBars()
           ..showSnackBar(

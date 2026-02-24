@@ -6,6 +6,9 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../utils/tv_detector.dart';
+import '../widgets/tv_file_browser.dart';
+
 import '../models/emulator_settings.dart';
 import '../models/game_rom.dart';
 import '../models/gamepad_skin.dart';
@@ -14,10 +17,13 @@ import '../services/game_library_service.dart';
 import '../services/emulator_service.dart';
 import '../services/retro_achievements_service.dart';
 import '../services/save_backup_service.dart';
+import '../services/cover_art_service.dart';
 import '../utils/theme.dart';
 import '../widgets/banner_ad_widget.dart';
 import '../widgets/tv_focusable.dart';
 import 'ra_login_screen.dart';
+
+const _deviceChannel = MethodChannel('com.yourmateapps.retropal/device');
 
 /// Settings screen — organized into 5 focused tabs for quick D-pad / touch
 /// navigation: Display, Audio, Controls, Trophies, Data.
@@ -94,9 +100,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
         ),
       ),
-      body: FocusTraversalGroup(
-        policy: OrderedTraversalPolicy(),
-        child: Column(
+      body: SafeArea(
+        child: FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: Column(
           children: [
             // ── Tab bar ── sits in the body (not AppBar.bottom) so that
             // FocusTraversalOrder gives D-pad users a clean path:
@@ -178,6 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ],
         ),
       ),
+    ),
     ),
     );
   }
@@ -732,26 +740,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                           padding: const EdgeInsets.all(16),
                           child: TvFocusable(
                             autofocus: library.romDirectories.isEmpty,
-                            onTap: () async {
-                              final result =
-                                  await FilePicker.platform.getDirectoryPath();
-                              if (!context.mounted) return;
-                              if (result != null) {
-                                await library.addRomDirectory(result);
-                                if (context.mounted) setState(() {});
-                              }
-                            },
+                            onTap: () => _addFolderFromSettings(context, library, setState),
                             borderRadius: BorderRadius.circular(8),
                             child: ElevatedButton.icon(
-                              onPressed: () async {
-                                final result = await FilePicker.platform
-                                    .getDirectoryPath();
-                                if (!context.mounted) return;
-                                if (result != null) {
-                                  await library.addRomDirectory(result);
-                                  if (context.mounted) setState(() {});
-                                }
-                              },
+                              onPressed: () => _addFolderFromSettings(context, library, setState),
                               icon: const Icon(Icons.add),
                               label: const Text('Add Folder'),
                             ),
@@ -767,6 +759,110 @@ class _SettingsScreenState extends State<SettingsScreen>
         );
       },
     );
+  }
+
+  /// Add folder: on Android use native SAF (works with scoped storage);
+  /// on TV fall back to built-in browser; otherwise use FilePicker.
+  Future<void> _addFolderFromSettings(
+    BuildContext context,
+    GameLibraryService library,
+    void Function(void Function()) setState,
+  ) async {
+    List<String>? importedPaths;
+
+    if (Platform.isAndroid) {
+      try {
+        final result = await _deviceChannel.invokeMethod<List<dynamic>>('importRomsFromFolder');
+        importedPaths = result?.cast<String>();
+      } catch (_) {
+        importedPaths = null;
+      }
+    }
+
+    if (!context.mounted) return;
+
+    // TV fallback: use built-in folder browser
+    if (importedPaths == null && TvDetector.isTV && context.mounted) {
+      final dirPath = await TvFileBrowser.pickDirectory(context);
+      if (!context.mounted) return;
+      if (dirPath != null) {
+        await library.addRomDirectory(dirPath);
+        if (context.mounted) setState(() {});
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          const SnackBar(content: Text('Folder added. Refreshing...')),
+        );
+        return;
+      }
+    }
+
+    // Android SAF: add each imported file
+    if (importedPaths != null && importedPaths.isNotEmpty && context.mounted) {
+      final addedGames = <GameRom>[];
+      for (final path in importedPaths) {
+        if (!context.mounted) break;
+        final game = await library.addRom(path);
+        if (game != null) addedGames.add(game);
+      }
+      if (context.mounted) setState(() {});
+      if (addedGames.isNotEmpty && context.mounted) {
+        _autoFetchCovers(context, addedGames, library);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          SnackBar(
+            content: Text(addedGames.isNotEmpty
+                ? 'Imported ${addedGames.length} ROM${addedGames.length == 1 ? '' : 's'} from folder'
+                : 'No new ROM files found in selected folder'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (importedPaths != null && importedPaths.isEmpty && context.mounted) {
+      ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+        const SnackBar(
+          content: Text('No ROM files found in selected folder'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Non-Android or FilePicker path (desktop, iOS)
+    if (!Platform.isAndroid && context.mounted) {
+      final result = await FilePicker.platform.getDirectoryPath();
+      if (!context.mounted) return;
+      if (result != null) {
+        await library.addRomDirectory(result);
+        if (context.mounted) setState(() {});
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          const SnackBar(content: Text('Folder added')),
+        );
+      }
+    }
+  }
+
+  /// Fire-and-forget: download cover art for newly imported games.
+  void _autoFetchCovers(
+    BuildContext context,
+    List<GameRom> games,
+    GameLibraryService library,
+  ) {
+    final coverService = context.read<CoverArtService>();
+    () async {
+      for (final game in games) {
+        if (game.coverPath != null) continue;
+        try {
+          final path = await coverService.fetchCoverArt(game);
+          if (path != null) {
+            await library.setCoverArt(game, path);
+          }
+        } catch (_) {}
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }();
   }
 
   void _confirmReset(BuildContext context) {

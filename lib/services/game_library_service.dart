@@ -392,6 +392,9 @@ class GameLibraryService extends ChangeNotifier {
   /// Builds a fresh game list without clearing the existing one first,
   /// then swaps atomically — so a disk error or permission failure
   /// during scanning never causes data loss.
+  ///
+  /// Always includes the internal ROMs directory (intent/SAF imports)
+  /// so those games are never lost on refresh.
   Future<void> refresh() async {
     _isLoading = true;
     notifyListeners();
@@ -405,56 +408,74 @@ class GameLibraryService extends ChangeNotifier {
     // scan completes successfully.
     final freshGames = <GameRom>[];
 
-    for (final dir in _romDirectories) {
-      try {
-        final dirObj = Directory(dir);
-        if (!await dirObj.exists()) continue;
+    // Collect all directories to scan: user-added + internal storage.
+    final dirsToScan = List<String>.from(_romDirectories);
+    try {
+      final internalDir = await getInternalRomsDir();
+      if (!dirsToScan.contains(internalDir)) {
+        dirsToScan.add(internalDir);
+      }
+    } catch (_) {
+      // Internal dir unavailable — continue with user dirs only
+    }
 
-        final entities = await dirObj.list(recursive: true).toList();
-        for (final entity in entities) {
-          if (entity is File) {
-            final ext = p.extension(entity.path).toLowerCase();
-            if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
-              final game = GameRom.fromPath(entity.path);
-              if (game != null &&
-                  !freshGames.any((g) => g.path == entity.path)) {
-                freshGames.add(game);
+    try {
+      for (final dir in dirsToScan) {
+        try {
+          final dirObj = Directory(dir);
+          if (!await dirObj.exists()) continue;
+
+          final entities = await dirObj.list(recursive: true).toList();
+          for (final entity in entities) {
+            if (entity is File) {
+              final ext = p.extension(entity.path).toLowerCase();
+              if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
+                final game = GameRom.fromPath(entity.path);
+                if (game != null &&
+                    !freshGames.any((g) => g.path == entity.path)) {
+                  freshGames.add(game);
+                }
               }
             }
           }
+        } catch (e) {
+          debugPrint('Refresh: failed to scan "$dir" — $e');
+          // Continue scanning other directories
         }
+      }
+
+      // Restore metadata from the previous library onto the freshly
+      // scanned entries.
+      for (int i = 0; i < freshGames.length; i++) {
+        final prev = gameData[freshGames[i].path];
+        if (prev != null) {
+          freshGames[i] = freshGames[i].copyWith(
+            isFavorite: prev.isFavorite,
+            lastPlayed: prev.lastPlayed,
+            totalPlayTimeSeconds: prev.totalPlayTimeSeconds,
+            coverPath: prev.coverPath,
+          );
+        }
+      }
+
+      // Atomic swap — old library is only replaced after scanning succeeds.
+      _games = freshGames;
+
+      // Persist the refreshed list to the database in a single batch.
+      try {
+        await _database.upsertGames(freshGames);
       } catch (e) {
-        debugPrint('Refresh: failed to scan "$dir" — $e');
-        // Continue scanning other directories
+        debugPrint('GameLibraryService: refresh upsert failed — $e');
       }
-    }
-
-    // Restore metadata from the previous library onto the freshly
-    // scanned entries.
-    for (int i = 0; i < freshGames.length; i++) {
-      final prev = gameData[freshGames[i].path];
-      if (prev != null) {
-        freshGames[i] = freshGames[i].copyWith(
-          isFavorite: prev.isFavorite,
-          lastPlayed: prev.lastPlayed,
-          totalPlayTimeSeconds: prev.totalPlayTimeSeconds,
-          coverPath: prev.coverPath,
-        );
-      }
-    }
-
-    // Atomic swap — old library is only replaced after scanning succeeds.
-    _games = freshGames;
-
-    // Persist the refreshed list to the database in a single batch.
-    try {
-      await _database.upsertGames(freshGames);
+      _error = null;
     } catch (e) {
-      debugPrint('GameLibraryService: refresh upsert failed — $e');
+      debugPrint('GameLibraryService: refresh failed — $e');
+      _error = 'Refresh failed: $e';
+      // Keep existing _games — do not overwrite with empty
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    _isLoading = false;
-    _error = null;
-    notifyListeners();
   }
 
   /// Search games by name

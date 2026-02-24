@@ -1046,7 +1046,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         autofocus: true,
         onKeyEvent: _onKeyEvent,
         child: Scaffold(
-          backgroundColor: colors.backgroundDark,
+          backgroundColor: Colors.black,
           body: OrientationBuilder(
         builder: (context, orientation) {
           _isLandscape = orientation == Orientation.landscape;
@@ -1072,18 +1072,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           
           return Stack(
             children: [
-              // Background
+              // Background — solid black for clear button visibility
               Container(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 1.5,
-                    colors: [
-                      colors.backgroundLight,
-                      colors.backgroundDark,
-                    ],
-                  ),
-                ),
+                color: Colors.black,
               ),
               
               // Main content - different layout for portrait vs landscape
