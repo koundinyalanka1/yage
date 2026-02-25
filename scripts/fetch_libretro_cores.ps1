@@ -1,4 +1,4 @@
-# Fetch LibRetro NES and SNES cores for Android
+# Fetch LibRetro cores for Android (NES, SNES, mGBA)
 # Downloads from: https://buildbot.libretro.com/nightly/android/latest/
 #
 # Run from project root: .\scripts\fetch_libretro_cores.ps1
@@ -7,7 +7,8 @@ $baseUrl = "https://buildbot.libretro.com/nightly/android/latest"
 $abis = @("armeabi-v7a", "arm64-v8a", "x86_64")
 $cores = @(
     @{ name = "fceumm"; file = "fceumm_libretro_android.so" },
-    @{ name = "snes9x2010"; file = "snes9x2010_libretro_android.so" }
+    @{ name = "snes9x2010"; file = "snes9x2010_libretro_android.so" },
+    @{ name = "mgba"; file = "mgba_libretro_android.so" }
 )
 
 $jniLibs = "android\app\src\main\jniLibs"

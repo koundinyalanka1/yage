@@ -17,8 +17,8 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.yourmateapps.retropal"
     compileSdk = flutter.compileSdkVersion
-    // NDK r28+ required for 16 KB page size (Google Play Nov 2025+)
-    ndkVersion = "28.0.12674018"
+    // NDK r28+ is recommended for 16 KB page size, but we can force alignment on current
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -53,10 +53,13 @@ android {
         // Build libyage_core.so from source for all ABIs automatically
         externalNativeBuild {
             cmake {
-                cppFlags("")
+                // 16 KB page size support for Google Play (Nov 2025+)
+                // Must use cFlags (not cppFlags) — native project is pure C
+                cFlags("-Wl,-z,max-page-size=16384")
                 arguments(
                     "-DANDROID_STL=none",
-                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"  // 16 KB page size for Google Play (Nov 2025+)
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                    "-DANDROID_LD=lld"
                 )
             }
         }

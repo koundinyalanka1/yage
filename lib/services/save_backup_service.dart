@@ -482,7 +482,7 @@ class SaveBackupService {
     // Add metadata
     final meta = {
       'app': 'RetroPal',
-      'version': '0.1.0',
+      'version': '4.0.0',
       'exportDate': DateTime.now().toIso8601String(),
       'gameCount': games.length,
       'fileCount': files.length,

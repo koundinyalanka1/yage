@@ -120,7 +120,7 @@
         <!-- AdMob App ID (replace with your real ID for production) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>
+            android:value="ca-app-pub-2596031675923197~8848306073"/>
 
         <!-- Game mode config for low-latency / controller support (Android 12+) -->
         <meta-data

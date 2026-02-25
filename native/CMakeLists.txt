@@ -93,5 +93,8 @@ if(ANDROID)
     )
     # 16 KB page size support for Google Play (required for Android 15+ from Nov 2025)
     # Ensures ELF segments are aligned for devices with 16 KB memory pages
-    target_link_options(yage_core PRIVATE "LINKER:-z,max-page-size=16384")
+    target_link_options(yage_core PRIVATE
+        "LINKER:-z,max-page-size=16384"
+        "LINKER:-z,common-page-size=16384"
+    )
 endif()
