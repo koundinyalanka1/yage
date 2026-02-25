@@ -525,7 +525,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 showLicensePage(
                   context: context,
                   applicationName: 'RetroPal',
-                  applicationVersion: '4.0.0',
+                  applicationVersion: '5.0.0',
                 );
               },
             ),

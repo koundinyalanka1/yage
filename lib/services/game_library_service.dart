@@ -338,6 +338,10 @@ class GameLibraryService extends ChangeNotifier {
 
       for (final entity in entities) {
         if (entity is File) {
+          // Skip trashed files
+          final basename = p.basename(entity.path);
+          if (basename.startsWith('.trashed-')) continue;
+
           final ext = p.extension(entity.path).toLowerCase();
           if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
             final game = GameRom.fromPath(entity.path);
@@ -531,6 +535,11 @@ class GameLibraryService extends ChangeNotifier {
           final entities = await dirObj.list(recursive: true).toList();
           for (final entity in entities) {
             if (entity is File) {
+              // Skip trashed files (Android prefixes recently-deleted
+              // files with .trashed- until they are permanently purged)
+              final basename = p.basename(entity.path);
+              if (basename.startsWith('.trashed-')) continue;
+
               final ext = p.extension(entity.path).toLowerCase();
               if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
                 final game = GameRom.fromPath(entity.path);
@@ -567,6 +576,17 @@ class GameLibraryService extends ChangeNotifier {
       // Persist the refreshed list to the database in a single batch.
       try {
         await _database.upsertGames(freshGames);
+
+        // Remove stale DB entries that no longer exist on disk.
+        // Without this, deleted/trashed ROMs persist in the DB and
+        // block newly-added ROMs (e.g. NES/SNES) from appearing.
+        final freshPaths = freshGames.map((g) => g.path).toSet();
+        final allDbGames = await _database.getAllGames();
+        for (final dbGame in allDbGames) {
+          if (!freshPaths.contains(dbGame.path)) {
+            await _database.deleteGame(dbGame.path);
+          }
+        }
       } catch (e) {
         debugPrint('GameLibraryService: refresh upsert failed — $e');
       }
