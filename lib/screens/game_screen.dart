@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/mgba_bindings.dart';
@@ -88,9 +89,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// Preloaded interstitial for exit. Shown when user confirms exit.
   InterstitialAd? _interstitialAd;
 
+  /// Session start time — used to gate interstitial ads (session must be > 3 min).
+  late final DateTime _sessionStartTime;
+
+  /// SharedPreferences key for the persistent exit counter.
+  static const _exitCountKey = 'interstitial_exit_count';
+  /// How many exits until the next ad. Randomly 2 or 3 per cycle.
+  static const _exitCountKey2 = 'interstitial_exit_target';
+
   @override
   void initState() {
     super.initState();
+    _sessionStartTime = DateTime.now();
     WidgetsBinding.instance.addObserver(this);
 
     // On Android TV, hide virtual controls by default
@@ -193,14 +203,36 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Exit with interstitial ad. Shows ad if loaded, then exits.
-  void _onExitWithAd() {
-    if (_interstitialAd != null) {
-      _interstitialAd!.show();
-      _interstitialAd = null; // Will be disposed in callback
-    } else {
-      _exitGame();
+  /// Exit with interstitial ad, gated by:
+  ///   1. Session must be longer than 3 minutes.
+  ///   2. Ad is shown every 2nd or 3rd exit overall (persisted).
+  void _onExitWithAd() async {
+    final sessionDuration = DateTime.now().difference(_sessionStartTime);
+    final longEnough = sessionDuration.inMinutes >= 3;
+
+    if (longEnough && _interstitialAd != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final count = (prefs.getInt(_exitCountKey) ?? 0) + 1;
+      var target = prefs.getInt(_exitCountKey2) ?? 0;
+      // Pick a new random target (2 or 3) when starting a fresh cycle.
+      if (target < 2) {
+        target = 2 + (DateTime.now().millisecondsSinceEpoch % 2); // 2 or 3
+        await prefs.setInt(_exitCountKey2, target);
+      }
+
+      if (count >= target) {
+        // Show ad and reset counter for next cycle.
+        await prefs.setInt(_exitCountKey, 0);
+        await prefs.setInt(_exitCountKey2, 0); // pick fresh target next time
+        _interstitialAd!.show();
+        _interstitialAd = null; // disposed in callback → calls _exitGame
+        return;
+      } else {
+        await prefs.setInt(_exitCountKey, count);
+      }
     }
+
+    _exitGame();
   }
 
   /// Show a styled toast banner at the top of the screen with an optional

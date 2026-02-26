@@ -153,7 +153,11 @@ class CoverArtService extends ChangeNotifier {
     }
   }
 
-  /// Fetch cover art for multiple ROMs (batch).
+  /// Fetch cover art for multiple ROMs (batch), throttled to at most
+  /// [_maxConcurrentDownloads] parallel network requests to avoid
+  /// hammering the CDN when a large folder is imported at once.
+  static const _maxConcurrentDownloads = 5;
+
   Future<Map<String, String>> fetchAllCoverArt(List<GameRom> games) async {
     final toFetch = games.where((g) => g.coverPath == null).toList();
     if (toFetch.isEmpty) return {};
@@ -163,14 +167,17 @@ class CoverArtService extends ChangeNotifier {
     notifyListeners();
 
     final results = <String, String>{};
-    for (final game in toFetch) {
-      final path = await fetchCoverArt(game);
-      if (path != null) results[game.path] = path;
-      _batchDone++;
-      notifyListeners();
-      if (_batchDone < _batchTotal) {
-        await Future.delayed(const Duration(milliseconds: 200));
-      }
+
+    // Process in chunks of _maxConcurrentDownloads
+    for (int i = 0; i < toFetch.length; i += _maxConcurrentDownloads) {
+      final chunk = toFetch.skip(i).take(_maxConcurrentDownloads).toList();
+      final futures = chunk.map((game) async {
+        final path = await fetchCoverArt(game);
+        if (path != null) results[game.path] = path;
+        _batchDone++;
+        notifyListeners();
+      });
+      await Future.wait(futures);
     }
 
     _batchTotal = 0;

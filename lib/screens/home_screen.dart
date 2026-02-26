@@ -799,6 +799,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   const DropdownMenuItem(value: GamePlatform.gba, child: Text('GBA')),
                   const DropdownMenuItem(value: GamePlatform.gbc, child: Text('GBC')),
                   const DropdownMenuItem(value: GamePlatform.gb, child: Text('GB')),
+                  const DropdownMenuItem(value: GamePlatform.nes, child: Text('NES')),
+                  const DropdownMenuItem(value: GamePlatform.snes, child: Text('SNES')),
                 ],
                 onChanged: (value) => setState(() => _selectedPlatform = value),
               ),
@@ -1367,17 +1369,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildAllGames() {
     final colors = AppColorTheme.of(context);
-    return Consumer<GameLibraryService>(
-      builder: (context, library, _) {
+    return Selector<GameLibraryService, ({List<GameRom> games, bool isLoading})>(
+      selector: (_, lib) => (
+        games: lib.getGamesByPlatform(_selectedPlatform),
+        isLoading: lib.isLoading,
+      ),
+      shouldRebuild: (prev, next) =>
+          prev.isLoading != next.isLoading ||
+          prev.games.length != next.games.length ||
+          !_gameListsEqual(prev.games, next.games),
+      builder: (context, data, _) {
         // Only show full-screen spinner on initial load (empty library).
         // During refresh, keep games visible with a subtle overlay.
-        if (library.isLoading && library.games.isEmpty) {
+        if (data.isLoading && data.games.isEmpty) {
           return const Center(
             child: CircularProgressIndicator(),
           );
         }
 
-        var games = library.getGamesByPlatform(_selectedPlatform);
+        var games = data.games;
         if (_searchQuery.isNotEmpty) {
           games = games.where((g) => 
             g.name.toLowerCase().contains(_searchQuery.toLowerCase())
@@ -1410,7 +1420,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 Expanded(child: _buildGameList(games)),
               ],
             ),
-            if (library.isLoading)
+            if (data.isLoading)
               Positioned(
                 top: 8,
                 left: 0,
@@ -1453,9 +1463,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildRecentGames() {
-    return Consumer<GameLibraryService>(
-      builder: (context, library, _) {
-        var games = _sortGames(library.recentlyPlayed);
+    return Selector<GameLibraryService, List<GameRom>>(
+      selector: (_, lib) => lib.recentlyPlayed,
+      shouldRebuild: (prev, next) =>
+          prev.length != next.length || !_gameListsEqual(prev, next),
+      builder: (context, recentGames, _) {
+        var games = _sortGames(recentGames);
 
         if (games.isEmpty) {
           return _buildEmptyState(
@@ -1471,9 +1484,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildFavorites() {
-    return Consumer<GameLibraryService>(
-      builder: (context, library, _) {
-        var games = _sortGames(library.favorites);
+    return Selector<GameLibraryService, List<GameRom>>(
+      selector: (_, lib) => lib.favorites,
+      shouldRebuild: (prev, next) =>
+          prev.length != next.length || !_gameListsEqual(prev, next),
+      builder: (context, favGames, _) {
+        var games = _sortGames(favGames);
 
         if (games.isEmpty) {
           return _buildEmptyState(
@@ -1486,6 +1502,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         return _buildGameList(games);
       },
     );
+  }
+
+  /// Shallow equality check for game lists — compares paths which are
+  /// the unique identity of a GameRom. Avoids unnecessary rebuilds when
+  /// the library notifies but the actual list hasn't changed.
+  static bool _gameListsEqual(List<GameRom> a, List<GameRom> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].path != b[i].path ||
+          a[i].coverPath != b[i].coverPath ||
+          a[i].isFavorite != b[i].isFavorite ||
+          a[i].lastPlayed != b[i].lastPlayed) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// Determines which game card index should receive autofocus.
@@ -1511,16 +1544,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     if (_isGridView) {
-      // 2 items per row; larger cache extent for 100+ games (smoother scrolling)
-      const crossAxisCount = 2;
+      // Responsive columns; larger cache extent for 100+ games (smoother scrolling)
       final cacheExtent = games.length > 100 ? 600.0 : 400.0;
 
       return TvScrollAccelerator(
         child: GridView.builder(
           padding: const EdgeInsets.all(16),
           cacheExtent: cacheExtent,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 220,
             childAspectRatio: 0.65,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
