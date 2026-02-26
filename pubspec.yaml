@@ -1,7 +1,7 @@
 name: retropal
 description: "RetroPal - Your retro gaming companion. A GBA/GB/GBC emulator powered by mGBA."
 publish_to: 'none'
-version: 5.0.0+5
+version: 6.0.0+6
 
 environment:
   sdk: ">=3.9.0 <4.0.0"

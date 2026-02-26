@@ -231,32 +231,30 @@ class EmulatorService extends ChangeNotifier {
           notifyListeners();
           return true;
         }
+        // NES/SNES: fail clearly instead of falling back to stub —
+        // there's no useful "demo mode" for these platforms.
         if (platform == GamePlatform.nes || platform == GamePlatform.snes) {
-          debugPrint('NES/SNES core failed to load. Run scripts/fetch_libretro_cores.ps1 to download cores.');
+          _errorMessage = 'Failed to load ${platform!.name.toUpperCase()} core. '
+              'Please reinstall the app or check that cores are bundled.';
+        } else {
+          _errorMessage = 'Failed to initialize emulator core.';
         }
+        _state = EmulatorState.error;
+        notifyListeners();
+        return false;
       }
-      
-      // Fall back to stub implementation
-      debugPrint('Native library not available, using stub for UI testing');
-      _stub = MGBAStub();
-      _stub!.initialize();
-      _useStub = true;
-      _state = EmulatorState.ready;
-      _errorMessage = platform == GamePlatform.nes || platform == GamePlatform.snes
-          ? 'NES/SNES core not found. Run scripts/fetch_libretro_cores.ps1 to download.'
-          : 'Running in demo mode (native library not found)';
+
+      // Native library not available at all
+      _errorMessage = 'Emulator engine not found. Please reinstall the app.';
+      _state = EmulatorState.error;
       notifyListeners();
-      return true;
+      return false;
     } catch (e) {
-      // Final fallback to stub
-      debugPrint('Error initializing: $e, falling back to stub');
-      _stub = MGBAStub();
-      _stub!.initialize();
-      _useStub = true;
-      _state = EmulatorState.ready;
-      _errorMessage = 'Running in demo mode';
+      debugPrint('Error initializing: $e');
+      _errorMessage = 'Failed to initialize emulator: $e';
+      _state = EmulatorState.error;
       notifyListeners();
-      return true;
+      return false;
     }
   }
 

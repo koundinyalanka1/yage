@@ -18,6 +18,11 @@ class RomFolderService {
   /// Pick a ROMs folder. Returns URI (Android SAF) or path (other platforms).
   /// Returns null if user cancels.
   static Future<String?> pickFolder(dynamic context) async {
+    // TV check must come before Android — SAF doesn't work well without touch.
+    if (TvDetector.isTV && context != null) {
+      return TvFileBrowser.pickDirectory(context as dynamic);
+    }
+
     if (Platform.isAndroid) {
       try {
         final uri = await _deviceChannel.invokeMethod<String>('pickRomsFolder');
@@ -26,10 +31,6 @@ class RomFolderService {
         debugPrint('RomFolderService: pickRomsFolder failed — $e');
         return null;
       }
-    }
-
-    if (TvDetector.isTV && context != null) {
-      return TvFileBrowser.pickDirectory(context as dynamic);
     }
 
     try {
