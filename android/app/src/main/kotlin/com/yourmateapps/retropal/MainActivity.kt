@@ -458,7 +458,8 @@ class MainActivity : FlutterActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // Android 11+: launch system settings for all-files access
-            permissionResultHandler = callback
+            // We NO LONGER set permissionResultHandler here because the Dart side
+            // fires-and-forgets this channel call to avoid activity recreation crashes.
             try {
                 // Try app-specific page first (directly shows our app's toggle)
                 val intent = Intent(
@@ -471,11 +472,9 @@ class MainActivity : FlutterActivity() {
                 try {
                     val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                     startActivityForResult(intent, MANAGE_STORAGE_PERMISSION_CODE)
-                } catch (_: Exception) {
-                    permissionResultHandler = null
-                    callback(false)
-                }
+                } catch (_: Exception) {}
             }
+            callback(false) // immediately return false, Dart side will poll hasStoragePermission
             return
         }
 
@@ -510,11 +509,8 @@ class MainActivity : FlutterActivity() {
 
         // MANAGE_EXTERNAL_STORAGE: user returned from system settings
         if (requestCode == MANAGE_STORAGE_PERMISSION_CODE) {
-            val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                android.os.Environment.isExternalStorageManager()
-            } else false
-            permissionResultHandler?.invoke(granted)
-            permissionResultHandler = null
+            // We no longer invoke permissionResultHandler here because the Dart side
+            // has already completed the method channel call (fire-and-forget).
             return
         }
 
