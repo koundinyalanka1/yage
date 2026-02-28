@@ -371,54 +371,42 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Future<void> _addRomFile() async {
     List<String>? paths;
-
-    // Try system file picker (SAF) — works on both phone and TV.
-    // We use FileType.any because Android SAF requires MIME types and
-    // .gba/.gb/.gbc have no registered MIME type — FileType.custom would
-    // silently drop them, leaving only .zip.  We filter results ourselves.
-    //
-    // NOTE: We check the original filename (f.name) instead of the cached
-    // path (f.path) because on some Android devices the SAF file picker
-    // caches files under a temporary name without the original extension.
-    const allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'};
-    // Track which cached paths are actually ZIPs (by original name), because
-    // the cached file path may not preserve the original extension on some
-    // Android devices.
     final zipPaths = <String>{};
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        allowMultiple: true,
-      );
-      if (result != null) {
-        for (final f in result.files) {
-          if (f.path == null) continue;
-          // Use the original filename (always has extension) for matching
-          final name = f.name.toLowerCase();
-          final dot = name.lastIndexOf('.');
-          if (dot == -1) continue;
-          final ext = name.substring(dot);
-          if (!allowedExtensions.contains(ext)) continue;
-          paths ??= [];
-          paths.add(f.path!);
-          if (ext == '.zip') zipPaths.add(f.path!);
-        }
-      }
-    } catch (_) {
-      paths = null;
-    }
-    if (!mounted) return;
 
-    // On TV, fall back to built-in browser if system picker returned nothing
-    if ((paths == null || paths.isEmpty) && TvDetector.isTV) {
+    // On TV, skip SAF/FilePicker (no Documents UI) — use built-in browser
+    if (TvDetector.isTV) {
       paths = await TvFileBrowser.pickFiles(context);
       if (!mounted) return;
-      // TV file browser returns direct filesystem paths — extension is reliable
       if (paths != null) {
         for (final p in paths) {
           if (p.toLowerCase().endsWith('.zip')) zipPaths.add(p);
         }
       }
+    } else {
+      // Phone/tablet: use system file picker (SAF)
+      const allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'};
+      try {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.any,
+          allowMultiple: true,
+        );
+        if (result != null) {
+          for (final f in result.files) {
+            if (f.path == null) continue;
+            final name = f.name.toLowerCase();
+            final dot = name.lastIndexOf('.');
+            if (dot == -1) continue;
+            final ext = name.substring(dot);
+            if (!allowedExtensions.contains(ext)) continue;
+            paths ??= [];
+            paths.add(f.path!);
+            if (ext == '.zip') zipPaths.add(f.path!);
+          }
+        }
+      } catch (_) {
+        paths = null;
+      }
+      if (!mounted) return;
     }
 
     if (paths != null && paths.isNotEmpty && mounted) {
@@ -491,7 +479,53 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final library = context.read<GameLibraryService>();
     List<String>? importedPaths;
 
-    // Use native SAF folder picker → scan → copy ROMs to internal storage
+    // On TV, skip SAF (no Documents UI) — use built-in folder browser
+    if (TvDetector.isTV) {
+      final dirPath = await TvFileBrowser.pickDirectory(context);
+      if (!mounted) return;
+      if (dirPath != null) {
+        // Show loading dialog
+        final navigator = Navigator.of(context);
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => PopScope(
+            canPop: false,
+            child: AlertDialog(
+              content: Row(
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(width: 20),
+                  const Expanded(child: Text('Importing ROMs from folder…')),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        final addedGames = await library.importFromDirectory(dirPath);
+
+        // Dismiss loading dialog
+        if (mounted && navigator.mounted) navigator.pop();
+        if (!mounted) return;
+
+        setState(() {}); // force rebuild
+        _tabController.animateTo(0);
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          SnackBar(
+            content: Text(addedGames.isNotEmpty
+                ? 'Imported ${addedGames.length} ROM${addedGames.length == 1 ? '' : 's'} from folder'
+                : 'No new ROM files found in selected folder'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        if (addedGames.isNotEmpty) _autoFetchCovers(addedGames, library);
+        return;
+      }
+      return; // user cancelled
+    }
+
+    // Phone/tablet: use native SAF folder picker
     try {
       final result = await _deviceChannel.invokeMethod<List<dynamic>>('importRomsFromFolder');
       importedPaths = result?.cast<String>();
@@ -499,17 +533,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       importedPaths = null;
     }
     if (!mounted) return;
-
-    // On TV, fall back to built-in folder browser if SAF unavailable
-    if (importedPaths == null && TvDetector.isTV && mounted) {
-      final dirPath = await TvFileBrowser.pickDirectory(context);
-      if (!mounted) return;
-      if (dirPath != null) {
-        await library.addRomDirectory(dirPath);
-        if (mounted) _tabController.animateTo(0);
-        return;
-      }
-    }
 
     if (importedPaths != null && importedPaths.isNotEmpty && mounted) {
       final navigator = Navigator.of(context);

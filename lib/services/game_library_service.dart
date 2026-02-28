@@ -171,7 +171,7 @@ class GameLibraryService extends ChangeNotifier {
 
     try {
       final bytes = await File(zipPath).readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+      final archive = await compute(_decodeZip, bytes);
 
       for (final entry in archive.files) {
         if (!entry.isFile) continue;
@@ -192,9 +192,10 @@ class GameLibraryService extends ChangeNotifier {
 
         // Check for duplicate by content hash before writing (avoids writing then deleting)
         final bytes = entry.content as List<int>;
-        final contentHash = RetroAchievementsService.computeRAHashFromBytes(
-          bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
-          ext,
+        final uint8Bytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+        final contentHash = await compute(
+          _hashRomBytes,
+          _HashRequest(uint8Bytes, ext),
         );
         if (contentHash != null) {
           final existingPath = await _database.getPathByRomHash(contentHash);
@@ -241,7 +242,7 @@ class GameLibraryService extends ChangeNotifier {
     if (_games.any((g) => g.path == path)) return null;
 
     // Compute content hash and check for duplicate (same ROM, different path)
-    final hash = await RetroAchievementsService.computeRAHash(path);
+    final hash = await compute(RetroAchievementsService.computeRAHash, path);
     if (hash != null) {
       final existingPath = await _database.getPathByRomHash(hash);
       if (existingPath != null && existingPath != path) {
@@ -335,6 +336,7 @@ class GameLibraryService extends ChangeNotifier {
 
       final entities = await dir.list(recursive: true).toList();
       final newGames = <GameRom>[];
+      final hashes = <String, String>{};
 
       for (final entity in entities) {
         if (entity is File) {
@@ -347,11 +349,16 @@ class GameLibraryService extends ChangeNotifier {
             final game = GameRom.fromPath(entity.path);
             if (game == null || _games.any((g) => g.path == entity.path)) continue;
 
-            // Skip duplicates by content hash
-            final hash = await RetroAchievementsService.computeRAHash(entity.path);
-            if (hash != null) {
-              final existingPath = await _database.getPathByRomHash(hash);
-              if (existingPath != null) continue;
+            // Compute hash once in isolate for dedup + DB
+            try {
+              final hash = await compute(RetroAchievementsService.computeRAHash, entity.path);
+              if (hash != null) {
+                final existingPath = await _database.getPathByRomHash(hash);
+                if (existingPath != null) continue; // duplicate
+                hashes[entity.path] = hash;
+              }
+            } catch (_) {
+              // Hash computation failed — still add the game
             }
 
             _games.add(game);
@@ -360,13 +367,11 @@ class GameLibraryService extends ChangeNotifier {
         }
       }
 
+      // Notify UI immediately so games appear
       if (newGames.isNotEmpty) {
+        notifyListeners();
+        // Persist to DB (uses cached hashes — no re-computation)
         try {
-          final hashes = <String, String>{};
-          for (final g in newGames) {
-            final h = await RetroAchievementsService.computeRAHash(g.path);
-            if (h != null) hashes[g.path] = h;
-          }
           await _database.upsertGames(newGames, romHashes: hashes);
         } catch (e) {
           debugPrint('GameLibraryService: scanDirectory upsert failed — $e');
@@ -608,4 +613,18 @@ class GameLibraryService extends ChangeNotifier {
     return _games.where((g) => g.name.toLowerCase().contains(lowerQuery)).toList();
   }
 
+}
+
+Archive _decodeZip(Uint8List bytes) {
+  return ZipDecoder().decodeBytes(bytes);
+}
+
+class _HashRequest {
+  final Uint8List bytes;
+  final String ext;
+  _HashRequest(this.bytes, this.ext);
+}
+
+String? _hashRomBytes(_HashRequest req) {
+  return RetroAchievementsService.computeRAHashFromBytes(req.bytes, req.ext);
 }

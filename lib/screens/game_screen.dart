@@ -1647,10 +1647,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Cap game width so each side always has at least 15% of screen width
     // for touch controls.  GB/GBC (nearly-square) would otherwise leave
     // tiny side zones and button sizes scale with gameRect.width.
-    final maxGameWidth = screenSize.width * 0.64;
-    if (gameWidth > maxGameWidth) {
-      gameWidth = maxGameWidth;
-      gameHeight = gameWidth / aspectRatio;
+    // On TV, skip this cap — no touch controls, use full screen.
+    if (!TvDetector.isTV) {
+      final maxGameWidth = screenSize.width * 0.64;
+      if (gameWidth > maxGameWidth) {
+        gameWidth = maxGameWidth;
+        gameHeight = gameWidth / aspectRatio;
+      }
     }
     
     // For GB/GBC (nearly-square aspect ratio ≤ 1.2), the game is shorter
@@ -2133,25 +2136,41 @@ class _InGameMenu extends StatelessWidget {
                     const SizedBox(height: 10),
                     
                     // Save/Load states
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _MenuActionButton(
-                            icon: Icons.save,
-                            label: 'Save State',
-                            onTap: () => _showStateSlots(context, true),
+                    // On TV: stack vertically for D-pad navigation
+                    // On phone: side by side
+                    if (TvDetector.isTV) ...[
+                      _MenuActionButton(
+                        icon: Icons.save,
+                        label: 'Save State',
+                        onTap: () => _showStateSlots(context, true),
+                      ),
+                      const SizedBox(height: 10),
+                      _MenuActionButton(
+                        icon: Icons.upload_file,
+                        label: 'Load State',
+                        onTap: () => _showStateSlots(context, false),
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MenuActionButton(
+                              icon: Icons.save,
+                              label: 'Save State',
+                              onTap: () => _showStateSlots(context, true),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _MenuActionButton(
-                            icon: Icons.upload_file,
-                            label: 'Load State',
-                            onTap: () => _showStateSlots(context, false),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _MenuActionButton(
+                              icon: Icons.upload_file,
+                              label: 'Load State',
+                              onTap: () => _showStateSlots(context, false),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     
                     // Other options

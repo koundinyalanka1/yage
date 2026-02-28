@@ -62,8 +62,10 @@ void main() async {
   // Cache device memory for rewind buffer sizing (avoids OOM on low-RAM devices).
   await initDeviceMemory();
 
-  // Initialize AdMob (mobile only).
-  await AdService.instance.initialize();
+  // Initialize AdMob (mobile only, skip on TV to prevent crashes).
+  if (!TvDetector.isTV) {
+    await AdService.instance.initialize();
+  }
 
   runApp(RetroPalApp(gameDatabase: gameDatabase));
 }
@@ -93,11 +95,22 @@ class RetroPalApp extends StatelessWidget {
           // ThemeData.  Widgets access it via AppColorTheme.of(context)
           // which calls Theme.of(context) — so they rebuild automatically
           // when the theme changes.  No ValueKey hack needed.
-          return MaterialApp(
-            title: 'RetroPal',
-            debugShowCheckedModeBanner: false,
-            theme: YageTheme.darkTheme(colors),
-            home: const SplashScreen(),
+          // Map typical Android TV remote and gamepad "Select" buttons to standard activation.
+          // This makes all standard Flutter buttons (FilledButton, TextButton, ListTile, etc.)
+          // clickable via D-Pad Center or Gamepad A.
+          return Shortcuts(
+            shortcuts: <LogicalKeySet, Intent>{
+              LogicalKeySet(LogicalKeyboardKey.select): const ActivateIntent(),
+              LogicalKeySet(LogicalKeyboardKey.gameButtonA): const ActivateIntent(),
+              LogicalKeySet(LogicalKeyboardKey.gameButtonStart): const ActivateIntent(),
+              LogicalKeySet(LogicalKeyboardKey.numpadEnter): const ActivateIntent(),
+            },
+            child: MaterialApp(
+              title: 'RetroPal',
+              debugShowCheckedModeBanner: false,
+              theme: YageTheme.darkTheme(colors),
+              home: const SplashScreen(),
+            ),
           );
         },
       ),

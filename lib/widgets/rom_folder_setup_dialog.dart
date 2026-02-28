@@ -36,6 +36,21 @@ class _RomFolderSetupDialogState extends State<RomFolderSetupDialog> {
   bool _isLoading = false;
   String? _error;
   int _importedCount = 0;
+  final FocusNode _selectFolderFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _selectFolderFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _selectFolderFocusNode.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickAndImport(BuildContext context) async {
     setState(() {
@@ -240,6 +255,7 @@ class _RomFolderSetupDialogState extends State<RomFolderSetupDialog> {
                         order: const NumericFocusOrder(0),
                         child: TvFocusable(
                           autofocus: true,
+                          focusNode: _selectFolderFocusNode,
                           animate: false,
                           borderRadius: BorderRadius.circular(12),
                           onTap: _isLoading ? null : () => _pickAndImport(context),

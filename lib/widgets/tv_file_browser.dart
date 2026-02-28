@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -46,7 +47,9 @@ class TvFileBrowser extends StatefulWidget {
     BuildContext context, {
     Set<String> extensions = const {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'},
     bool allowMultiple = true,
-  }) {
+  }) async {
+    final hasPermission = await _ensureStoragePermission();
+    if (!hasPermission || !context.mounted) return null;
     return Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => TvFileBrowser(
@@ -60,12 +63,57 @@ class TvFileBrowser extends StatefulWidget {
 
   /// Show the browser in folder-pick mode. Returns selected directory or null.
   static Future<String?> pickDirectory(BuildContext context) async {
+    final hasPermission = await _ensureStoragePermission();
+    if (!hasPermission || !context.mounted) return null;
     final result = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => const TvFileBrowser(mode: TvBrowseMode.folder),
       ),
     );
     return result?.firstOrNull;
+  }
+
+  /// Check and request storage permission before opening the browser.
+  /// Returns true if permission is granted.
+  static Future<bool> _ensureStoragePermission() async {
+    try {
+      final hasPermission =
+          await _deviceChannel.invokeMethod<bool>('hasStoragePermission') ?? false;
+      if (hasPermission) return true;
+
+      // Open system settings — fire-and-forget.
+      // Don't await the method channel result because the activity may be
+      // destroyed/recreated while in settings (low-memory TV), which would
+      // crash with a stale callback.
+      try {
+        _deviceChannel.invokeMethod<bool>('requestStoragePermission');
+      } catch (_) {}
+
+      // Wait for the user to come back from settings by listening to
+      // AppLifecycleState changes.
+      final completer = Completer<void>();
+      late final AppLifecycleListener listener;
+      listener = AppLifecycleListener(
+        onResume: () {
+          if (!completer.isCompleted) completer.complete();
+          listener.dispose();
+        },
+      );
+
+      // Timeout after 2 minutes in case user never comes back
+      await completer.future.timeout(
+        const Duration(minutes: 2),
+        onTimeout: () {},
+      );
+
+      // Re-check permission after returning from settings
+      final granted =
+          await _deviceChannel.invokeMethod<bool>('hasStoragePermission') ?? false;
+      return granted;
+    } catch (_) {
+      // Not on Android or channel unavailable — assume OK
+      return true;
+    }
   }
 
   @override
@@ -75,7 +123,7 @@ class TvFileBrowser extends StatefulWidget {
 enum TvBrowseMode { files, folder }
 
 class _TvFileBrowserState extends State<TvFileBrowser> {
-  late Directory _currentDir;
+  Directory? _currentDir;
   List<FileSystemEntity> _entries = [];
   final Set<String> _selected = {};
   bool _loading = true;
@@ -174,17 +222,19 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
 
     try {
       final entities = <FileSystemEntity>[];
-      await for (final entity in _currentDir.list()) {
-        final name = p.basename(entity.path);
-        if (name.startsWith('.')) continue;
+      final currentDir = _currentDir;
+      if (currentDir != null) {
+        await for (final entity in currentDir.list()) {
+          final name = p.basename(entity.path);
+          if (name.startsWith('.')) continue;
 
-        if (entity is Directory) {
-          entities.add(entity);
-        } else if (entity is File && widget.mode == TvBrowseMode.files) {
-          if (widget.extensions.isEmpty ||
-              widget.extensions.contains(
-                  p.extension(entity.path).toLowerCase())) {
+          if (entity is Directory) {
             entities.add(entity);
+          } else if (entity is File && widget.mode == TvBrowseMode.files) {
+            if (widget.extensions.isEmpty ||
+                widget.extensions.contains(p.extension(entity.path).toLowerCase())) {
+              entities.add(entity);
+            }
           }
         }
       }
@@ -247,12 +297,13 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   }
 
   bool get _isAtRoot =>
-      _rootPaths.contains(_currentDir.path) ||
-      _currentDir.parent.path == _currentDir.path;
+      _currentDir == null ||
+      _rootPaths.contains(_currentDir!.path) ||
+      _currentDir!.parent.path == _currentDir!.path;
 
   void _goUp() {
-    if (_isAtRoot) return;
-    _navigateTo(_currentDir.parent);
+    if (_isAtRoot || _currentDir == null) return;
+    _navigateTo(_currentDir!.parent);
   }
 
   /// B / Back handler: go up if possible, otherwise exit the browser.
@@ -280,8 +331,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   }
 
   void _confirmSelection() {
-    if (widget.mode == TvBrowseMode.folder) {
-      Navigator.of(context).pop([_currentDir.path]);
+    if (widget.mode == TvBrowseMode.folder && _currentDir != null) {
+      Navigator.of(context).pop([_currentDir!.path]);
     } else if (_selected.isNotEmpty) {
       Navigator.of(context).pop(_selected.toList());
     }
@@ -346,7 +397,8 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   }
 
   List<_BreadcrumbSegment> get _breadcrumbs {
-    final parts = _currentDir.path.split('/').where((s) => s.isNotEmpty).toList();
+    if (_currentDir == null) return [];
+    final parts = _currentDir!.path.split('/').where((s) => s.isNotEmpty).toList();
     final segments = <_BreadcrumbSegment>[];
     segments.add(_BreadcrumbSegment(label: '/', path: '/'));
     var running = '';
@@ -368,7 +420,14 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
       onKeyEvent: _onKeyEvent,
       child: Scaffold(
         backgroundColor: colors.backgroundDark,
-        appBar: _buildAppBar(canConfirm),
+        appBar: AppBar(
+          backgroundColor: colors.backgroundMedium,
+          automaticallyImplyLeading: false,
+          title: Text(
+            widget.mode == TvBrowseMode.folder ? 'Select Folder' : 'Select ROMs',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
         body: Column(
           children: [
             // ── Interactive breadcrumb bar ──
@@ -384,6 +443,9 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
 
             // ── File list ──
             Expanded(child: _buildBody()),
+
+            // ── Action bar: confirm + cancel (in same focus group as list) ──
+            _buildActionBar(canConfirm),
 
             // ── Gamepad hint bar ──
             _buildHintBar(),
@@ -470,50 +532,72 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
     );
   }
 
-  // ─────────────── app bar ───────────────
+  // ─────────────── action bar (bottom, TV-traversable) ───────────────
 
-  PreferredSizeWidget _buildAppBar(bool canConfirm) {
+  Widget _buildActionBar(bool canConfirm) {
     final colors = AppColorTheme.of(context);
-    return AppBar(
-      backgroundColor: colors.backgroundMedium,
-      leading: TvFocusable(
-        borderRadius: BorderRadius.circular(24),
-        onTap: () => Navigator.of(context).pop(null),
-        child: IconButton(
-          icon: const Icon(Icons.close),
-          tooltip: 'Cancel',
-          onPressed: () => Navigator.of(context).pop(null),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.backgroundMedium,
+        border: Border(
+          top: BorderSide(color: colors.surfaceLight, width: 0.5),
         ),
       ),
-      title: Text(
-        widget.mode == TvBrowseMode.folder ? 'Select Folder' : 'Select ROMs',
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
-      actions: [
-        // Confirm button
-        if (canConfirm)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TvFocusable(
-              borderRadius: BorderRadius.circular(8),
-              onTap: _confirmSelection,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary,
-                  foregroundColor: colors.textPrimary,
-                ),
-                onPressed: _confirmSelection,
-                icon: const Icon(Icons.check, size: 18),
-                label: Text(
-                  widget.mode == TvBrowseMode.folder
-                      ? 'Select Folder'
-                      : 'Add ${_selected.length} ROM${_selected.length == 1 ? '' : 's'}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TvFocusable(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => Navigator.of(context).pop(null),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: colors.surfaceLight),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.close, size: 18, color: colors.textSecondary),
+                  const SizedBox(width: 8),
+                  Text('Cancel', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.w600)),
+                ],
               ),
             ),
           ),
-      ],
+          if (canConfirm) ...[
+            const SizedBox(width: 12),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _confirmSelection,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: colors.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check, size: 18, color: colors.textPrimary),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.mode == TvBrowseMode.folder
+                          ? 'Select Folder'
+                          : 'Add ${_selected.length} ROM${_selected.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -574,6 +658,7 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
   // ─────────────── quick nav row ───────────────
 
   Widget _buildQuickNavRow() {
+    final path = _currentDir?.path ?? '';
     return SizedBox(
       height: 46,
       child: ListView(
@@ -584,15 +669,14 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
             icon: Icons.phone_android,
             label: 'Internal',
             path: '/storage/emulated/0',
-            isCurrent: _currentDir.path.startsWith('/storage/emulated/0'),
+            isCurrent: path.startsWith('/storage/emulated/0'),
             onTap: () => _navigateTo(Directory('/storage/emulated/0')),
           ),
           _QuickNavChip(
             icon: Icons.download,
             label: 'Downloads',
             path: '/storage/emulated/0/Download',
-            isCurrent:
-                _currentDir.path.startsWith('/storage/emulated/0/Download'),
+            isCurrent: path.startsWith('/storage/emulated/0/Download'),
             onTap: () =>
                 _navigateTo(Directory('/storage/emulated/0/Download')),
           ),
@@ -600,14 +684,14 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
             icon: Icons.storage,
             label: 'Storage',
             path: '/storage',
-            isCurrent: _currentDir.path == '/storage',
+            isCurrent: path == '/storage',
             onTap: () => _navigateTo(Directory('/storage')),
           ),
           _QuickNavChip(
             icon: Icons.usb,
             label: 'USB / SD',
             path: '/mnt',
-            isCurrent: _currentDir.path.startsWith('/mnt'),
+            isCurrent: path.startsWith('/mnt'),
             onTap: () => _navigateTo(Directory('/mnt')),
           ),
         ],

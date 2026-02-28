@@ -38,6 +38,7 @@ class MainActivity : FlutterActivity() {
         private const val SAF_PICK_FOLDER_CODE = 2002
         private const val STORAGE_PERMISSION_CODE = 1001
         private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb", "nes", "sfc", "smc")
+        private const val MANAGE_STORAGE_PERMISSION_CODE = 1002
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -51,7 +52,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "isTelevision" -> {
                         val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
-                        val isTV = uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+                        val isTV = (uiModeManager.currentModeType and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
                         result.success(isTV)
                     }
                     "getDeviceMemoryMB" -> {
@@ -433,13 +434,15 @@ class MainActivity : FlutterActivity() {
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  Legacy basic storage permission (TV browser, Android ≤ 12)
+    //  Storage permission (TV browser)
+    //  Android ≤ 10 : READ_EXTERNAL_STORAGE
+    //  Android 11+  : MANAGE_EXTERNAL_STORAGE (all-files access)
     // ══════════════════════════════════════════════════════════════
 
     private fun hasBasicReadPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+: READ_EXTERNAL_STORAGE has no effect
-            false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+: check all-files access
+            android.os.Environment.isExternalStorageManager()
         } else {
             ContextCompat.checkSelfPermission(
                 this, android.Manifest.permission.READ_EXTERNAL_STORAGE
@@ -453,9 +456,26 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+: can't request READ_EXTERNAL_STORAGE
-            callback(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+: launch system settings for all-files access
+            permissionResultHandler = callback
+            try {
+                // Try app-specific page first (directly shows our app's toggle)
+                val intent = Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivityForResult(intent, MANAGE_STORAGE_PERMISSION_CODE)
+            } catch (_: Exception) {
+                // Fallback: open general all-files access list
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivityForResult(intent, MANAGE_STORAGE_PERMISSION_CODE)
+                } catch (_: Exception) {
+                    permissionResultHandler = null
+                    callback(false)
+                }
+            }
             return
         }
 
@@ -487,6 +507,16 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        // MANAGE_EXTERNAL_STORAGE: user returned from system settings
+        if (requestCode == MANAGE_STORAGE_PERMISSION_CODE) {
+            val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.os.Environment.isExternalStorageManager()
+            } else false
+            permissionResultHandler?.invoke(granted)
+            permissionResultHandler = null
+            return
+        }
 
         if (requestCode == SAF_IMPORT_FOLDER_CODE) {
             if (resultCode == RESULT_OK && data?.data != null) {

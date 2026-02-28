@@ -790,8 +790,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (context.mounted) setState(() {});
   }
 
-  /// Add folder: on Android use native SAF (works with scoped storage);
-  /// on TV fall back to built-in browser; otherwise use FilePicker.
+  /// Add folder: on TV use built-in browser; on phone use SAF; on desktop use FilePicker.
   Future<void> _addFolderFromSettings(
     BuildContext context,
     GameLibraryService library,
@@ -799,6 +798,30 @@ class _SettingsScreenState extends State<SettingsScreen>
   ) async {
     List<String>? importedPaths;
 
+    // On TV, skip SAF (no Documents UI) — use built-in folder browser
+    if (TvDetector.isTV) {
+      final dirPath = await TvFileBrowser.pickDirectory(context);
+      if (!context.mounted) return;
+      if (dirPath != null) {
+        final addedGames = await library.importFromDirectory(dirPath);
+        if (!context.mounted) return;
+        setState(() {});
+        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+          SnackBar(
+            content: Text(addedGames.isNotEmpty
+                ? 'Imported ${addedGames.length} ROM${addedGames.length == 1 ? '' : 's'} from folder'
+                : 'No new ROM files found in selected folder'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        if (addedGames.isNotEmpty) {
+          _autoFetchCovers(context, addedGames, library);
+        }
+      }
+      return;
+    }
+
+    // Phone/tablet: use native SAF folder picker
     if (Platform.isAndroid) {
       try {
         final result = await _deviceChannel.invokeMethod<List<dynamic>>('importRomsFromFolder');
@@ -809,21 +832,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
 
     if (!context.mounted) return;
-
-    // TV fallback: use built-in folder browser
-    if (importedPaths == null && TvDetector.isTV && context.mounted) {
-      final dirPath = await TvFileBrowser.pickDirectory(context);
-      if (!context.mounted) return;
-      if (dirPath != null) {
-        await library.addRomDirectory(dirPath);
-        if (!context.mounted) return;
-        setState(() {});
-        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
-          const SnackBar(content: Text('Folder added. Refreshing...')),
-        );
-        return;
-      }
-    }
 
     // Android SAF: add each imported file
     if (importedPaths != null && importedPaths.isNotEmpty && context.mounted) {

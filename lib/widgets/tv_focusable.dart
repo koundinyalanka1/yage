@@ -60,7 +60,13 @@ class _TvFocusableState extends State<TvFocusable>
     LogicalKeyboardKey.enter,
     LogicalKeyboardKey.space,
     LogicalKeyboardKey.select,
+    LogicalKeyboardKey.numpadEnter,
+    // Gamepad
     LogicalKeyboardKey.gameButtonA,
+    LogicalKeyboardKey.gameButtonStart,
+    // D-Pad Centers (some remotes map to these)
+    LogicalKeyboardKey.mediaPlayPause,
+    LogicalKeyboardKey.mediaPlay,
   };
 
   /// Keys that trigger "back" / onBack
