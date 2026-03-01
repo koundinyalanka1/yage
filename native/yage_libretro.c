@@ -1244,7 +1244,11 @@ int yage_core_init(YageCore* core) {
     core->lib = LOAD_LIBRARY(lib_name);
     
     if (!core->lib) {
-        LOGE("Failed to load libretro core: %s", lib_name);
+#ifdef _WIN32
+        LOGE("Failed to load libretro core: %s (error %lu)", lib_name, GetLastError());
+#else
+        LOGE("Failed to load libretro core: %s (%s)", lib_name, dlerror());
+#endif
         return -1;
     }
     

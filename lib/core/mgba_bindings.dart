@@ -322,8 +322,18 @@ class MGBABindings {
   };
 
   /// Select which libretro core to use.  Must be called before [load].
+  /// On Android, pre-loads the .so so the native dlopen can find it.
   void selectCore(GamePlatform platform) {
     _selectedCoreLib = platformCoreLibs[platform] ?? _selectedCoreLib;
+
+    if (Platform.isAndroid) {
+      try {
+        DynamicLibrary.open(_selectedCoreLib);
+        debugPrint('Pre-loaded libretro core: $_selectedCoreLib');
+      } catch (e) {
+        debugPrint('Warning: Could not pre-load core $_selectedCoreLib: $e');
+      }
+    }
   }
 
   /// Load the YAGE core dynamic library.
