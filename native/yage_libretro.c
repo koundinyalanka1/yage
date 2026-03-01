@@ -500,10 +500,16 @@ static int init_opensl_audio(double sample_rate) {
         return -1;
     }
     
+    /* Mark initialized BEFORE starting playback and enqueuing buffers.
+     * Otherwise, if the callback fires instantly, it sees initialized=0
+     * and bails out, breaking the buffer queue loop permanently. */
+    atomic_store_explicit(&g_sl_initialized, 1, memory_order_release);
+    
     /* Start playback */
     result = (*g_sl_play_itf)->SetPlayState(g_sl_play_itf, SL_PLAYSTATE_PLAYING);
     if (result != SL_RESULT_SUCCESS) {
         LOGE("Failed to start playback");
+        atomic_store_explicit(&g_sl_initialized, 0, memory_order_release);
         return -1;
     }
     
@@ -515,7 +521,6 @@ static int init_opensl_audio(double sample_rate) {
     
     LOGI("OpenSL ES audio initialized: %.0fHz stereo, %d buffers x %d frames", 
          sample_rate, AUDIO_BUFFERS, AUDIO_BUFFER_FRAMES);
-    atomic_store_explicit(&g_sl_initialized, 1, memory_order_release);
     return 0;
 }
 

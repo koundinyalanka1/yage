@@ -173,7 +173,7 @@ class _SplashScreenState extends State<SplashScreen>
 
               // ── Tagline ──────────────────────────────────────────
               Text(
-                'Classic GB · GBC · GBA · NES · SNES Games',
+                'Emulator to play Retro Games',
                 style: TextStyle(
                   fontSize: 13,
                   color: colors.textMuted,

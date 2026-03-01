@@ -1238,13 +1238,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onSubmitted: (_) => applySearchAndClose(ctx),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: colors.textMuted)),
+            TvFocusable(
+              onTap: () => Navigator.of(ctx).pop(),
+              borderRadius: BorderRadius.circular(8),
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Cancel', style: TextStyle(color: colors.textMuted)),
+              ),
             ),
-            FilledButton(
-              onPressed: () => applySearchAndClose(ctx),
-              child: const Text('Search'),
+            TvFocusable(
+              onTap: () => applySearchAndClose(ctx),
+              borderRadius: BorderRadius.circular(8),
+              child: FilledButton(
+                onPressed: () => applySearchAndClose(ctx),
+                child: const Text('Search'),
+              ),
             ),
           ],
         ),

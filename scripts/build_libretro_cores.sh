@@ -117,6 +117,10 @@ build_core() {
     # Bypass all Darwin host detection logic that forces OSX/Windows builds
     extra_flags="TARGET=libgenesis_plus_gx_libretro_android.so fpic=-fPIC SHARED=\"-shared -Wl,--no-undefined\" ENDIANNESS_DEFINES=\"-DLSB_FIRST -DBYTE_ORDER=LITTLE_ENDIAN\" PLATFORM_DEFINES=-DHAVE_ZLIB"
   fi
+  
+  if [ "$core_name" = "fceumm" ]; then
+    extra_flags="LIBS=-lm"
+  fi
 
   eval make -C "$makefile_dir" -f Makefile.libretro \
     platform=$make_platform $extra_flags \
