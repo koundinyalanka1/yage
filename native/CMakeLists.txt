@@ -73,7 +73,7 @@ if(WIN32)
 elseif(ANDROID)
     # pthread is part of Bionic libc (no explicit link needed)
     # 'android' provides ANativeWindow for zero-copy texture rendering
-    target_link_libraries(yage_core PRIVATE dl log OpenSLES android)
+    target_link_libraries(yage_core PRIVATE dl log m OpenSLES android)
 else()
     # Linux / macOS — link pthread for the native frame loop thread
     find_package(Threads REQUIRED)

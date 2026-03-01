@@ -1231,21 +1231,6 @@ YAGE_API int yage_core_set_core(const char* path) {
 int yage_core_init(YageCore* core) {
     if (!core) return -1;
     
-#ifdef __ANDROID__
-    /* Ensure libm (sin, cos, etc.) is in the global namespace before
-     * loading any libretro core.  Some cores (e.g. fceumm) reference
-     * math symbols but don't carry a DT_NEEDED for libm, so dlopen
-     * fails unless the symbols are already globally visible. */
-    static int g_libm_loaded = 0;
-    if (!g_libm_loaded) {
-        if (dlopen("libm.so", RTLD_NOW | RTLD_GLOBAL)) {
-            g_libm_loaded = 1;
-        } else {
-            LOGI("libm pre-load note: %s", dlerror());
-        }
-    }
-#endif
-
     /* Load the libretro core — use g_core_lib_path if set via yage_core_set_core */
     const char* lib_name;
 #ifdef _WIN32
