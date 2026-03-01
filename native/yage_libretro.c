@@ -284,7 +284,8 @@ static int init_opensl_audio(double sample_rate);
  * mGBA runs at ~59.7275 fps, so expected samples/frame:
  *   131072 Hz → ~2194 samples/frame  (GB/GBC native: 4.194304 MHz ÷ 32)
  *    65536 Hz → ~1097 samples/frame  (Pokemon, most GBA)
- *    48000 Hz → ~804 samples/frame   (some titles)
+ *    48000 Hz → ~804 samples/frame   (NES/SNES)
+ *    44100 Hz → ~735 samples/frame   (Genesis Plus GX / Mega Drive)
  *    32768 Hz → ~549 samples/frame   (Dragon Ball, some GB/GBA)
  *
  * Thresholds use midpoints between expected values, lowered slightly
@@ -293,7 +294,8 @@ static int init_opensl_audio(double sample_rate);
 static double classify_sample_rate(double samples_per_frame) {
     if (samples_per_frame > 1600) return 131072.0;  /* GB/GBC native rate */
     if (samples_per_frame > 850)  return 65536.0;
-    if (samples_per_frame > 650)  return 48000.0;
+    if (samples_per_frame > 770)  return 48000.0;   /* midpoint of 804 and 735 */
+    if (samples_per_frame > 640)  return 44100.0;   /* midpoint of 735 and 549 */
     return 32768.0;
 }
 
@@ -1394,7 +1396,6 @@ int yage_core_load_rom(YageCore* core, const char* path) {
                     if (rom_data && fread(rom_data, 1, (size_t)sz, f) == (size_t)sz) {
                         info.data = rom_data;
                         info.size = (size_t)sz;
-                        info.path = NULL;
                         LOGI("Loaded ROM into memory: %zu bytes", info.size);
                     } else {
                         if (rom_data) free(rom_data);
@@ -1463,8 +1464,8 @@ int yage_core_load_rom(YageCore* core, const char* path) {
     g_overflow_count = 0;
     g_log_frame_count = 0;
     
-    /* NES/SNES (48kHz): init OpenSL immediately — these cores report stable
-     * rates.  GB/GBC/GBA: wait 15 video frames to validate measured rate. */
+    /* NES/SNES/Genesis (44–48 kHz): init OpenSL immediately — these cores
+     * report stable rates.  GB/GBC/GBA: wait 15 video frames to validate. */
     if (reported_sample_rate >= 44000.0 && reported_sample_rate <= 50000.0) {
         g_detected_rate = reported_sample_rate;
         init_opensl_audio(g_detected_rate);
@@ -1472,7 +1473,7 @@ int yage_core_load_rom(YageCore* core, const char* path) {
         g_frames_since_reinit = 0;
         g_monitor_frames = 0;
         g_monitor_samples = 0;
-        LOGI("Audio init at reported rate: %.0f Hz (NES/SNES path)", reported_sample_rate);
+        LOGI("Audio init at reported rate: %.0f Hz (stable core path)", reported_sample_rate);
     } else {
         LOGI("Audio will init after 15 video frames at reported rate: %.0f Hz",
              reported_sample_rate);
