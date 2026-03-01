@@ -640,7 +640,7 @@ class MGBACore {
     } catch (e) {
       debugPrint('MGBACore.setCoreLibrary: FFI error — $e');
     } finally {
-      calloc.free(pathPtr);
+      malloc.free(pathPtr);
     }
   }
 
@@ -689,7 +689,7 @@ class MGBACore {
       debugPrint('MGBACore.loadROM: FFI error — $e');
       return false;
     } finally {
-      calloc.free(pathPtr);
+      malloc.free(pathPtr);
     }
   }
 
@@ -702,7 +702,7 @@ class MGBACore {
       final result = _bindings.coreLoadBIOS(_corePtr as Pointer<Void>, pathPtr);
       return result == 0;
     } finally {
-      calloc.free(pathPtr);
+      malloc.free(pathPtr);
     }
   }
 
@@ -714,7 +714,7 @@ class MGBACore {
     try {
       _bindings.coreSetSaveDir(_corePtr as Pointer<Void>, pathPtr);
     } finally {
-      calloc.free(pathPtr);
+      malloc.free(pathPtr);
     }
   }
 
@@ -865,7 +865,7 @@ class MGBACore {
       final result = _bindings.coreSaveSram(_corePtr as Pointer<Void>, pathPtr);
       return result == 0;
     } finally {
-      calloc.free(pathPtr);
+      malloc.free(pathPtr);
     }
   }
 
@@ -877,7 +877,7 @@ class MGBACore {
       final result = _bindings.coreLoadSram(_corePtr as Pointer<Void>, pathPtr);
       return result == 0;
     } finally {
-      calloc.free(pathPtr);
+      malloc.free(pathPtr);
     }
   }
 

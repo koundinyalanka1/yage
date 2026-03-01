@@ -949,7 +949,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _exportAllSaves(BuildContext context) async {
+  Future<void> _exportAllSaves(BuildContext context) async {
     final library = context.read<GameLibraryService>();
     final emulator = context.read<EmulatorService>();
     final games = library.games;
@@ -974,7 +974,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _importSaves(BuildContext context) async {
+  Future<void> _importSaves(BuildContext context) async {
     final library = context.read<GameLibraryService>();
     final emulator = context.read<EmulatorService>();
     final games = library.games;
@@ -1004,7 +1004,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _backupToDrive(BuildContext context) async {
+  Future<void> _backupToDrive(BuildContext context) async {
     final library = context.read<GameLibraryService>();
     final emulator = context.read<EmulatorService>();
     final games = library.games;
@@ -1028,7 +1028,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _restoreFromDrive(BuildContext context) async {
+  Future<void> _restoreFromDrive(BuildContext context) async {
     final library = context.read<GameLibraryService>();
     final emulator = context.read<EmulatorService>();
 

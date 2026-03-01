@@ -122,7 +122,7 @@ class GameCard extends StatelessWidget {
                     child: Stack(
                       children: [
                         // Cover image or decorative pattern
-                        if (game.coverPath != null && File(game.coverPath!).existsSync())
+                        if (game.coverPath != null)
                           Positioned.fill(
                             child: ClipRRect(
                               borderRadius: const BorderRadius.vertical(
@@ -325,7 +325,7 @@ class GameListTile extends StatelessWidget {
   };
 
   Widget _buildLeading(AppColorTheme colors) {
-    if (game.coverPath != null && File(game.coverPath!).existsSync()) {
+    if (game.coverPath != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image.file(

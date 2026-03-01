@@ -226,8 +226,8 @@ class RcheevosClient extends ChangeNotifier {
       _bindings.rcBeginLogin!(usernamePtr, tokenPtr);
       debugPrint('RcheevosClient: login started for $username');
     } finally {
-      calloc.free(usernamePtr);
-      calloc.free(tokenPtr);
+      malloc.free(usernamePtr);
+      malloc.free(tokenPtr);
     }
 
     // Login enqueues HTTP requests — wake the poller immediately.
@@ -258,7 +258,7 @@ class RcheevosClient extends ChangeNotifier {
       _bindings.rcBeginLoadGame!(hashPtr);
       debugPrint('RcheevosClient: game load started for hash $hash');
     } finally {
-      calloc.free(hashPtr);
+      malloc.free(hashPtr);
     }
 
     // Game load enqueues HTTP requests — wake the poller immediately.
@@ -476,9 +476,9 @@ class RcheevosClient extends ChangeNotifier {
         final bodyPtr = body.toNativeUtf8();
         try {
           _bindings.rcSubmitResponse!(
-              requestId, bodyPtr, body.length, httpStatus);
+              requestId, bodyPtr, bodyPtr.length, httpStatus);
         } finally {
-          calloc.free(bodyPtr);
+          malloc.free(bodyPtr);
         }
       } else {
         _bindings.rcSubmitResponse!(

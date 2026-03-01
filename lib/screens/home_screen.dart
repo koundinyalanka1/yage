@@ -677,16 +677,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   order: const NumericFocusOrder(0),
                   child: _buildHeader(),
                 ),
-                _buildSearchBar(),
-                _buildPlatformFilter(),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(1),
+                  child: _buildSearchBar(),
+                ),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(2),
+                  child: _buildPlatformFilter(),
+                ),
               ],
               FocusTraversalOrder(
-                order: const NumericFocusOrder(1),
+                order: const NumericFocusOrder(3),
                 child: _buildTabBar(),
               ),
               Expanded(
                 child: FocusTraversalOrder(
-                  order: const NumericFocusOrder(2),
+                  order: const NumericFocusOrder(4),
                   child: Focus(
                     focusNode: _gameListFocusNode,
                     child: TabBarView(
@@ -1191,11 +1197,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _showTvSearchDialog(BuildContext context) {
     final colors = AppColorTheme.of(context);
     final controller = TextEditingController(text: _searchController.text);
+
+    void applySearchAndClose(BuildContext ctx) {
+      final query = controller.text;
+      _searchController.text = query;
+      _searchDebounce?.cancel();
+      setState(() => _searchQuery = query);
+      Navigator.of(ctx).pop();
+    }
+
     showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => Focus(
-        autofocus: true,
+        // Don't take focus here — let the TextField receive it so the
+        // on-screen keyboard appears on Android TV.
+        canRequestFocus: false,
         onKeyEvent: (node, event) {
           if (event is KeyDownEvent &&
               (event.logicalKey == LogicalKeyboardKey.escape ||
@@ -1218,7 +1235,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               hintText: 'Type to search...',
               border: const OutlineInputBorder(),
             ),
-            onSubmitted: (_) => Navigator.of(ctx).pop(),
+            onSubmitted: (_) => applySearchAndClose(ctx),
           ),
           actions: [
             TextButton(
@@ -1226,13 +1243,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: Text('Cancel', style: TextStyle(color: colors.textMuted)),
             ),
             FilledButton(
-              onPressed: () {
-                final query = controller.text;
-                _searchController.text = query;
-                _searchDebounce?.cancel();
-                setState(() => _searchQuery = query);
-                Navigator.of(ctx).pop();
-              },
+              onPressed: () => applySearchAndClose(ctx),
               child: const Text('Search'),
             ),
           ],

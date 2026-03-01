@@ -141,31 +141,38 @@ static uint32_t translate_address(uint32_t rc_address) {
  */
 static uint32_t RC_CCONV memory_reader(uint32_t address, uint8_t* buffer,
                                         uint32_t num_bytes, rc_client_t* client) {
-    if (!g_yage_core || !buffer || num_bytes == 0) return 0;
+    /* Snapshot globals into locals so a concurrent yage_rc_destroy /
+     * yage_rc_unload_game on the Dart thread cannot NULL them mid-read.
+     * The core pointer remains valid because the frame loop (our caller)
+     * is joined before the core is freed. */
+    YageCore* core = g_yage_core;
+    if (!core || !buffer || num_bytes == 0) return 0;
 
     /* Lazily resolve console memory regions for address translation.
      * rc_client sets client->game before calling validate_addresses,
      * so rc_client_get_game_info() is available here. */
-    if (!g_memory_regions && client) {
+    const rc_memory_regions_t* regions = g_memory_regions;
+    if (!regions && client) {
         const rc_client_game_t* game = rc_client_get_game_info(client);
         if (game && game->console_id != 0) {
-            g_memory_regions = rc_console_memory_regions(game->console_id);
-            if (g_memory_regions) {
+            regions = rc_console_memory_regions(game->console_id);
+            if (regions) {
+                g_memory_regions = regions;
                 RC_LOGI("Memory regions resolved: %u regions for console %u",
-                        g_memory_regions->num_regions, game->console_id);
+                        regions->num_regions, game->console_id);
             }
         }
     }
 
     /* Fast path: if the entire read [address, address+num_bytes-1] fits in
      * a single rcheevos region, translate once and do a bulk read. */
-    if (g_memory_regions && g_memory_regions->num_regions > 0) {
+    if (regions && regions->num_regions > 0) {
         uint32_t last = address + num_bytes - 1;
-        for (uint32_t i = 0; i < g_memory_regions->num_regions; i++) {
-            const rc_memory_region_t* r = &g_memory_regions->region[i];
+        for (uint32_t i = 0; i < regions->num_regions; i++) {
+            const rc_memory_region_t* r = &regions->region[i];
             if (address >= r->start_address && last <= r->end_address) {
                 uint32_t hw_addr = r->real_address + (address - r->start_address);
-                int result = yage_core_read_memory(g_yage_core, hw_addr,
+                int result = yage_core_read_memory(core, hw_addr,
                                                     (int32_t)num_bytes, buffer);
                 return (result > 0) ? (uint32_t)result : 0;
             }
@@ -177,7 +184,7 @@ static uint32_t RC_CCONV memory_reader(uint32_t address, uint8_t* buffer,
     for (uint32_t i = 0; i < num_bytes; i++) {
         uint32_t hw_addr = translate_address(address + i);
         uint8_t byte_val = 0;
-        int result = yage_core_read_memory(g_yage_core, hw_addr, 1, &byte_val);
+        int result = yage_core_read_memory(core, hw_addr, 1, &byte_val);
         if (result <= 0) return i; /* return number of bytes successfully read */
         buffer[i] = byte_val;
     }

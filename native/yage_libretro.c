@@ -56,6 +56,7 @@ static uint32_t* g_display_buf          = NULL;
 static size_t    g_display_buf_capacity = 0;
 static int       g_display_width        = 0;
 static int       g_display_height       = 0;
+static pthread_mutex_t     g_display_mutex        = PTHREAD_MUTEX_INITIALIZER;
 
 /* Thread control (all atomic for cross-thread safety) */
 static pthread_t           g_frame_thread;
@@ -172,7 +173,7 @@ static int g_height = GBA_HEIGHT;
 #ifndef _WIN32
 static _Atomic uint32_t g_keys = 0;
 #else
-static uint32_t g_keys = 0;
+static volatile uint32_t g_keys = 0;
 #endif
 static int g_pixel_format = RETRO_PIXEL_FORMAT_RGB565; /* Default format */
 
@@ -220,7 +221,7 @@ static SLAndroidSimpleBufferQueueItf g_sl_buffer_queue = NULL;
 
 static int16_t* g_sl_buffers[AUDIO_BUFFERS] = {NULL, NULL};
 static int g_sl_buffer_index = 0;
-static int g_sl_initialized = 0;
+static atomic_int g_sl_initialized = 0;
 
 /* Lock-free ring buffer for audio — sized to hold ~250ms at highest rate */
 #define RING_BUFFER_SIZE (32768)
@@ -305,7 +306,11 @@ static inline int ring_buffer_free(void) {
 static void sl_buffer_callback(SLAndroidSimpleBufferQueueItf bq, void* context) {
     (void)context;
     
+    /* Bail out if shutdown is in progress — buffers may be freed. */
+    if (!atomic_load_explicit(&g_sl_initialized, memory_order_acquire)) return;
+    
     int16_t* buffer = g_sl_buffers[g_sl_buffer_index];
+    if (!buffer) return;
     g_sl_buffer_index = (g_sl_buffer_index + 1) % AUDIO_BUFFERS;
     
     int samples_needed = AUDIO_BUFFER_FRAMES * 2; /* Stereo */
@@ -363,7 +368,7 @@ static int init_opensl_audio(double sample_rate) {
     SLresult result;
     
     /* Shutdown any existing audio first */
-    if (g_sl_initialized) {
+    if (atomic_load_explicit(&g_sl_initialized, memory_order_acquire)) {
         shutdown_opensl_audio();
     }
     
@@ -471,6 +476,10 @@ static int init_opensl_audio(double sample_rate) {
         g_sl_buffers[i] = (int16_t*)calloc(AUDIO_BUFFER_FRAMES * 2, sizeof(int16_t));
         if (!g_sl_buffers[i]) {
             LOGE("Failed to allocate audio buffer");
+            for (int j = 0; j < i; j++) {
+                free(g_sl_buffers[j]);
+                g_sl_buffers[j] = NULL;
+            }
             return -1;
         }
     }
@@ -497,17 +506,25 @@ static int init_opensl_audio(double sample_rate) {
     
     LOGI("OpenSL ES audio initialized: %.0fHz stereo, %d buffers x %d frames", 
          sample_rate, AUDIO_BUFFERS, AUDIO_BUFFER_FRAMES);
-    g_sl_initialized = 1;
+    atomic_store_explicit(&g_sl_initialized, 1, memory_order_release);
     return 0;
 }
 
 static void shutdown_opensl_audio(void) {
-    g_sl_initialized = 0;
+    /* Signal the callback to stop touching buffers immediately. */
+    atomic_store_explicit(&g_sl_initialized, 0, memory_order_release);
     
     if (g_sl_play_itf) {
         (*g_sl_play_itf)->SetPlayState(g_sl_play_itf, SL_PLAYSTATE_STOPPED);
     }
     
+    /* Clear the buffer queue to prevent any pending callbacks from firing. */
+    if (g_sl_buffer_queue) {
+        (*g_sl_buffer_queue)->Clear(g_sl_buffer_queue);
+    }
+    
+    /* Destroy the player — per OpenSL ES spec this blocks until any
+     * in-flight callback has returned, so buffers are safe to free after. */
     if (g_sl_player) {
         (*g_sl_player)->Destroy(g_sl_player);
         g_sl_player = NULL;
@@ -855,7 +872,7 @@ static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
      * so high-rate games (65kHz) get more room than low-rate (32kHz).
      * Target: ~50ms of buffered audio max.
      * ================================================================ */
-    if (g_sl_initialized) {
+    if (atomic_load_explicit(&g_sl_initialized, memory_order_acquire)) {
         int write_pos = atomic_load_explicit(&g_ring_write, memory_order_acquire);
         int read_pos = atomic_load_explicit(&g_ring_read, memory_order_acquire);
         int available = (write_pos - read_pos + RING_BUFFER_SIZE) & RING_BUFFER_MASK;
@@ -1138,6 +1155,8 @@ YageCore* yage_core_create(void) {
     g_audio_buffer = (int16_t*)malloc(AUDIO_BUFFER_SIZE * 2 * sizeof(int16_t));
     if (!g_audio_buffer) {
         free(g_video_buffer);
+        g_video_buffer = NULL;
+        g_video_buffer_capacity = 0;
         free(core);
         return NULL;
     }
@@ -1237,6 +1256,13 @@ int yage_core_init(YageCore* core) {
 
 void yage_core_destroy(YageCore* core) {
     if (!core) return;
+
+    /* Stop the native frame loop BEFORE freeing any resources it uses.
+     * This joins the thread, preventing use-after-free on the core
+     * pointer, rewind buffers, and rcheevos state. */
+#ifndef _WIN32
+    yage_frame_loop_stop(core);
+#endif
 
     /* Clear the global pointer so callbacks don't use a stale core */
     if (g_current_core == core) g_current_core = NULL;
@@ -1530,9 +1556,10 @@ int yage_core_save_state(YageCore* core, int slot) {
         
         FILE* f = fopen(path, "wb");
         if (f) {
-            fwrite(core->state_buffer, 1, core->state_size, f);
+            size_t written = fwrite(core->state_buffer, 1, core->state_size, f);
             fclose(f);
-            return 0;
+            if (written == core->state_size) return 0;
+            LOGE("Save state: partial write (%zu of %zu bytes)", written, core->state_size);
         }
     }
     
@@ -1555,10 +1582,11 @@ int yage_core_load_state(YageCore* core, int slot) {
         
         FILE* f = fopen(path, "rb");
         if (f) {
-            fread(core->state_buffer, 1, core->state_size, f);
+            size_t read_count = fread(core->state_buffer, 1, core->state_size, f);
             fclose(f);
             
-            if (core->retro_unserialize(core->state_buffer, core->state_size)) {
+            if (read_count == core->state_size &&
+                core->retro_unserialize(core->state_buffer, core->state_size)) {
                 return 0;
             }
         }
@@ -2188,10 +2216,12 @@ static void* frame_loop_thread(void* arg) {
                  * Dart-side decodeImageFromPixels path */
                 size_t pixels = (size_t)w * h;
                 if (g_display_buf && pixels <= g_display_buf_capacity && g_video_buffer) {
+                    pthread_mutex_lock(&g_display_mutex);
                     memcpy(g_display_buf, g_video_buffer,
                            pixels * sizeof(uint32_t));
                     g_display_width  = w;
                     g_display_height = h;
+                    pthread_mutex_unlock(&g_display_mutex);
                 }
             }
 
@@ -2325,6 +2355,16 @@ int32_t yage_frame_loop_get_display_height(YageCore* core) {
     return g_display_height;
 }
 
+void yage_frame_loop_lock_display(YageCore* core) {
+    (void)core;
+    pthread_mutex_lock(&g_display_mutex);
+}
+
+void yage_frame_loop_unlock_display(YageCore* core) {
+    (void)core;
+    pthread_mutex_unlock(&g_display_mutex);
+}
+
 int32_t yage_frame_loop_is_running(YageCore* core) {
     (void)core;
     return atomic_load_explicit(&g_floop_running, memory_order_acquire);
@@ -2345,6 +2385,8 @@ int32_t   yage_frame_loop_get_fps_x100(YageCore* c) { (void)c; return 0; }
 uint32_t* yage_frame_loop_get_display_buffer(YageCore* c) { (void)c; return NULL; }
 int32_t   yage_frame_loop_get_display_width(YageCore* c) { (void)c; return 0; }
 int32_t   yage_frame_loop_get_display_height(YageCore* c) { (void)c; return 0; }
+void      yage_frame_loop_lock_display(YageCore* c) { (void)c; }
+void      yage_frame_loop_unlock_display(YageCore* c) { (void)c; }
 int32_t   yage_frame_loop_is_running(YageCore* c) { (void)c; return 0; }
 
 #endif /* _WIN32 */

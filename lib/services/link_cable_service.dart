@@ -72,6 +72,9 @@ class LinkCableService extends ChangeNotifier {
   Timer? _hostTimeoutTimer;
   static const Duration defaultHostTimeout = Duration(minutes: 5);
 
+  // Guard against overlapping disconnect() calls
+  bool _disconnecting = false;
+
   // Error message
   String? _error;
   String? get error => _error;
@@ -123,11 +126,11 @@ class LinkCableService extends ChangeNotifier {
       // Start host timeout — auto-disconnect if no peer connects in time
       if (timeout != null) {
         _hostTimeoutTimer?.cancel();
-        _hostTimeoutTimer = Timer(timeout, () {
+        _hostTimeoutTimer = Timer(timeout, () async {
           if (_state == LinkCableState.hosting) {
             debugPrint('Link cable: host timed out after $timeout');
             _error = 'No one joined — timed out';
-            disconnect();
+            await disconnect();
           }
         });
       }
@@ -145,14 +148,14 @@ class LinkCableService extends ChangeNotifier {
           _hostTimeoutTimer = null;
           _handleConnection(socket);
         },
-        onError: (e) {
+        onError: (e) async {
           debugPrint('Link cable server error: $e');
           _error = 'Server error: $e';
-          disconnect();
+          await disconnect();
         },
-        onDone: () {
+        onDone: () async {
           if (_state == LinkCableState.hosting) {
-            disconnect();
+            await disconnect();
           }
         },
       );
@@ -210,15 +213,15 @@ class LinkCableService extends ChangeNotifier {
 
     socket.listen(
       _onData,
-      onError: (e) {
+      onError: (e) async {
         debugPrint('Link cable socket error: $e');
         _error = 'Connection lost';
-        disconnect();
+        await disconnect();
       },
-      onDone: () {
+      onDone: () async {
         debugPrint('Link cable: peer disconnected');
         _error = 'Peer disconnected';
-        disconnect();
+        await disconnect();
       },
       cancelOnError: false,
     );
@@ -246,7 +249,7 @@ class LinkCableService extends ChangeNotifier {
     }
   }
 
-  void _handleMessage(int type, List<int> payload) {
+  Future<void> _handleMessage(int type, List<int> payload) async {
     switch (type) {
       case _MsgType.handshake:
         _handleHandshake(payload);
@@ -271,15 +274,15 @@ class LinkCableService extends ChangeNotifier {
         break;
       case _MsgType.disconnect:
         _error = 'Peer disconnected';
-        disconnect();
+        await disconnect();
         break;
     }
   }
 
-  void _handleHandshake(List<int> payload) {
+  Future<void> _handleHandshake(List<int> payload) async {
     if (payload.length < 5) {
       _error = 'Invalid handshake';
-      disconnect();
+      await disconnect();
       return;
     }
 
@@ -287,7 +290,7 @@ class LinkCableService extends ChangeNotifier {
     final version = payload[0];
     if (version != 1) {
       _error = 'Incompatible version';
-      disconnect();
+      await disconnect();
       return;
     }
 
@@ -296,7 +299,7 @@ class LinkCableService extends ChangeNotifier {
                      (payload[3] << 8) | payload[4];
     if (peerHash != _romHash) {
       _error = 'ROM mismatch — both players must play the same game';
-      disconnect();
+      await disconnect();
       return;
     }
 
@@ -309,10 +312,10 @@ class LinkCableService extends ChangeNotifier {
     debugPrint('Link cable: handshake complete, connected!');
   }
 
-  void _handleHandshakeAck(List<int> payload) {
+  Future<void> _handleHandshakeAck(List<int> payload) async {
     if (payload.length < 5) {
       _error = 'Invalid handshake ack';
-      disconnect();
+      await disconnect();
       return;
     }
 
@@ -320,7 +323,7 @@ class LinkCableService extends ChangeNotifier {
                      (payload[3] << 8) | payload[4];
     if (peerHash != _romHash) {
       _error = 'ROM mismatch — both players must play the same game';
-      disconnect();
+      await disconnect();
       return;
     }
 
@@ -390,6 +393,9 @@ class LinkCableService extends ChangeNotifier {
 
   /// Disconnect and clean up all resources.
   Future<void> disconnect() async {
+    if (_disconnecting) return;
+    _disconnecting = true;
+
     _pingTimer?.cancel();
     _pingTimer = null;
     _hostTimeoutTimer?.cancel();
@@ -420,6 +426,7 @@ class LinkCableService extends ChangeNotifier {
 
     final wasConnected = _state != LinkCableState.disconnected;
     _state = LinkCableState.disconnected;
+    _disconnecting = false;
     if (wasConnected) notifyListeners();
   }
 

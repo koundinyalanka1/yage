@@ -27,19 +27,28 @@ void main() async {
   }
 
   // ── Firebase (must be first — Crashlytics needs it) ────────────────
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
 
-  if (!kDebugMode) {
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
-    PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
+    if (!kDebugMode) {
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    }
+  } catch (e) {
+    debugPrint('Firebase init failed — running without analytics: $e');
   }
 
   // ── Open the game library database ────────────────────────────────
   final gameDatabase = GameDatabase();
-  await gameDatabase.open();
+  try {
+    await gameDatabase.open();
+  } catch (e) {
+    debugPrint('Database open failed: $e');
+    rethrow;
+  }
 
   // ── System UI (safe to set before the first frame) ─────────────────
   SystemChrome.setPreferredOrientations([

@@ -366,18 +366,24 @@ class EmulatorService extends ChangeNotifier {
       // SRAM (.sav) — uses basenameWithoutExtension
       final sramFile = File(p.join(dir, '$baseName.sav'));
       if (sramFile.existsSync()) {
-        try { sramFile.deleteSync(); deleted++; } catch (_) {}
+        try { sramFile.deleteSync(); deleted++; } catch (e) {
+          debugPrint('Failed to delete SRAM file ${sramFile.path}: $e');
+        }
       }
 
       // Save states and thumbnails (slots 0-5) — use full basename to match native
       for (int slot = 0; slot < 6; slot++) {
         final stateFile = File(p.join(dir, '$romBase.ss$slot'));
         if (stateFile.existsSync()) {
-          try { stateFile.deleteSync(); deleted++; } catch (_) {}
+          try { stateFile.deleteSync(); deleted++; } catch (e) {
+            debugPrint('Failed to delete save state ${stateFile.path}: $e');
+          }
         }
         final ssFile = File(p.join(dir, '$romBase.ss$slot.png'));
         if (ssFile.existsSync()) {
-          try { ssFile.deleteSync(); deleted++; } catch (_) {}
+          try { ssFile.deleteSync(); deleted++; } catch (e) {
+            debugPrint('Failed to delete screenshot ${ssFile.path}: $e');
+          }
         }
       }
 
@@ -389,12 +395,16 @@ class EmulatorService extends ChangeNotifier {
             if (entity is File) {
               final name = p.basename(entity.path);
               if (name.startsWith('${baseName}_') && name.endsWith('.png')) {
-                try { entity.deleteSync(); deleted++; } catch (_) {}
+                try { entity.deleteSync(); deleted++; } catch (e) {
+                  debugPrint('Failed to delete screenshot ${entity.path}: $e');
+                }
               }
             }
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to list save directory $dir: $e');
+      }
     }
 
     debugPrint('Deleted $deleted save file(s) for ${rom.name}');

@@ -249,6 +249,12 @@ YAGE_API uint32_t* yage_frame_loop_get_display_buffer(YageCore* core);
 YAGE_API int32_t yage_frame_loop_get_display_width(YageCore* core);
 YAGE_API int32_t yage_frame_loop_get_display_height(YageCore* core);
 
+/* Lock/unlock the display buffer for safe reading from the Dart thread.
+ * Hold the lock while reading display buffer contents and dimensions to
+ * prevent the frame loop from overwriting mid-read. */
+YAGE_API void yage_frame_loop_lock_display(YageCore* core);
+YAGE_API void yage_frame_loop_unlock_display(YageCore* core);
+
 /* Check whether the native frame loop is currently running. */
 YAGE_API int32_t yage_frame_loop_is_running(YageCore* core);
 
