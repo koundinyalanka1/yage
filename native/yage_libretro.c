@@ -766,15 +766,7 @@ static void video_refresh_callback(const void* data, unsigned width, unsigned he
 static int g_audio_batch_count = 0;
 static int g_overflow_count = 0;
 
-static int g_batch_call_count = 0;
-
 static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
-    g_batch_call_count++;
-    if (g_batch_call_count <= 5) {
-        LOGI("audio_batch #%d: frames=%zu data=%p g_audio_buffer=%p enabled=%d vol=%.2f sl_init=%d rate_detected=%d",
-             g_batch_call_count, frames, data, g_audio_buffer, g_audio_enabled, g_volume,
-             atomic_load(&g_sl_initialized), g_rate_detected);
-    }
     if (!data || !g_audio_buffer) return frames;
     
     size_t samples = frames * 2; /* Stereo */
@@ -938,13 +930,7 @@ static size_t audio_sample_batch_callback(const int16_t* data, size_t frames) {
     return frames;
 }
 
-static int g_single_sample_count = 0;
-
 static void audio_sample_callback(int16_t left, int16_t right) {
-    g_single_sample_count++;
-    if (g_single_sample_count <= 5 || (g_single_sample_count % 10000) == 0) {
-        LOGI("audio_sample_callback called (count=%d, L=%d R=%d)", g_single_sample_count, left, right);
-    }
     (void)left;
     (void)right;
 }
@@ -1528,24 +1514,12 @@ int yage_core_load_rom(YageCore* core, const char* path) {
     g_overflow_count = 0;
     g_log_frame_count = 0;
     
-    /* NES/SNES/Genesis (44–48 kHz): init OpenSL immediately — these cores
-     * report stable rates.  GB/GBC/GBA: wait 15 video frames to validate. */
-    g_batch_call_count = 0;
-    g_single_sample_count = 0;
-
-    if (reported_sample_rate >= 44000.0 && reported_sample_rate <= 50000.0) {
-        g_detected_rate = reported_sample_rate;
-        int sl_rc = init_opensl_audio(g_detected_rate);
-        g_rate_detected = 1;
-        g_frames_since_reinit = 0;
-        g_monitor_frames = 0;
-        g_monitor_samples = 0;
-        LOGI("Audio init at reported rate: %.0f Hz, opensl_rc=%d, sl_init=%d",
-             reported_sample_rate, sl_rc, atomic_load(&g_sl_initialized));
-    } else {
-        LOGI("Audio will init after 15 video frames at reported rate: %.0f Hz",
-             reported_sample_rate);
-    }
+    /* Always defer OpenSL init until audio is actively being produced
+     * (during the frame loop).  Initializing eagerly here creates an
+     * AudioTrack that sits idle — Android's audio policy kills idle
+     * players before the frame loop has a chance to feed real samples. */
+    LOGI("Audio deferred: will init after 15 video frames (reported rate: %.0f Hz)",
+         reported_sample_rate);
 #endif
     
     /* Allocate state buffer */

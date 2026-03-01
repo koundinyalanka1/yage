@@ -440,7 +440,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // cleanly when the user enters a game again.  Without this, the
       // singleton stays in _initialized=true / _gameLoaded=false limbo
       // and the next session never loads the game → no achievement events.
-      _rcheevosClientRef?.shutdown();
+      _rcheevosClientRef?.shutdown(notify: false);
       _rcheevosClientRef = null;
 
       _emulatorRef = null;

@@ -1850,16 +1850,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       );
 
-    final results = await coverService.fetchAllCoverArt(gamesWithoutCover);
-
-    // Apply results to library
-    for (final entry in results.entries) {
-      final game = games.firstWhere(
-        (g) => g.path == entry.key,
-        orElse: () => gamesWithoutCover.first,
-      );
-      await library.setCoverArt(game, entry.value);
-    }
+    final results = await coverService.fetchAllCoverArt(
+      gamesWithoutCover,
+      onCoverReady: (romPath, coverPath) async {
+        final game = games.firstWhere(
+          (g) => g.path == romPath,
+          orElse: () => gamesWithoutCover.first,
+        );
+        await library.setCoverArt(game, coverPath);
+      },
+    );
 
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -1877,22 +1877,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
 
   /// Fire-and-forget: download cover art for a list of newly imported games.
+  /// Uses parallel downloads (up to 3 at a time) for faster results.
   void _autoFetchCovers(List<GameRom> games, GameLibraryService library) {
     final coverService = context.read<CoverArtService>();
+    final toFetch = games.where((g) => g.coverPath == null).toList();
+    if (toFetch.isEmpty) return;
 
     () async {
-      for (final game in games) {
-        if (game.coverPath != null) continue;
-        try {
-          final path = await coverService.fetchCoverArt(game);
-          if (path != null) {
-            await library.setCoverArt(game, path);
-          }
-        } catch (_) {
-          // Best-effort — don't interrupt the user
-        }
-        // Small delay between requests
-        await Future.delayed(const Duration(milliseconds: 300));
+      for (int i = 0; i < toFetch.length; i += 3) {
+        final chunk = toFetch.skip(i).take(3).toList();
+        await Future.wait(chunk.map((game) async {
+          try {
+            final path = await coverService.fetchCoverArt(game);
+            if (path != null) await library.setCoverArt(game, path);
+          } catch (_) {}
+        }));
       }
     }();
   }
