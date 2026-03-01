@@ -37,7 +37,7 @@ class MainActivity : FlutterActivity() {
         private const val SAF_IMPORT_FOLDER_CODE = 2001
         private const val SAF_PICK_FOLDER_CODE = 2002
         private const val STORAGE_PERMISSION_CODE = 1001
-        private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb", "nes", "sfc", "smc")
+        private val ROM_EXTENSIONS = setOf("gba", "gb", "gbc", "sgb", "nes", "sfc", "smc", "sms", "gg", "md", "gen", "bin")
         private const val MANAGE_STORAGE_PERMISSION_CODE = 1002
     }
 
