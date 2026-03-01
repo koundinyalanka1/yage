@@ -182,6 +182,7 @@ static _Atomic uint32_t g_keys = 0;
 static volatile uint32_t g_keys = 0;
 #endif
 static int g_pixel_format = RETRO_PIXEL_FORMAT_RGB565; /* Default format */
+static int g_color_correction_enabled = 1; /* GBA contrast boost — only for GB family */
 
 /* Audio volume control (0.0 = mute, 1.0 = full volume) */
 static float g_volume = 1.0f;
@@ -634,12 +635,16 @@ static inline uint32_t apply_gb_palette(uint8_t r, uint8_t g, uint8_t b) {
     else return g_palette_colors[3];                   /* Darkest */
 }
 
-/* Process a pixel: apply palette remap for GB or color correction for GBC/GBA */
+/* Process a pixel: apply palette remap for GB, color correction for GBC/GBA,
+ * or straight ABGR conversion for NES/SNES/Genesis. */
 static inline uint32_t process_pixel(uint8_t r, uint8_t g, uint8_t b) {
     if (g_palette_enabled) {
         return apply_gb_palette(r, g, b);
     }
-    return apply_color_correction(r, g, b);
+    if (g_color_correction_enabled) {
+        return apply_color_correction(r, g, b);
+    }
+    return 0xFF000000 | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
 }
 
 /* Libretro callbacks */
@@ -1131,15 +1136,55 @@ static bool environment_callback(unsigned cmd, void* data) {
         case 40: /* RETRO_ENVIRONMENT_GET_INPUT_BITMASKS */
             return true;
         default: {
-            /* NES/SNES cores need these — mGBA breaks if we return true for 11/35 */
-            int is_nes_snes = (g_core_lib_path && (strstr(g_core_lib_path, "fceumm") || strstr(g_core_lib_path, "snes9x") || strstr(g_core_lib_path, "genesis_plus_gx")));
-            if (is_nes_snes && (cmd == 11 || cmd == 35 || cmd == 52 || cmd == 53 || cmd == 54 ||
-                cmd == 55 || cmd == 59 || cmd == 65 || cmd == 66 || cmd == 69 || cmd == 70 ||
-                cmd == 0x10033 || cmd == 0x1000A || cmd == 0x1000D || cmd == 0x10013)) {
-                return true;
+            /* ── Non-mGBA cores (NES/SNES/Genesis) ──
+             * These cores use newer libretro API features. Commands are split
+             * into GET (we must fill data) and SET (we just accept data).
+             * CRITICAL: never return true for a GET without filling data —
+             * the core will dereference the uninitialised pointer and crash
+             * (this caused the genesis_plus_gx SIGSEGV at GET_GAME_INFO_EXT). */
+            int is_multi_core = (g_core_lib_path &&
+                (strstr(g_core_lib_path, "fceumm") ||
+                 strstr(g_core_lib_path, "snes9x") ||
+                 strstr(g_core_lib_path, "genesis_plus_gx")));
+            if (is_multi_core) {
+                switch (cmd) {
+                    /* GET commands — fill data for the core */
+                    case 52: /* GET_CORE_OPTIONS_VERSION */
+                        if (data) *(unsigned*)data = 2;
+                        return true;
+                    case 59: /* GET_MESSAGE_INTERFACE_VERSION */
+                        if (data) *(unsigned*)data = 1;
+                        return true;
+                    case 61: /* GET_INPUT_MAX_USERS */
+                        if (data) *(unsigned*)data = 1;
+                        return true;
+                    /* SET commands — accept data from the core */
+                    case 11: /* SET_INPUT_DESCRIPTORS */
+                    case 34: /* SET_SUBSYSTEM_INFO */
+                    case 35: /* SET_CONTROLLER_INFO */
+                    case 44: /* SET_SERIALIZATION_QUIRKS */
+                    case 53: /* SET_CORE_OPTIONS */
+                    case 54: /* SET_CORE_OPTIONS_INTL */
+                    case 55: /* SET_CORE_OPTIONS_DISPLAY */
+                    case 60: /* SET_MESSAGE_EXT */
+                    case 62: /* SET_AUDIO_BUFFER_STATUS_CALLBACK */
+                    case 63: /* SET_MINIMUM_AUDIO_LATENCY */
+                    case 64: /* SET_FASTFORWARDING_OVERRIDE */
+                    case 65: /* SET_CONTENT_INFO_OVERRIDE */
+                    case 67: /* SET_CORE_OPTIONS_V2 */
+                    case 68: /* SET_CORE_OPTIONS_V2_INTL */
+                    case 69: /* SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK */
+                    case 70: /* SET_VARIABLE */
+                        return true;
+                    /* SET commands with experimental flag */
+                    case 0x1002A: /* SET_SUPPORT_ACHIEVEMENTS | EXPERIMENTAL */
+                        return true;
+                    default:
+                        break;
+                }
             }
             if (g_log_frame_count < 5) {
-                LOGI("Unhandled env cmd: %u", cmd);
+                LOGI("Unhandled env cmd: %u (0x%X)", cmd, cmd);
             }
             return false;
         }
@@ -1371,6 +1416,12 @@ int yage_core_load_rom(YageCore* core, const char* path) {
         }
     }
     
+    /* Enable GBA color correction only for GB family — other cores
+     * produce accurate colors that don't need adjustment. */
+    g_color_correction_enabled = (core->platform == YAGE_PLATFORM_GB ||
+                                  core->platform == YAGE_PLATFORM_GBC ||
+                                  core->platform == YAGE_PLATFORM_GBA) ? 1 : 0;
+
     /* Mark variables dirty so the core re-reads SGB border setting */
     g_variables_dirty = 1;
     
