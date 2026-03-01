@@ -55,7 +55,10 @@ typedef enum {
     YAGE_PLATFORM_GBC = 2,
     YAGE_PLATFORM_GBA = 3,
     YAGE_PLATFORM_NES = 4,
-    YAGE_PLATFORM_SNES = 5
+    YAGE_PLATFORM_SNES = 5,
+    YAGE_PLATFORM_SMS = 6,
+    YAGE_PLATFORM_GG = 7,
+    YAGE_PLATFORM_MD = 8
 } YagePlatform;
 
 /* Opaque handle */

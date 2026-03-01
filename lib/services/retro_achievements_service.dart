@@ -21,19 +21,25 @@ import '../models/ra_achievement.dart';
 /// Maps internal [GamePlatform] values to RetroAchievements console IDs.
 ///
 /// Official RA console IDs for supported platforms:
+///   • Mega Drive     → 1
 ///   • SNES           → 3
 ///   • Game Boy       → 4
 ///   • Game Boy Advance → 5
 ///   • Game Boy Color → 6
 ///   • NES            → 7
+///   • Master System  → 11
+///   • Game Gear      → 15
 class RAConsoleId {
   RAConsoleId._();
 
+  static const int megaDrive = 1;
   static const int snes = 3;
   static const int gameBoy = 4;
   static const int gameBoyAdvance = 5;
   static const int gameBoyColor = 6;
   static const int nes = 7;
+  static const int masterSystem = 11;
+  static const int gameGear = 15;
 
   /// Resolve [GamePlatform] → RA console ID.
   /// Returns `null` for unknown / unsupported platforms.
@@ -44,6 +50,9 @@ class RAConsoleId {
       GamePlatform.gbc  => gameBoyColor,
       GamePlatform.nes  => nes,
       GamePlatform.snes => snes,
+      GamePlatform.sms  => masterSystem,
+      GamePlatform.gg   => gameGear,
+      GamePlatform.md   => megaDrive,
       GamePlatform.unknown => null,
     };
   }
@@ -51,11 +60,14 @@ class RAConsoleId {
   /// Human-readable label for a console ID (for debug / logging).
   static String label(int id) {
     return switch (id) {
+      megaDrive      => 'Mega Drive',
       snes           => 'SNES',
       gameBoy        => 'Game Boy',
       gameBoyAdvance => 'Game Boy Advance',
       gameBoyColor   => 'Game Boy Color',
       nes            => 'NES',
+      masterSystem   => 'Master System',
+      gameGear       => 'Game Gear',
       _              => 'Unknown ($id)',
     };
   }
@@ -567,7 +579,7 @@ class RetroAchievementsService extends ChangeNotifier {
   /// Compute the RetroAchievements-compatible hash for a ROM file.
   ///
   /// **Hashing rules (per RA spec):**
-  ///   • **Game Boy / GBC / GBA:**  MD5 of the entire ROM file.
+  ///   • **Game Boy / GBC / GBA / SMS / GG / MD:**  MD5 of the entire ROM file.
   ///   • **NES:**  Strip the 16-byte iNES header (and 512-byte trainer if
   ///     present), then MD5 the remaining PRG+CHR data.
   ///   • **SNES:**  If the file size mod 1024 == 512, strip the 512-byte

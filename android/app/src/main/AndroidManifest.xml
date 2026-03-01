@@ -68,7 +68,7 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
 
-            <!-- Open ROM files directly — only .gb, .gbc, .gba, .nes, .sfc, .smc, .zip -->
+            <!-- Open ROM files directly -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -81,6 +81,11 @@
                 <data android:pathPattern=".*\\.nes"/>
                 <data android:pathPattern=".*\\.sfc"/>
                 <data android:pathPattern=".*\\.smc"/>
+                <data android:pathPattern=".*\\.sms"/>
+                <data android:pathPattern=".*\\.gg"/>
+                <data android:pathPattern=".*\\.md"/>
+                <data android:pathPattern=".*\\.gen"/>
+                <data android:pathPattern=".*\\.bin"/>
                 <data android:pathPattern=".*\\.zip"/>
                 <data android:pathPattern=".*\\.GBA"/>
                 <data android:pathPattern=".*\\.GB"/>
@@ -88,6 +93,11 @@
                 <data android:pathPattern=".*\\.NES"/>
                 <data android:pathPattern=".*\\.SFC"/>
                 <data android:pathPattern=".*\\.SMC"/>
+                <data android:pathPattern=".*\\.SMS"/>
+                <data android:pathPattern=".*\\.GG"/>
+                <data android:pathPattern=".*\\.MD"/>
+                <data android:pathPattern=".*\\.GEN"/>
+                <data android:pathPattern=".*\\.BIN"/>
                 <data android:pathPattern=".*\\.ZIP"/>
             </intent-filter>
             <!-- Fallback for file managers that use host/path matching -->
@@ -102,6 +112,11 @@
                 <data android:pathPattern=".*\\.nes"/>
                 <data android:pathPattern=".*\\.sfc"/>
                 <data android:pathPattern=".*\\.smc"/>
+                <data android:pathPattern=".*\\.sms"/>
+                <data android:pathPattern=".*\\.gg"/>
+                <data android:pathPattern=".*\\.md"/>
+                <data android:pathPattern=".*\\.gen"/>
+                <data android:pathPattern=".*\\.bin"/>
                 <data android:pathPattern=".*\\.zip"/>
             </intent-filter>
         </activity>

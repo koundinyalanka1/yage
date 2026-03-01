@@ -31,6 +31,26 @@ class MGBAStub {
       _platform = GamePlatform.gbc;
       _width = 160;
       _height = 144;
+    } else if (path.endsWith('.nes')) {
+      _platform = GamePlatform.nes;
+      _width = 256;
+      _height = 240;
+    } else if (path.endsWith('.sfc') || path.endsWith('.smc')) {
+      _platform = GamePlatform.snes;
+      _width = 256;
+      _height = 224;
+    } else if (path.endsWith('.sms')) {
+      _platform = GamePlatform.sms;
+      _width = 256;
+      _height = 192;
+    } else if (path.endsWith('.gg')) {
+      _platform = GamePlatform.gg;
+      _width = 160;
+      _height = 144;
+    } else if (path.endsWith('.md') || path.endsWith('.gen') || path.endsWith('.bin')) {
+      _platform = GamePlatform.md;
+      _width = 320;
+      _height = 224;
     } else {
       _platform = GamePlatform.gba;
       _width = 240;

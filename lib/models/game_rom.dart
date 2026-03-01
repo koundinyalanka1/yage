@@ -58,6 +58,9 @@ class GameRom {
       '.nes' => GamePlatform.nes,
       '.sfc' => GamePlatform.snes,
       '.smc' => GamePlatform.snes,
+      '.sms' => GamePlatform.sms,
+      '.gg' => GamePlatform.gg,
+      '.md' || '.gen' || '.bin' => GamePlatform.md,
       _ => GamePlatform.unknown,
     };
   }
@@ -70,6 +73,9 @@ class GameRom {
       GamePlatform.gbc => 'Game Boy Color',
       GamePlatform.nes => 'Nintendo Entertainment System',
       GamePlatform.snes => 'Super Nintendo',
+      GamePlatform.sms => 'Sega Master System',
+      GamePlatform.gg => 'Sega Game Gear',
+      GamePlatform.md => 'Sega Mega Drive / Genesis',
       GamePlatform.unknown => 'Unknown',
     };
   }
@@ -82,6 +88,9 @@ class GameRom {
       GamePlatform.gbc => 'GBC',
       GamePlatform.nes => 'NES',
       GamePlatform.snes => 'SNES',
+      GamePlatform.sms => 'SMS',
+      GamePlatform.gg => 'GG',
+      GamePlatform.md => 'MD',
       GamePlatform.unknown => '???',
     };
   }

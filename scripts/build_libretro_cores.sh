@@ -61,6 +61,7 @@ CORES=(
   "https://github.com/libretro/libretro-fceumm.git   fceumm      fceumm_libretro     libfceumm_libretro_android.so"
   "https://github.com/libretro/snes9x2010.git         snes9x2010  snes9x2010_libretro libsnes9x2010_libretro_android.so"
   "https://github.com/mgba-emu/mgba.git               mgba        mgba_libretro       libmgba_libretro_android.so"
+  "https://github.com/libretro/Genesis-Plus-GX.git     genesis_plus_gx genesis_plus_gx_libretro libgenesis_plus_gx_libretro_android.so"
 )
 
 mkdir -p "$BUILD_DIR"

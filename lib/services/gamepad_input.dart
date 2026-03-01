@@ -87,10 +87,7 @@ class GamepadMapper {
   static Map<LogicalKeyboardKey, int> mappingForPlatform(GamePlatform platform) {
     return switch (platform) {
       GamePlatform.snes => snesMapping,
-      GamePlatform.nes => defaultMapping,
-      GamePlatform.gb => defaultMapping,
-      GamePlatform.gbc => defaultMapping,
-      GamePlatform.gba => defaultMapping,
+      GamePlatform.md => snesMapping,
       _ => defaultMapping,
     };
   }

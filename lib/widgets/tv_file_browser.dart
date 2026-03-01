@@ -45,7 +45,7 @@ class TvFileBrowser extends StatefulWidget {
   /// Show the browser as a full-screen dialog. Returns selected paths or null.
   static Future<List<String>?> pickFiles(
     BuildContext context, {
-    Set<String> extensions = const {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'},
+    Set<String> extensions = const {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.sms', '.gg', '.md', '.gen', '.bin', '.zip'},
     bool allowMultiple = true,
   }) async {
     final hasPermission = await _ensureStoragePermission();
@@ -1020,6 +1020,9 @@ class _TvFileBrowserState extends State<TvFileBrowser> {
       '.gb' => Icons.sports_esports,
       '.nes' => Icons.tv,
       '.sfc' || '.smc' => Icons.games,
+      '.sms' => Icons.smart_display,
+      '.gg' => Icons.phone_android,
+      '.md' || '.gen' || '.bin' => Icons.album,
       _ => Icons.insert_drive_file,
     };
   }

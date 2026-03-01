@@ -158,14 +158,14 @@ class GameLibraryService extends ChangeNotifier {
 
   /// Import ROMs from a ZIP archive.
   ///
-  /// Extracts any `.gba`, `.gb`, `.gbc`, `.sgb`, `.nes`, `.sfc`, or `.smc` files found inside the ZIP,
+  /// Extracts any `.gba`, `.gb`, `.gbc`, `.sgb`, `.nes`, `.sfc`, `.smc`, `.sms`, `.gg`, `.md`, `.gen`, or `.bin` files found inside the ZIP,
   /// copies them to internal storage, and adds them to the library.
   /// Returns the list of successfully imported [GameRom]s.
   ///
   /// If the ZIP file itself is inside the internal roms directory (e.g. copied
   /// there by a VIEW intent), it is deleted after extraction to save space.
   Future<List<GameRom>> importRomZip(String zipPath) async {
-    const romExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'};
+    const romExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.sms', '.gg', '.md', '.gen', '.bin'};
     final romsDir = await getInternalRomsDir();
     final addedGames = <GameRom>[];
 
@@ -271,7 +271,7 @@ class GameLibraryService extends ChangeNotifier {
     final dir = Directory(path);
     if (!await dir.exists()) return addedGames;
 
-    final romExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'};
+    final romExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.sms', '.gg', '.md', '.gen', '.bin'};
     final entities = await dir.list(recursive: true).toList();
 
     for (final entity in entities) {
@@ -345,7 +345,7 @@ class GameLibraryService extends ChangeNotifier {
           if (basename.startsWith('.trashed-')) continue;
 
           final ext = p.extension(entity.path).toLowerCase();
-          if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
+          if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.sms', '.gg', '.md', '.gen', '.bin'].contains(ext)) {
             final game = GameRom.fromPath(entity.path);
             if (game == null || _games.any((g) => g.path == entity.path)) continue;
 
@@ -546,7 +546,7 @@ class GameLibraryService extends ChangeNotifier {
               if (basename.startsWith('.trashed-')) continue;
 
               final ext = p.extension(entity.path).toLowerCase();
-              if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc'].contains(ext)) {
+              if (['.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.sms', '.gg', '.md', '.gen', '.bin'].contains(ext)) {
                 final game = GameRom.fromPath(entity.path);
                 if (game != null &&
                     !freshGames.any((g) => g.path == entity.path)) {

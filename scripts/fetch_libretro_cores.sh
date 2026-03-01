@@ -13,7 +13,7 @@ mkdir -p "$JNI_LIBS"
 for abi in $ABIS; do
   mkdir -p "$JNI_LIBS/$abi"
   
-  for core in fceumm_libretro_android.so snes9x2010_libretro_android.so mgba_libretro_android.so; do
+  for core in fceumm_libretro_android.so snes9x2010_libretro_android.so mgba_libretro_android.so genesis_plus_gx_libretro_android.so; do
     echo "Downloading $core for $abi..."
     curl -sL "$BASE_URL/$abi/$core.zip" -o "/tmp/$core.zip"
     unzip -o -q "/tmp/$core.zip" -d "$JNI_LIBS/$abi"

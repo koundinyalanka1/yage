@@ -27,6 +27,9 @@ class GameCard extends StatelessWidget {
     GamePlatform.gba => colors.gbaColor,
     GamePlatform.nes => colors.nesColor,
     GamePlatform.snes => colors.snesColor,
+    GamePlatform.sms => colors.smsColor,
+    GamePlatform.gg => colors.ggColor,
+    GamePlatform.md => colors.mdColor,
     GamePlatform.unknown => colors.textMuted,
   };
 
@@ -36,6 +39,9 @@ class GameCard extends StatelessWidget {
     GamePlatform.gba => Icons.videogame_asset,
     GamePlatform.nes => Icons.tv,
     GamePlatform.snes => Icons.games,
+    GamePlatform.sms => Icons.smart_display,
+    GamePlatform.gg => Icons.phone_android,
+    GamePlatform.md => Icons.album,
     GamePlatform.unknown => Icons.help_outline,
   };
 
@@ -321,6 +327,9 @@ class GameListTile extends StatelessWidget {
     GamePlatform.gba => colors.gbaColor,
     GamePlatform.nes => colors.nesColor,
     GamePlatform.snes => colors.snesColor,
+    GamePlatform.sms => colors.smsColor,
+    GamePlatform.gg => colors.ggColor,
+    GamePlatform.md => colors.mdColor,
     GamePlatform.unknown => colors.textMuted,
   };
 

@@ -8,7 +8,8 @@ $abis = @("armeabi-v7a", "arm64-v8a", "x86_64")
 $cores = @(
     @{ name = "fceumm"; file = "fceumm_libretro_android.so" },
     @{ name = "snes9x2010"; file = "snes9x2010_libretro_android.so" },
-    @{ name = "mgba"; file = "mgba_libretro_android.so" }
+    @{ name = "mgba"; file = "mgba_libretro_android.so" },
+    @{ name = "genesis_plus_gx"; file = "genesis_plus_gx_libretro_android.so" }
 )
 
 $jniLibs = "android\app\src\main\jniLibs"

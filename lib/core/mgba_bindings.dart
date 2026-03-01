@@ -219,6 +219,9 @@ enum GamePlatform {
   gba,
   nes,
   snes,
+  sms,
+  gg,
+  md,
 }
 
 /// mGBA native library bindings
@@ -313,6 +316,9 @@ class MGBABindings {
     GamePlatform.gba:  'libmgba_libretro_android.so',
     GamePlatform.nes:  'libfceumm_libretro_android.so',
     GamePlatform.snes: 'libsnes9x2010_libretro_android.so',
+    GamePlatform.sms:  'libgenesis_plus_gx_libretro_android.so',
+    GamePlatform.gg:   'libgenesis_plus_gx_libretro_android.so',
+    GamePlatform.md:   'libgenesis_plus_gx_libretro_android.so',
   };
 
   /// Select which libretro core to use.  Must be called before [load].
@@ -732,6 +738,9 @@ class MGBACore {
         3 => GamePlatform.gba,
         4 => GamePlatform.nes,
         5 => GamePlatform.snes,
+        6 => GamePlatform.sms,
+        7 => GamePlatform.gg,
+        8 => GamePlatform.md,
         _ => GamePlatform.unknown,
       };
     } catch (e) {

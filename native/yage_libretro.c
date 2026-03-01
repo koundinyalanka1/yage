@@ -154,13 +154,19 @@ struct retro_system_av_info {
 #define NES_HEIGHT 240
 #define SNES_WIDTH 256
 #define SNES_HEIGHT 224
+#define SMS_WIDTH 256
+#define SMS_HEIGHT 192
+#define GG_WIDTH 160
+#define GG_HEIGHT 144
+#define MD_WIDTH 320
+#define MD_HEIGHT 224
 
 /* Selected libretro core path (set via yage_core_set_core before init) */
 static char* g_core_lib_path = NULL;
 
 #define AUDIO_BUFFER_SIZE 8192
-/* Initial capacity must accommodate the largest possible resolution (SGB) */
-#define VIDEO_BUFFER_SIZE (SGB_WIDTH * SGB_HEIGHT)
+/* Initial capacity must accommodate the largest possible resolution (MD 320x224) */
+#define VIDEO_BUFFER_SIZE (MD_WIDTH * MD_HEIGHT)
 
 /* Global state for libretro callbacks */
 static YageCore* g_current_core = NULL; /* Active core for env callback access */
@@ -1124,7 +1130,7 @@ static bool environment_callback(unsigned cmd, void* data) {
             return true;
         default: {
             /* NES/SNES cores need these — mGBA breaks if we return true for 11/35 */
-            int is_nes_snes = (g_core_lib_path && (strstr(g_core_lib_path, "fceumm") || strstr(g_core_lib_path, "snes9x")));
+            int is_nes_snes = (g_core_lib_path && (strstr(g_core_lib_path, "fceumm") || strstr(g_core_lib_path, "snes9x") || strstr(g_core_lib_path, "genesis_plus_gx")));
             if (is_nes_snes && (cmd == 11 || cmd == 35 || cmd == 52 || cmd == 53 || cmd == 54 ||
                 cmd == 55 || cmd == 59 || cmd == 65 || cmd == 66 || cmd == 69 || cmd == 70 ||
                 cmd == 0x10033 || cmd == 0x1000A || cmd == 0x1000D || cmd == 0x10013)) {
@@ -1142,7 +1148,7 @@ YageCore* yage_core_create(void) {
     YageCore* core = (YageCore*)calloc(1, sizeof(YageCore));
     if (!core) return NULL;
     
-    /* Allocate video buffer — sized for SGB (256x224), the largest mGBA output */
+    /* Allocate video buffer — sized for Mega Drive (320x224), the largest output */
     g_video_buffer = (uint32_t*)malloc(VIDEO_BUFFER_SIZE * sizeof(uint32_t));
     g_video_buffer_capacity = VIDEO_BUFFER_SIZE;
     if (!g_video_buffer) {
@@ -1347,6 +1353,19 @@ int yage_core_load_rom(YageCore* core, const char* path) {
             core->platform = YAGE_PLATFORM_SNES;
             g_width = SNES_WIDTH;
             g_height = SNES_HEIGHT;
+        } else if (strcasecmp(ext, ".sms") == 0) {
+            core->platform = YAGE_PLATFORM_SMS;
+            g_width = SMS_WIDTH;
+            g_height = SMS_HEIGHT;
+        } else if (strcasecmp(ext, ".gg") == 0) {
+            core->platform = YAGE_PLATFORM_GG;
+            g_width = GG_WIDTH;
+            g_height = GG_HEIGHT;
+        } else if (strcasecmp(ext, ".md") == 0 || strcasecmp(ext, ".gen") == 0 ||
+                   strcasecmp(ext, ".bin") == 0) {
+            core->platform = YAGE_PLATFORM_MD;
+            g_width = MD_WIDTH;
+            g_height = MD_HEIGHT;
         }
     }
     

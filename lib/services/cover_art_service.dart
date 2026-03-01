@@ -45,6 +45,9 @@ class CoverArtService extends ChangeNotifier {
     GamePlatform.gb: 'Nintendo - Game Boy',
     GamePlatform.nes: 'Nintendo - Nintendo Entertainment System',
     GamePlatform.snes: 'Nintendo - Super Nintendo Entertainment System',
+    GamePlatform.sms: 'Sega - Master System - Mark III',
+    GamePlatform.gg: 'Sega - Game Gear',
+    GamePlatform.md: 'Sega - Mega Drive - Genesis',
   };
 
   // ── In-memory game-name index (per system) ─────────────────────────

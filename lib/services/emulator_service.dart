@@ -211,14 +211,16 @@ class EmulatorService extends ChangeNotifier {
         // to load before initializing. NES/SNES: set explicit path.
         // GB/GBC/GBA: clear path so we use default mGBA (avoids input regression).
         if (platform != null && _bindings.isCoreSelectionLoaded) {
-          if (platform == GamePlatform.nes || platform == GamePlatform.snes) {
+          if (platform == GamePlatform.gb ||
+              platform == GamePlatform.gbc ||
+              platform == GamePlatform.gba) {
+            // GB/GBC/GBA: clear path to use default mGBA (handles switch from other cores)
+            _core!.setCoreLibrary('');
+          } else {
             final coreLib = MGBABindings.platformCoreLibs[platform];
             if (coreLib != null) {
               _core!.setCoreLibrary(coreLib);
             }
-          } else {
-            // GB/GBC/GBA: explicitly clear so we use default (handles switch from NES/SNES)
-            _core!.setCoreLibrary('');
           }
         }
 
@@ -231,10 +233,9 @@ class EmulatorService extends ChangeNotifier {
           notifyListeners();
           return true;
         }
-        // NES/SNES: fail clearly instead of falling back to stub —
-        // there's no useful "demo mode" for these platforms.
-        if (platform == GamePlatform.nes || platform == GamePlatform.snes) {
-          _errorMessage = 'Failed to load ${platform!.name.toUpperCase()} core. '
+        if (platform != null && platform != GamePlatform.gb &&
+            platform != GamePlatform.gbc && platform != GamePlatform.gba) {
+          _errorMessage = 'Failed to load ${platform.name.toUpperCase()} core. '
               'Please reinstall the app or check that cores are bundled.';
         } else {
           _errorMessage = 'Failed to initialize emulator core.';
@@ -469,10 +470,12 @@ class EmulatorService extends ChangeNotifier {
       // Apply color palette (for original GB games only)
       _applyColorPalette();
 
-      // Initialize rewind buffer if enabled (not supported for NES/SNES)
+      // Initialize rewind buffer if enabled (only for GB/GBC/GBA — other cores
+      // have large state sizes that make rewind impractical on low-RAM devices)
       if (_settings.enableRewind &&
-          rom.platform != GamePlatform.nes &&
-          rom.platform != GamePlatform.snes) {
+          (rom.platform == GamePlatform.gb ||
+           rom.platform == GamePlatform.gbc ||
+           rom.platform == GamePlatform.gba)) {
         _initRewind();
       }
 
@@ -494,10 +497,7 @@ class EmulatorService extends ChangeNotifier {
       GamePlatform.gba => _settings.biosPathGba,
       GamePlatform.gb => _settings.biosPathGb,
       GamePlatform.gbc => _settings.biosPathGbc,
-      // NES and SNES libretro cores don't require BIOS files
-      GamePlatform.nes => null,
-      GamePlatform.snes => null,
-      GamePlatform.unknown => null,
+      _ => null,
     };
   }
 
@@ -962,9 +962,9 @@ class EmulatorService extends ChangeNotifier {
     final lc = linkCable;
     if (lc == null || lc.state != LinkCableState.connected) return;
     if (_useStub || _core == null) return;
-    // Link cable is only for GB/GBA — skip for NES/SNES
+    // Link cable is only for GB/GBC/GBA
     final p = platform;
-    if (p == GamePlatform.nes || p == GamePlatform.snes) return;
+    if (p != GamePlatform.gb && p != GamePlatform.gbc && p != GamePlatform.gba) return;
 
     // If the peer sent us a byte and a transfer is pending, inject it
     if (lc.hasIncomingData) {

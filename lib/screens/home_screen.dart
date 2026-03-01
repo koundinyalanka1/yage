@@ -207,7 +207,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ..clearSnackBars()
             ..showSnackBar(
               const SnackBar(
-                content: Text('No valid ROM files (.gb, .gbc, .gba, .nes, .sfc, .smc) found inside the ZIP.'),
+                content: Text('No valid ROM files found inside the ZIP.'),
               ),
             );
         }
@@ -384,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
     } else {
       // Phone/tablet: use system file picker (SAF)
-      const allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.zip'};
+      const allowedExtensions = {'.gba', '.gb', '.gbc', '.sgb', '.nes', '.sfc', '.smc', '.sms', '.gg', '.md', '.gen', '.bin', '.zip'};
       try {
         final result = await FilePicker.platform.pickFiles(
           type: FileType.any,
@@ -465,7 +465,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             SnackBar(
               content: Text(
                 hasZip
-                    ? 'No valid ROM files (.gb, .gbc, .gba, .nes, .sfc, .smc) found inside the ZIP.'
+                    ? 'No valid ROM files found inside the ZIP.'
                     : 'No valid ROM files were imported.',
               ),
             ),

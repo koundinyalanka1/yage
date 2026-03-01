@@ -342,8 +342,11 @@ class _VirtualGamepadState extends State<VirtualGamepad> {
           );
 
           // ── Determine active buttons based on platform ──
-          final bool showLR = widget.platform != GamePlatform.nes;
-          final bool showXY = widget.platform == GamePlatform.snes;
+          final bool showLR = widget.platform != GamePlatform.nes &&
+              widget.platform != GamePlatform.sms &&
+              widget.platform != GamePlatform.gg;
+          final bool showXY = widget.platform == GamePlatform.snes ||
+              widget.platform == GamePlatform.md;
 
           // ── Pre-compute all button sizes ──
           final buttonSizes = <GamepadButton, Size>{
