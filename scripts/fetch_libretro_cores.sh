@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fetch LibRetro cores for Android (NES, SNES, mGBA)
+# Fetch LibRetro cores for Android (NES, SNES, mGBA, Genesis Plus GX)
 # Downloads from: https://buildbot.libretro.com/nightly/android/latest/
 #
 # Run from project root: ./scripts/fetch_libretro_cores.sh
@@ -18,6 +18,10 @@ for abi in $ABIS; do
     curl -sL "$BASE_URL/$abi/$core.zip" -o "/tmp/$core.zip"
     unzip -o -q "/tmp/$core.zip" -d "$JNI_LIBS/$abi"
     rm "/tmp/$core.zip"
+    # Rename to add "lib" prefix (Android requires it for APK bundling)
+    if [ -f "$JNI_LIBS/$abi/$core" ] && [ ! -f "$JNI_LIBS/$abi/lib$core" ]; then
+      mv "$JNI_LIBS/$abi/$core" "$JNI_LIBS/$abi/lib$core"
+    fi
   done
 done
 
@@ -58,6 +62,7 @@ if [ "$HAS_READELF" = true ]; then
     echo ""
     echo "⚠ $MISALIGNED library(ies) are NOT 16 KB aligned."
     echo "  These may need to be rebuilt from source with: -Wl,-z,max-page-size=16384"
+    echo "  Run: ./scripts/build_libretro_cores.sh"
   else
     echo "  All libraries are 16 KB aligned ✓"
   fi
