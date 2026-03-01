@@ -353,11 +353,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: colors.textMuted),
+            TvFocusable(
+              onTap: () => Navigator.pop(dialogContext),
+              borderRadius: BorderRadius.circular(8),
+              child: TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: colors.textMuted),
+                ),
               ),
             ),
           ],
@@ -1197,6 +1201,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _showTvSearchDialog(BuildContext context) {
     final colors = AppColorTheme.of(context);
     final controller = TextEditingController(text: _searchController.text);
+    final searchFocusNode = FocusNode();
 
     void applySearchAndClose(BuildContext ctx) {
       final query = controller.text;
@@ -1209,56 +1214,68 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => Focus(
-        // Don't take focus here — let the TextField receive it so the
-        // on-screen keyboard appears on Android TV.
-        canRequestFocus: false,
-        onKeyEvent: (node, event) {
-          if (event is KeyDownEvent &&
-              (event.logicalKey == LogicalKeyboardKey.escape ||
-               event.logicalKey == LogicalKeyboardKey.goBack ||
-               event.logicalKey == LogicalKeyboardKey.gameButtonB ||
-               event.logicalKey == LogicalKeyboardKey.browserBack)) {
-            Navigator.of(ctx).pop();
-            return KeyEventResult.handled;
+      builder: (ctx) {
+        // Force focus request explicitly after the dialog mounts
+        // This is crucial for Android TV to pop up the on-screen keyboard reliably.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (searchFocusNode.canRequestFocus) {
+            searchFocusNode.requestFocus();
           }
-          return KeyEventResult.ignored;
-        },
-        child: AlertDialog(
-          title: const Text('Search games'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.text,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: 'Type to search...',
-              border: const OutlineInputBorder(),
+        });
+
+        return Focus(
+          // Don't take focus here — let the TextField receive it so the
+          // on-screen keyboard appears on Android TV.
+          canRequestFocus: false,
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent &&
+                (event.logicalKey == LogicalKeyboardKey.escape ||
+                 event.logicalKey == LogicalKeyboardKey.goBack ||
+                 event.logicalKey == LogicalKeyboardKey.gameButtonB ||
+                 event.logicalKey == LogicalKeyboardKey.browserBack)) {
+              Navigator.of(ctx).pop();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: AlertDialog(
+            title: const Text('Search games'),
+            content: TextField(
+              controller: controller,
+              focusNode: searchFocusNode,
+              autofocus: true,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                hintText: 'Type to search...',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => applySearchAndClose(ctx),
             ),
-            onSubmitted: (_) => applySearchAndClose(ctx),
+            actions: [
+              TvFocusable(
+                onTap: () => Navigator.of(ctx).pop(),
+                borderRadius: BorderRadius.circular(8),
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text('Cancel', style: TextStyle(color: colors.textMuted)),
+                ),
+              ),
+              TvFocusable(
+                onTap: () => applySearchAndClose(ctx),
+                borderRadius: BorderRadius.circular(8),
+                child: FilledButton(
+                  onPressed: () => applySearchAndClose(ctx),
+                  child: const Text('Search'),
+                ),
+              ),
+            ],
           ),
-          actions: [
-            TvFocusable(
-              onTap: () => Navigator.of(ctx).pop(),
-              borderRadius: BorderRadius.circular(8),
-              child: TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text('Cancel', style: TextStyle(color: colors.textMuted)),
-              ),
-            ),
-            TvFocusable(
-              onTap: () => applySearchAndClose(ctx),
-              borderRadius: BorderRadius.circular(8),
-              child: FilledButton(
-                onPressed: () => applySearchAndClose(ctx),
-                child: const Text('Search'),
-              ),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     ).then((_) {
       controller.dispose();
+      searchFocusNode.dispose();
     });
   }
 

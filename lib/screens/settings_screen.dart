@@ -2217,24 +2217,30 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
       ),
       actions: [
         if (_done && !_error)
-          TextButton.icon(
-            icon: const Icon(Icons.share, size: 18),
-            label: const Text('Share'),
-            onPressed: _zipPath != null
+          TvFocusable(
+            onTap: _zipPath != null
                 ? () {
                     SaveBackupService.shareZip(_zipPath!);
                   }
                 : null,
+            borderRadius: BorderRadius.circular(8),
+            child: TextButton.icon(
+              icon: const Icon(Icons.share, size: 18),
+              label: const Text('Share'),
+              onPressed: _zipPath != null
+                  ? () {
+                      SaveBackupService.shareZip(_zipPath!);
+                    }
+                  : null,
+            ),
           ),
         if (_done && !_error)
-          TextButton.icon(
-            icon: const Icon(Icons.save_alt, size: 18),
-            label: const Text('Save to…'),
-            onPressed: _zipPath != null
+          TvFocusable(
+            onTap: _zipPath != null
                 ? () async {
                     final saved =
                         await SaveBackupService.saveZipToUserLocation(_zipPath!);
-                    if (saved != null && context.mounted) {
+                    if (saved != null && mounted) {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
                         SnackBar(content: Text('Saved to $saved')),
@@ -2242,12 +2248,33 @@ class _BackupProgressDialogState extends State<_BackupProgressDialog> {
                     }
                   }
                 : null,
+            borderRadius: BorderRadius.circular(8),
+            child: TextButton.icon(
+              icon: const Icon(Icons.save_alt, size: 18),
+              label: const Text('Save to…'),
+              onPressed: _zipPath != null
+                  ? () async {
+                      final saved =
+                          await SaveBackupService.saveZipToUserLocation(_zipPath!);
+                      if (saved != null && mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
+                          SnackBar(content: Text('Saved to $saved')),
+                        );
+                      }
+                    }
+                  : null,
+            ),
           ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            _done ? 'Close' : 'Cancel',
-            style: TextStyle(color: colors.textSecondary),
+        TvFocusable(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              _done || _error ? 'Close' : 'Cancel',
+              style: TextStyle(color: colors.textSecondary),
+            ),
           ),
         ),
       ],
@@ -2600,20 +2627,28 @@ class _ImportRestoreDialogState extends State<_ImportRestoreDialog> {
       actions: [
         // Restore button (only shown during preview)
         if (showPreview && preview.matchedFileCount > 0)
-          TextButton.icon(
-            icon: Icon(Icons.restore, size: 18, color: colors.accent),
-            label: Text(
-              'Restore',
-              style: TextStyle(color: colors.accent),
+          TvFocusable(
+            onTap: _restore,
+            borderRadius: BorderRadius.circular(8),
+            child: TextButton.icon(
+              icon: Icon(Icons.restore, size: 18, color: colors.accent),
+              label: Text(
+                'Restore',
+                style: TextStyle(color: colors.accent),
+              ),
+              onPressed: _restore,
             ),
-            onPressed: _restore,
           ),
         // Close / Cancel
-        TextButton(
-          onPressed: _restoring ? null : () => Navigator.pop(context),
-          child: Text(
-            _done || _error ? 'Close' : 'Cancel',
-            style: TextStyle(color: colors.textSecondary),
+        TvFocusable(
+          onTap: _restoring ? null : () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: TextButton(
+            onPressed: _restoring ? null : () => Navigator.pop(context),
+            child: Text(
+              _done || _error ? 'Close' : 'Cancel',
+              style: TextStyle(color: colors.textSecondary),
+            ),
           ),
         ),
       ],
@@ -2758,11 +2793,15 @@ class _DriveBackupDialogState extends State<_DriveBackupDialog> {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            _done ? 'Close' : 'Cancel',
-            style: TextStyle(color: colors.textSecondary),
+        TvFocusable(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              _done ? 'Close' : 'Cancel',
+              style: TextStyle(color: colors.textSecondary),
+            ),
           ),
         ),
       ],
@@ -2980,11 +3019,15 @@ class _DriveRestoreDialogState extends State<_DriveRestoreDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _restoring ? null : () => Navigator.pop(context),
-          child: Text(
-            'Close',
-            style: TextStyle(color: colors.textSecondary),
+        TvFocusable(
+          onTap: _restoring ? null : () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: TextButton(
+            onPressed: _restoring ? null : () => Navigator.pop(context),
+            child: Text(
+              'Close',
+              style: TextStyle(color: colors.textSecondary),
+            ),
           ),
         ),
       ],

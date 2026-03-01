@@ -2589,11 +2589,15 @@ class _StateSlotDialogState extends State<_StateSlotDialog> {
               ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Cancel',
-            style: TextStyle(color: colors.textMuted),
+        TvFocusable(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: colors.textMuted),
+            ),
           ),
         ),
       ],
@@ -3493,18 +3497,26 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
       ),
       actions: [
         if (isConnected || state == LinkCableState.hosting)
-          TextButton(
-            onPressed: _isBusy ? null : _disconnect,
-            child: Text(
-              'Disconnect',
-              style: TextStyle(color: colors.error),
+          TvFocusable(
+            onTap: _isBusy ? null : _disconnect,
+            borderRadius: BorderRadius.circular(8),
+            child: TextButton(
+              onPressed: _isBusy ? null : _disconnect,
+              child: Text(
+                'Disconnect',
+                style: TextStyle(color: colors.error),
+              ),
             ),
           ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            isConnected ? 'Done' : 'Close',
-            style: TextStyle(color: colors.textMuted),
+        TvFocusable(
+          onTap: () => Navigator.pop(context),
+          borderRadius: BorderRadius.circular(8),
+          child: TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              isConnected ? 'Done' : 'Close',
+              style: TextStyle(color: colors.textMuted),
+            ),
           ),
         ),
       ],
@@ -3529,16 +3541,20 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
         // Host button
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _isBusy ? null : _host,
-            icon: const Icon(Icons.wifi_tethering, size: 18),
-            label: const Text('Host Game'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: colors.primary,
-              foregroundColor: colors.textPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          child: TvFocusable(
+            onTap: _isBusy ? null : _host,
+            borderRadius: BorderRadius.circular(10),
+            child: ElevatedButton.icon(
+              onPressed: _isBusy ? null : _host,
+              icon: const Icon(Icons.wifi_tethering, size: 18),
+              label: const Text('Host Game'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.primary,
+                foregroundColor: colors.textPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
@@ -3561,37 +3577,44 @@ class _LinkCableDialogState extends State<_LinkCableDialog> {
         const SizedBox(height: 12),
 
         // Join section
-        TextField(
-          controller: _ipController,
-          style: TextStyle(color: colors.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Host IP address (e.g. 192.168.1.5)',
-            hintStyle: TextStyle(color: colors.textMuted, fontSize: 13),
-            filled: true,
-            fillColor: colors.backgroundLight,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
+        TvFocusable(
+          borderRadius: BorderRadius.circular(10),
+          child: TextField(
+            controller: _ipController,
+            style: TextStyle(color: colors.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Host IP address (e.g. 192.168.1.5)',
+              hintStyle: TextStyle(color: colors.textMuted, fontSize: 13),
+              filled: true,
+              fillColor: colors.backgroundLight,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 12,
+              ),
             ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14, vertical: 12,
-            ),
+            keyboardType: TextInputType.number,
           ),
-          keyboardType: TextInputType.number,
         ),
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _isBusy ? null : _join,
-            icon: const Icon(Icons.link, size: 18),
-            label: const Text('Join Game'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: colors.accent,
-              foregroundColor: colors.textPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          child: TvFocusable(
+            onTap: _isBusy ? null : _join,
+            borderRadius: BorderRadius.circular(10),
+            child: ElevatedButton.icon(
+              onPressed: _isBusy ? null : _join,
+              icon: const Icon(Icons.link, size: 18),
+              label: const Text('Join Game'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.accent,
+                foregroundColor: colors.textPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
